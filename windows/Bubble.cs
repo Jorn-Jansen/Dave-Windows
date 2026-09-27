@@ -23,7 +23,7 @@ internal static class Palette
 /// </summary>
 public class Bubble : LayeredWindow
 {
-    private const int Margin = 30;           // room around the shape for its halo
+    private const int HaloMargin = 30;           // room around the shape for its halo
     private const float CircleSize = 88f;
     private const int MaxTextWidth = 860;
     private static readonly Font TextFont = new("Segoe UI", 21f, FontStyle.Regular, GraphicsUnit.Pixel);
@@ -138,7 +138,7 @@ public class Bubble : LayeredWindow
 
     private void Render(float t)
     {
-        int width = (int)Math.Ceiling(size.Width) + Margin * 2, height = (int)Math.Ceiling(size.Height) + Margin * 2;
+        int width = (int)Math.Ceiling(size.Width) + HaloMargin * 2, height = (int)Math.Ceiling(size.Height) + HaloMargin * 2;
         if (surface == null || surface.Width != width || surface.Height != height)
         {
             surface?.Dispose();
@@ -149,7 +149,7 @@ public class Bubble : LayeredWindow
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
-        var shape = new RectangleF(Margin, Margin, size.Width, size.Height);
+        var shape = new RectangleF(HaloMargin, HaloMargin, size.Width, size.Height);
         float radius = size.Height <= 96 ? Math.Min(size.Width, size.Height) / 2f : 34f;
         float level = listening ? Recorder.Level : 0;
         float angle = 25 + 35 * MathF.Sin(t * 0.9f);
@@ -182,7 +182,7 @@ public class Bubble : LayeredWindow
     private Point BottomCenter(int width, int height)
     {
         var area = Screen.PrimaryScreen!.WorkingArea;
-        return new Point(area.Left + (area.Width - width) / 2, area.Bottom - 40 - height + Margin);
+        return new Point(area.Left + (area.Width - width) / 2, area.Bottom - 40 - height + HaloMargin);
     }
 
     private void DrawMicrophone(Graphics g, RectangleF shape, float level, float t)
