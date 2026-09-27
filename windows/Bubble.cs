@@ -133,7 +133,7 @@ public class Bubble : LayeredWindow
         }
 
         Render(t);
-        if (frame % 2 == 0) glow.Render(t, listening ? Recorder.Level : 0); // the big glow at 30 fps is plenty
+        if (frame % 3 == 0) glow.Render(t, listening ? Recorder.Level : 0); // the big glow at ~20 fps is plenty
     }
 
     private void Render(float t)
@@ -284,11 +284,11 @@ public class Glow : LayeredWindow
         var rect = new Rectangle(0, 0, bounds.Width, bounds.Height);
 
         // Soft blobs that drift around the edges, so the colours sway instead of sitting still.
-        var blobs = new[] { (Palette.Purple, 0.00f, 0.031f), (Palette.Cyan, 0.27f, -0.024f), (Palette.Pink, 0.52f, 0.019f), (Palette.Cyan, 0.78f, -0.028f) };
+        var blobs = new[] { (Palette.Purple, 0.00f, 0.031f), (Palette.Cyan, 0.36f, -0.024f), (Palette.Pink, 0.70f, 0.019f) };
         foreach (var (color, phase, speed) in blobs)
         {
             var p = Perimeter(rect, phase + t * speed + 0.04f * MathF.Sin(t * 0.7f + phase * 9));
-            float r = 260 + 70 * MathF.Sin(t * 1.1f + phase * 7) + level * 140;
+            float r = 220 + 60 * MathF.Sin(t * 1.1f + phase * 7) + level * 120;
             using var blobPath = new GraphicsPath();
             blobPath.AddEllipse(p.X - r, p.Y - r, r * 2, r * 2);
             using var blob = new PathGradientBrush(blobPath)
@@ -301,7 +301,7 @@ public class Glow : LayeredWindow
 
         // The glowing edge itself: layered strokes, wide and faint to thin and bright, with colours rotating around.
         float breathe = 0.85f + 0.15f * MathF.Sin(t * 1.4f) + level * 0.7f;
-        var layers = new[] { (110f, 16), (70f, 28), (40f, 50), (20f, 90), (7f, 190) };
+        var layers = new[] { (95f, 26), (38f, 70), (8f, 190) };
         foreach (var (width, alpha) in layers)
         {
             using var brush = new LinearGradientBrush(rect, Color.Black, Color.Black, (t * 35) % 360f);
