@@ -13,7 +13,49 @@ internal static class Program
         using var single = new Mutex(true, test == null ? "DaveWindows-single-instance" : "DaveWindows-test", out var first);
         if (!first) return; // Dave is already running (tray icon)
         ApplicationConfiguration.Initialize();
-        Application.Run(new DaveApp(test));
+
+        // Log anything that goes wrong instead of vanishing silently.
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => Log.Write($"ERROR (screen thread) while '{Watchdog.Step}': {e.Exception}");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Write($"CRASH while '{Watchdog.Step}': {e.ExceptionObject}");
+        TaskScheduler.UnobservedTaskException += (_, e) => { Log.Write($"Background error: {e.Exception}"); e.SetObserved(); };
+
+        var app = new DaveApp(test);
+        Watchdog.Start();
+        Application.Run(app);
+    }
+}
+
+/// <summary>
+/// Notices when Dave's screen thread gets stuck (Windows would call him "not responding")
+/// and writes down what he was doing at that moment.
+/// </summary>
+public static class Watchdog
+{
+    /// <summary>What Dave is doing right now, e.g. "listening" or "asking the AI".</summary>
+    public static volatile string Step = "idle";
+    private static Control? ui;
+
+    public static void Start()
+    {
+        ui = new Control();
+        _ = ui.Handle; // bound to the screen thread
+        new Thread(Watch) { IsBackground = true, Name = "Dave watchdog" }.Start();
+    }
+
+    private static void Watch()
+    {
+        while (true)
+        {
+            Thread.Sleep(1000);
+            var answered = new ManualResetEventSlim();
+            try { ui!.BeginInvoke(() => answered.Set()); } catch { return; }
+            if (answered.Wait(3000)) continue;
+            var stuckSince = DateTime.Now.AddSeconds(-3);
+            Log.Write($"FROZEN: the screen thread stopped responding while '{Step}'");
+            answered.Wait();
+            Log.Write($"Unfrozen after {(DateTime.Now - stuckSince).TotalSeconds:F0} s");
+        }
     }
 }
 
@@ -185,6 +227,7 @@ public class DaveApp : ApplicationContext
         {
             bubble.HideAfter(1500);
             session = null;
+            Watchdog.Step = "idle";
             if (wakeWord != null) wakeWord.Paused = false;
         }
     }
@@ -198,6 +241,7 @@ public class DaveApp : ApplicationContext
         {
             var locationTask = PcLocation.DescribeAsync(); // look it up while you talk
             string text, language;
+            Watchdog.Step = "turning other sound down";
             using (var duck = new Ducker(settings.DuckTo))
             {
                 if (typed != null)
@@ -214,12 +258,14 @@ public class DaveApp : ApplicationContext
                 }
 
                 bubble.ShowText($"“{text}”\n" + T("Thinking…", "Even denken…"));
+                Watchdog.Step = "asking the AI";
                 var result = await Assistant.AskAsync(settings, text, language, await locationTask);
 
                 if (result is Assistant.Speak speak)
                 {
                     Log.Write($"Says ({language}): {speak.Text}");
                     bubble.ShowText(speak.Text);
+                    Watchdog.Step = "speaking";
                     await Speaker.SpeakAsync(settings, speak.Text, language, cancel);
                     if (!speak.Text.TrimEnd().EndsWith('?')) return;
                     followUp = true; // Dave asked something back: keep listening
@@ -248,6 +294,7 @@ public class DaveApp : ApplicationContext
                     await Speaker.SpeakAsync(settings, summary, language, cancel);
                     return;
                 }
+                Watchdog.Step = $"command {command.Name}";
                 var outcome = await Commands.RunAsync(settings, command.Name, command.Args);
                 Log.Write($"Outcome: {outcome.Text}");
                 bubble.ShowText(outcome.Text);
@@ -266,6 +313,7 @@ public class DaveApp : ApplicationContext
             bubble.ShowListening();
             Speaker.Beep();
             await Task.Delay(150, cancel);
+            Watchdog.Step = "listening";
             var wav = await Recorder.RecordAsync(cancel);
             if (wav == null)
             {
@@ -275,6 +323,7 @@ public class DaveApp : ApplicationContext
                 return null;
             }
             bubble.ShowText("…");
+            Watchdog.Step = "transcribing";
             var (text, whisperLanguage) = await Groq.TranscribeAsync(settings, wav);
             if (text.Length > 0) return (text, LanguageOf(whisperLanguage, text));
             if (attempt == 0 && !followUp)
