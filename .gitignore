@@ -1,0 +1,17 @@
+# Secrets: never commit keys or passwords
+.env
+!.env.example
+
+# Local machine settings
+local.properties
+
+# Build output and caches (recreated automatically)
+windows/bin/
+windows/obj/
+android/.gradle/
+android/build/
+android/app/build/
+backend/node_modules/
+
+# Logs
+*.log

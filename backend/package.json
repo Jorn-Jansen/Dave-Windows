@@ -1,0 +1,13 @@
+{
+  "name": "dave-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "groq-sdk": "^1.6.0"
+  }
+}

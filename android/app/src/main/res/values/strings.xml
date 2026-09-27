@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Dave</string>
+    <string name="accessibility_description">Lets Dave listen for your steering wheel voice button while other apps, like CarPlay, are on screen. Dave only reacts to the one button you choose; every other button works as normal.</string>
+</resources>

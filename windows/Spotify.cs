@@ -1,0 +1,303 @@
+using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json.Nodes;
+
+namespace DaveWindows;
+
+/// <summary>
+/// Controls Spotify (Premium) through the Web API: on this PC, or wherever it's playing.
+/// Login uses PKCE with a local redirect, so no client secret lives in the app.
+/// </summary>
+public static class Spotify
+{
+    public const string RedirectUri = "http://127.0.0.1:8765/callback";
+    private const string Scopes = "user-modify-playback-state user-read-playback-state user-read-currently-playing " +
+                                  "user-library-modify playlist-read-private playlist-modify-private playlist-modify-public";
+    private const string Accounts = "https://accounts.spotify.com";
+    private const string Api = "https://api.spotify.com/v1";
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
+
+    public class SpotifyException(string message) : Exception(message);
+
+    public record Track(string Name, string Artist, string Uri);
+
+    public static bool IsConnected(Settings s) => s.SpotifyRefresh.Length > 0;
+
+    // --- Login ---
+
+    /// <summary>Opens the Spotify login in the browser and waits for it to come back to 127.0.0.1:8765.</summary>
+    public static async Task LoginAsync(Settings settings)
+    {
+        var verifier = Base64Url(RandomNumberGenerator.GetBytes(48));
+        var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        var url = $"{Accounts}/authorize?response_type=code&client_id={Uri.EscapeDataString(settings.SpotifyClientId)}" +
+                  $"&scope={Uri.EscapeDataString(Scopes)}&redirect_uri={Uri.EscapeDataString(RedirectUri)}" +
+                  $"&code_challenge_method=S256&code_challenge={challenge}";
+
+        var listener = new TcpListener(IPAddress.Loopback, 8765);
+        listener.Start();
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+            using var client = await listener.AcceptTcpClientAsync(timeout.Token);
+            using var stream = client.GetStream();
+            var request = await new StreamReader(stream).ReadLineAsync() ?? ""; // "GET /callback?code=... HTTP/1.1"
+            var query = request.Split(' ').ElementAtOrDefault(1)?.Split('?').ElementAtOrDefault(1) ?? "";
+            var parts = query.Split('&').Select(p => p.Split('=')).Where(p => p.Length == 2)
+                .ToDictionary(p => p[0], p => Uri.UnescapeDataString(p[1]));
+
+            var ok = parts.TryGetValue("code", out var code);
+            var page = ok ? "<h2>Spotify connected ✅</h2><p>You can close this tab and go back to Dave.</p>"
+                          : "<h2>Spotify login cancelled</h2>";
+            var html = Encoding.UTF8.GetBytes($"<html><body style='font-family:sans-serif;text-align:center;margin-top:15%'>{page}</body></html>");
+            var header = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {html.Length}\r\nConnection: close\r\n\r\n");
+            await stream.WriteAsync(header);
+            await stream.WriteAsync(html);
+            if (!ok) throw new SpotifyException("Spotify login cancelled");
+
+            await RequestTokenAsync(settings, new()
+            {
+                ["grant_type"] = "authorization_code",
+                ["code"] = code!,
+                ["redirect_uri"] = RedirectUri,
+                ["client_id"] = settings.SpotifyClientId,
+                ["code_verifier"] = verifier,
+            });
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
+    private static async Task<string> AccessTokenAsync(Settings s)
+    {
+        if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() > s.SpotifyExpiry - 60_000)
+        {
+            await RequestTokenAsync(s, new()
+            {
+                ["grant_type"] = "refresh_token",
+                ["refresh_token"] = s.SpotifyRefresh,
+                ["client_id"] = s.SpotifyClientId,
+            });
+        }
+        return s.SpotifyAccess;
+    }
+
+    private static async Task RequestTokenAsync(Settings s, Dictionary<string, string> form)
+    {
+        using var response = await Http.PostAsync($"{Accounts}/api/token", new FormUrlEncodedContent(form));
+        var text = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            Log.Write($"Spotify token error {(int)response.StatusCode}: {text}");
+            throw new SpotifyException(s.Say("I'm not logged in to Spotify anymore. Connect it again in Dave's settings.",
+                "Ik ben niet meer ingelogd bij Spotify. Koppel het opnieuw in de instellingen van Dave."));
+        }
+        var json = JsonNode.Parse(text)!;
+        s.SpotifyAccess = json["access_token"]!.GetValue<string>();
+        s.SpotifyExpiry = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + (json["expires_in"]?.GetValue<long>() ?? 3600) * 1000;
+        if (json["refresh_token"]?.GetValue<string>() is { Length: > 0 } refresh) s.SpotifyRefresh = refresh;
+        if (json["scope"]?.GetValue<string>() is { Length: > 0 } scope) s.SpotifyScopes = scope;
+        s.Save();
+    }
+
+    // --- Playback ---
+
+    /// <summary>A song plus its album. The Spotify desktop app ignores "play these tracks" (uris) but does play "this album, from this song".</summary>
+    public record Song(string Uri, string AlbumUri);
+
+    /// <summary>Search in the user's country, so we get the original release rather than a cover or a version that won't play.</summary>
+    private static string Market(Settings s)
+    {
+        var c = s.Country.ToLowerInvariant();
+        var code = c.Contains("nether") || c.Contains("nederland") ? "NL" : c.Contains("belg") ? "BE" : c.Contains("german") || c.Contains("duits") ? "DE"
+            : c.Contains("kingdom") || c.Contains("england") ? "GB" : c.Contains("united states") || c == "usa" ? "US" : c.Contains("france") ? "FR" : "";
+        return code.Length > 0 ? $"&market={code}" : "";
+    }
+
+    private static Song? ToSong(JsonNode? track) =>
+        track?["uri"]?.GetValue<string>() is { } uri && track["album"]?["uri"]?.GetValue<string>() is { } album ? new Song(uri, album) : null;
+
+    public static async Task<string> PlayAsync(Settings s, string query, string kind)
+    {
+        var type = kind switch { "artist" => "artist", "album" => "album", "playlist" => "playlist", _ => "track" };
+        var (_, text) = await ApiAsync(s, HttpMethod.Get, $"/search?type={type}&limit=5{Market(s)}&q={Uri.EscapeDataString(query)}");
+        var items = JsonNode.Parse(text)?[$"{type}s"]?["items"]?.AsArray() ?? new JsonArray();
+        var found = items.FirstOrDefault(i => i != null)
+                    ?? throw new SpotifyException(s.Say($"I couldn't find {query} on Spotify.", $"Ik kon {query} niet vinden op Spotify."));
+        if (type == "track" && ToSong(found) is { } song) await PlaySongAsync(s, song, 0);
+        else await PlayerCommandAsync(s, HttpMethod.Put, "/me/player/play", new JsonObject { ["context_uri"] = found["uri"]!.GetValue<string>() });
+        var artist = found["artists"]?[0]?["name"]?.GetValue<string>();
+        return artist != null ? $"{found["name"]} – {artist}" : found["name"]!.GetValue<string>();
+    }
+
+    /// <summary>Play one song from [positionMs], as "its album, starting at this song" (works on the desktop app too).</summary>
+    public static Task PlaySongAsync(Settings s, Song song, int positionMs) =>
+        PlayerCommandAsync(s, HttpMethod.Put, "/me/player/play", new JsonObject
+        {
+            ["context_uri"] = song.AlbumUri,
+            ["offset"] = new JsonObject { ["uri"] = song.Uri },
+            ["position_ms"] = positionMs,
+        });
+
+    public static Task ControlAsync(Settings s, string action) => action switch
+    {
+        "play" => PlayerCommandAsync(s, HttpMethod.Put, "/me/player/play", null),
+        "pause" => PlayerCommandAsync(s, HttpMethod.Put, "/me/player/pause", null),
+        "next" => PlayerCommandAsync(s, HttpMethod.Post, "/me/player/next", null),
+        _ => PlayerCommandAsync(s, HttpMethod.Post, "/me/player/previous", null),
+    };
+
+    public static async Task<Song?> FindTrackAsync(Settings s, string title, string artist)
+    {
+        foreach (var query in new[] { $"track:{title} artist:{artist}", $"{title} {artist}" })
+        {
+            var (_, text) = await ApiAsync(s, HttpMethod.Get, $"/search?type=track&limit=1{Market(s)}&q={Uri.EscapeDataString(query)}");
+            if (ToSong(JsonNode.Parse(text)?["tracks"]?["items"]?[0]) is { } song) return song;
+        }
+        return null;
+    }
+
+    /// <summary>DJ mode: play the first song, queue the rest (the desktop app ignores a list of tracks).</summary>
+    public static async Task PlaySongsAsync(Settings s, IReadOnlyList<Song> songs)
+    {
+        await PlaySongAsync(s, songs[0], 0);
+        foreach (var song in songs.Skip(1))
+        {
+            try { await ApiAsync(s, HttpMethod.Post, $"/me/player/queue?uri={Uri.EscapeDataString(song.Uri)}"); }
+            catch (SpotifyException e) { Log.Write($"Queueing failed: {e.Message}"); }
+        }
+    }
+
+    public static async Task PauseAsync(Settings s)
+    {
+        try { await ControlAsync(s, "pause"); } catch (SpotifyException) { /* already paused */ }
+    }
+
+    // --- What's playing, liking, playlists ---
+
+    private static void RequireScope(Settings s, string scope)
+    {
+        if (!s.SpotifyScopes.Split(' ').Contains(scope))
+            throw new SpotifyException(s.Say("For that, connect Spotify again in Dave's settings.", "Koppel Spotify opnieuw in de instellingen van Dave, dan kan ik dat ook."));
+    }
+
+    public static async Task<Track?> NowPlayingAsync(Settings s)
+    {
+        RequireScope(s, "user-read-currently-playing");
+        var (status, text) = await ApiAsync(s, HttpMethod.Get, "/me/player/currently-playing");
+        if (status == 204 || string.IsNullOrWhiteSpace(text)) return null;
+        var item = JsonNode.Parse(text)?["item"];
+        if (item == null) return null;
+        return new Track(item["name"]!.GetValue<string>(), item["artists"]?[0]?["name"]?.GetValue<string>() ?? "", item["uri"]!.GetValue<string>());
+    }
+
+    private static async Task<Track> CurrentOrThrowAsync(Settings s) =>
+        await NowPlayingAsync(s) ?? throw new SpotifyException(s.Say("Nothing is playing right now.", "Er speelt nu niets."));
+
+    public static async Task<Track> LikeCurrentAsync(Settings s)
+    {
+        RequireScope(s, "user-library-modify");
+        var track = await CurrentOrThrowAsync(s);
+        await ApiAsync(s, HttpMethod.Put, $"/me/library?uris={Uri.EscapeDataString(track.Uri)}");
+        return track;
+    }
+
+    public static async Task<Track> AddCurrentToPlaylistAsync(Settings s, string playlistName)
+    {
+        RequireScope(s, "playlist-modify-private");
+        var track = await CurrentOrThrowAsync(s);
+        var id = await FindPlaylistAsync(s, playlistName) ?? await CreatePlaylistAsync(s, playlistName);
+        await ApiAsync(s, HttpMethod.Post, $"/playlists/{id}/items", new JsonObject { ["uris"] = new JsonArray(track.Uri) });
+        return track;
+    }
+
+    private static async Task<string?> FindPlaylistAsync(Settings s, string name)
+    {
+        string? path = "/me/playlists?limit=50";
+        for (int page = 0; page < 5 && path != null; page++)
+        {
+            var (_, text) = await ApiAsync(s, HttpMethod.Get, path);
+            var json = JsonNode.Parse(text)!;
+            foreach (var playlist in json["items"]?.AsArray() ?? new JsonArray())
+                if (string.Equals(playlist?["name"]?.GetValue<string>(), name, StringComparison.OrdinalIgnoreCase))
+                    return playlist!["id"]!.GetValue<string>();
+            var next = json["next"]?.GetValue<string>();
+            path = next != null && next.StartsWith(Api) ? next[Api.Length..] : null;
+        }
+        return null;
+    }
+
+    private static async Task<string> CreatePlaylistAsync(Settings s, string name)
+    {
+        var (_, text) = await ApiAsync(s, HttpMethod.Post, "/me/playlists",
+            new JsonObject { ["name"] = name, ["public"] = false, ["description"] = "Made by Dave" });
+        return JsonNode.Parse(text)!["id"]!.GetValue<string>();
+    }
+
+    // --- Plumbing ---
+
+    /// <summary>Send a player command; if nothing is active, aim it at this PC (starting Spotify if needed).</summary>
+    private static async Task PlayerCommandAsync(Settings s, HttpMethod method, string path, JsonObject? body)
+    {
+        var (status, _) = await ApiAsync(s, method, path, body, allowNotFound: true);
+        if (status != 404) return;
+
+        var device = await PickDeviceAsync(s);
+        if (device == null)
+        {
+            Process.Start(new ProcessStartInfo("spotify:") { UseShellExecute = true }); // open the Spotify app
+            for (int i = 0; i < 8 && device == null; i++)
+            {
+                await Task.Delay(1500);
+                device = await PickDeviceAsync(s);
+            }
+        }
+        if (device == null)
+            throw new SpotifyException(s.Say("Spotify isn't open anywhere. Open the Spotify app once.", "Spotify staat nergens open. Open de Spotify-app één keer."));
+        var separator = path.Contains('?') ? '&' : '?';
+        await ApiAsync(s, method, $"{path}{separator}device_id={device}", body);
+    }
+
+    private static async Task<string?> PickDeviceAsync(Settings s)
+    {
+        var (_, text) = await ApiAsync(s, HttpMethod.Get, "/me/player/devices");
+        var devices = JsonNode.Parse(text)?["devices"]?.AsArray().Where(d => d != null).ToList() ?? new();
+        var chosen = devices.FirstOrDefault(d => d!["is_active"]?.GetValue<bool>() == true)
+                     ?? devices.FirstOrDefault(d => d!["type"]?.GetValue<string>() == "Computer")
+                     ?? devices.FirstOrDefault();
+        return chosen?["id"]?.GetValue<string>();
+    }
+
+    private static async Task<(int status, string text)> ApiAsync(Settings s, HttpMethod method, string path, JsonObject? body = null, bool allowNotFound = false)
+    {
+        using var request = new HttpRequestMessage(method, Api + path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await AccessTokenAsync(s));
+        if (body != null || method == HttpMethod.Put || method == HttpMethod.Post)
+            request.Content = new StringContent(body?.ToJsonString() ?? "", Encoding.UTF8, "application/json");
+
+        using var response = await Http.SendAsync(request);
+        var status = (int)response.StatusCode;
+        var text = await response.Content.ReadAsStringAsync();
+        if (status is >= 200 and < 300 || (allowNotFound && status == 404)) return (status, text);
+
+        Log.Write($"Spotify {method} {path} -> {status}: {text}");
+        throw new SpotifyException(status switch
+        {
+            401 => s.Say("I'm not logged in to Spotify anymore. Connect it again in Dave's settings.", "Ik ben niet meer ingelogd bij Spotify. Koppel het opnieuw in de instellingen van Dave."),
+            403 when text.Contains("PREMIUM_REQUIRED") => s.Say("This needs Spotify Premium.", "Hiervoor is Spotify Premium nodig."),
+            403 => s.Say("Spotify couldn't do that right now. Start some music first.", "Spotify kon dat nu niet doen. Zet eerst wat muziek aan."),
+            404 => s.Say("Spotify isn't open anywhere. Open the Spotify app once.", "Spotify staat nergens open. Open de Spotify-app één keer."),
+            429 => s.Say("Spotify is busy. Try again in a moment.", "Spotify heeft het druk. Probeer het zo nog eens."),
+            _ => s.Say($"Spotify had a problem, error {status}.", $"Spotify had een probleem, foutcode {status}."),
+        });
+    }
+
+    private static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+}
