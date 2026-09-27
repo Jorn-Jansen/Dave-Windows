@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- The Windows 10 target gives access to the built-in voices (Frank for Dutch) and location -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- For UI Automation (reading buttons and fields in other apps) -->
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Dave</AssemblyName>
+    <RootNamespace>DaveWindows</RootNamespace>
+    <ApplicationIcon />
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Microphone, playback and Windows volume -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Offline speech recognition for the "Hé Dave" wake word -->
+    <PackageReference Include="Vosk" Version="0.3.38" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same small English model the car version uses for "Hé Dave" -->
+    <Content Include="model-en-us\**" CopyToOutputDirectory="PreserveNewest" LinkBase="model-en-us" />
+  </ItemGroup>
+
+</Project>
