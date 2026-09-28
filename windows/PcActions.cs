@@ -143,6 +143,69 @@ public static class PcActions
 
     public static void LockPc() => LockWorkStation();
 
+    // --- Closing programs, without bringing them to the front ---
+
+    /// <summary>Never closed by "close everything": Windows itself, the audio setup, and Dave.</summary>
+    private static readonly string[] Protected =
+    {
+        "dave", "explorer", "shellexperiencehost", "startmenuexperiencehost", "searchhost", "textinputhost", "lockapp",
+        "widgets", "systemsettingsbroker", "voicemeeter", "voicemeeterpro", "voicemeeter8", "steelseriesgg", "steelseriesggclient",
+        "steelseriesengine", "steelseriessonar",
+    };
+
+    /// <summary>Close every window of the program(s) matching [name]. Returns the names of what was closed.</summary>
+    public static List<string> CloseApp(string name)
+    {
+        var wanted = Normalize(name);
+        if (wanted.Length == 0) return new List<string>();
+        return CloseWindows(w => Matches(w, wanted));
+    }
+
+    /// <summary>Close all open programs except those matching one of [keep] (comma-separated names).</summary>
+    public static List<string> CloseAllExcept(string keep)
+    {
+        var keepers = keep.Split(',', ';').Select(Normalize).Where(k => k.Length > 0).ToList();
+        return CloseWindows(w => !Protected.Contains(w.process.ToLowerInvariant()) && !keepers.Any(k => Matches(w, k)));
+    }
+
+    private static bool Matches((IntPtr handle, string title, string process) window, string wanted)
+    {
+        var process = Normalize(window.process);
+        var title = Normalize(window.title);
+        var product = Normalize(ProductName(window.handle));
+        return process.Contains(wanted) || title.Contains(wanted) || (product.Length > 0 && product.Contains(wanted))
+               || (wanted.Length > 3 && process.Length > 3 && wanted.Contains(process));
+    }
+
+    /// <summary>The program's own name, e.g. "Microsoft Word" for WINWORD.EXE, so spoken names match.</summary>
+    private static string ProductName(IntPtr window)
+    {
+        try
+        {
+            GetWindowThreadProcessId(window, out var pid);
+            var module = Process.GetProcessById((int)pid).MainModule;
+            return module?.FileVersionInfo.FileDescription ?? module?.FileVersionInfo.ProductName ?? "";
+        }
+        catch { return ""; } // e.g. programs running as administrator
+    }
+
+    private static List<string> CloseWindows(Func<(IntPtr handle, string title, string process), bool> shouldClose)
+    {
+        var closed = new List<string>();
+        foreach (var window in WindowList.List().Where(shouldClose))
+        {
+            PostMessage(window.handle, 0x0010 /* WM_CLOSE: same as clicking the X */, IntPtr.Zero, IntPtr.Zero);
+            // Store apps all run inside "ApplicationFrameHost"; their window title is the readable name.
+            var label = window.process.Equals("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase) ? window.title : window.process;
+            if (!closed.Contains(label)) closed.Add(label);
+        }
+        Log.Write($"Closed: {string.Join(", ", closed)}");
+        return closed;
+    }
+
+    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+
     [DllImport("user32.dll")]
     private static extern bool LockWorkStation();
 }

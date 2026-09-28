@@ -34,6 +34,8 @@ public static class Commands
                 "open_app" => OpenApp(s, Str(args, "name")),
                 "open_website" => OpenWebsite(s, args),
                 "lock_pc" => LockPc(),
+                "close_app" => CloseApp(s, Str(args, "name")),
+                "close_all_apps" => CloseAll(s, Str(args, "keep")),
                 _ => new Outcome(s.Say("I can't do that yet.", "Dat kan ik nog niet."), true),
             };
         }
@@ -178,6 +180,22 @@ public static class Commands
         var browser = Str(args, "browser");
         if (browser.Length == 0) browser = s.Browser; // Dave's default browser from the settings
         return new Outcome("🌐 " + PcActions.OpenWebsite(Str(args, "url"), Str(args, "search"), browser));
+    }
+
+    private static Outcome CloseApp(Settings s, string name)
+    {
+        var closed = PcActions.CloseApp(name);
+        return closed.Count > 0
+            ? new Outcome("✖ " + string.Join(", ", closed))
+            : new Outcome(s.Say($"I couldn't find {name} open.", $"Ik zie {name} niet openstaan."), true);
+    }
+
+    private static Outcome CloseAll(Settings s, string keep)
+    {
+        var closed = PcActions.CloseAllExcept(keep);
+        return closed.Count > 0
+            ? new Outcome("✖ " + string.Join(", ", closed))
+            : new Outcome(s.Say("There was nothing to close.", "Er was niets om te sluiten."), true);
     }
 
     private static Outcome LockPc()
