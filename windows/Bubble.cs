@@ -301,27 +301,98 @@ public class Glow : LayeredWindow
             g.FillPath(blob, blobPath);
         }
 
-        // The glowing edge itself: layered strokes, wide and faint to thin and bright, with colours rotating around.
-        float breathe = 0.85f + 0.15f * MathF.Sin(t * 1.4f) + level * 0.7f;
-        var layers = new[] { (95f, 26), (38f, 70), (8f, 190) };
-        foreach (var (width, alpha) in layers)
+        // The glowing edge itself: soft wave bands that undulate along the edges like liquid, each at its own pace.
+        // Wide and faint on the inside, thin and bright near the edge; they get bigger while you talk.
+        float breathe = 0.9f + 0.1f * MathF.Sin(t * 1.3f);
+        foreach (var band in Bands)
         {
-            using var brush = new LinearGradientBrush(rect, Color.Black, Color.Black, (t * 35) % 360f);
+            float depth = band.Depth * breathe * (1 + level * 0.6f);
+            float swell = band.Swell * (1 + level * 1.3f);
+            using var ring = WaveRing(rect, depth, swell, band, t);
+            using var brush = new LinearGradientBrush(rect, Color.Black, Color.Black, (t * 30 + band.ColourShift) % 360f);
             brush.InterpolationColors = new ColorBlend
             {
                 Colors = new[]
                 {
-                    Palette.WithAlpha(Palette.Purple, alpha), Palette.WithAlpha(Palette.Cyan, alpha), Palette.WithAlpha(Palette.Pink, alpha),
-                    Palette.WithAlpha(Palette.Cyan, alpha), Palette.WithAlpha(Palette.Purple, alpha),
+                    Palette.WithAlpha(Palette.Purple, band.Alpha), Palette.WithAlpha(Palette.Cyan, band.Alpha), Palette.WithAlpha(Palette.Pink, band.Alpha),
+                    Palette.WithAlpha(Palette.Cyan, band.Alpha), Palette.WithAlpha(Palette.Purple, band.Alpha),
                 },
                 Positions = new[] { 0f, 0.25f, 0.5f, 0.75f, 1f },
             };
-            using var pen = new Pen(brush, width * breathe * 2); // centred on the screen edge, so half of it shows
-            g.DrawRectangle(pen, rect);
+            g.FillPath(brush, ring);
         }
 
         Present(surface, bounds.Location, (byte)(Math.Clamp(opacity, 0, 1) * 255));
         if (targetOpacity == 0 && opacity < 0.02f) Hide();
+    }
+
+    /// <summary>One wave band: how deep it reaches in, how much its inner edge swells, and the waves that move it.</summary>
+    private record Band(float Depth, float Swell, int Alpha, float ColourShift, (float count, float speed, float weight)[] Waves);
+
+    private static readonly Band[] Bands =
+    {
+        new(118, 46, 14, 0,   new[] { (3f, 0.55f, 0.55f), (5f, -0.8f, 0.3f), (8f, 1.2f, 0.15f) }),
+        new(78,  32, 30, 40,  new[] { (4f, -0.75f, 0.5f), (7f, 1.05f, 0.32f), (11f, -1.5f, 0.18f) }),
+        new(50,  20, 66, 80,  new[] { (5f, 0.95f, 0.5f), (9f, -1.35f, 0.3f), (14f, 1.8f, 0.2f) }),
+        new(20,  8, 150, 120, new[] { (6f, -1.15f, 0.5f), (12f, 1.6f, 0.3f), (18f, -2.2f, 0.2f) }),
+    };
+
+    /// <summary>
+    /// The area between the screen edge and a wavy, rounded inner edge [depth] px in, whose distance
+    /// breathes by up to [swell] px following the band's waves (which travel around the screen over time).
+    /// </summary>
+    private static GraphicsPath WaveRing(Rectangle screen, float depth, float swell, Band band, float t)
+    {
+        const int Points = 150;
+        float radius = depth * 1.2f + 40;
+        var inner = RectangleF.Inflate(screen, -depth, -depth);
+        var curve = new PointF[Points];
+        for (int i = 0; i < Points; i++)
+        {
+            float u = i / (float)Points;
+            var (p, n) = RoundedPoint(inner, radius, u);
+            float wave = 0;
+            foreach (var (count, speed, weight) in band.Waves)
+                wave += weight * MathF.Sin(MathF.Tau * count * u + t * speed * 2.2f + count);
+            // wave is about -1..1: positive pulls the edge further in, negative lets it recede towards the border
+            curve[i] = new PointF(p.X + n.X * wave * swell, p.Y + n.Y * wave * swell);
+        }
+        var path = new GraphicsPath(FillMode.Alternate);
+        path.AddRectangle(RectangleF.Inflate(screen, 2, 2));
+        path.AddClosedCurve(curve, 0.5f);
+        return path;
+    }
+
+    /// <summary>A point on a rounded rectangle, [u] going once around (0..1), with its inward normal.</summary>
+    private static (PointF point, PointF normal) RoundedPoint(RectangleF r, float radius, float u)
+    {
+        radius = Math.Min(radius, Math.Min(r.Width, r.Height) / 2);
+        float straightX = r.Width - 2 * radius, straightY = r.Height - 2 * radius, arc = MathF.PI * radius / 2;
+        float total = 2 * straightX + 2 * straightY + 4 * arc;
+        float d = (u - MathF.Floor(u)) * total;
+
+        (PointF, PointF) Corner(float cx, float cy, float startAngle, float along)
+        {
+            float a = startAngle + along / radius;
+            var dir = new PointF(MathF.Cos(a), MathF.Sin(a));
+            return (new PointF(cx + dir.X * radius, cy + dir.Y * radius), new PointF(-dir.X, -dir.Y));
+        }
+
+        if (d < straightX) return (new PointF(r.Left + radius + d, r.Top), new PointF(0, 1));                    // top
+        d -= straightX;
+        if (d < arc) return Corner(r.Right - radius, r.Top + radius, -MathF.PI / 2, d);                           // top-right
+        d -= arc;
+        if (d < straightY) return (new PointF(r.Right, r.Top + radius + d), new PointF(-1, 0));                   // right
+        d -= straightY;
+        if (d < arc) return Corner(r.Right - radius, r.Bottom - radius, 0, d);                                    // bottom-right
+        d -= arc;
+        if (d < straightX) return (new PointF(r.Right - radius - d, r.Bottom), new PointF(0, -1));                // bottom
+        d -= straightX;
+        if (d < arc) return Corner(r.Left + radius, r.Bottom - radius, MathF.PI / 2, d);                          // bottom-left
+        d -= arc;
+        if (d < straightY) return (new PointF(r.Left, r.Bottom - radius - d), new PointF(1, 0));                  // left
+        d -= straightY;
+        return Corner(r.Left + radius, r.Top + radius, MathF.PI, d);                                              // top-left
     }
 
     /// <summary>A point on the screen's edge, [u] going once around (0..1), a little inside the edge.</summary>
