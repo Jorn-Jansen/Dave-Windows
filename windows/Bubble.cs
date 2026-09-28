@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Drawing.Text;
@@ -39,7 +40,6 @@ public class Bubble : LayeredWindow
     private SizeF size = new(CircleSize, CircleSize), targetSize = new(CircleSize, CircleSize);
     private float contentAlpha;   // text / microphone fade-in, 0..1
     private float opacity, targetOpacity;
-    private int frame;
 
     public event Action? Clicked;
 
@@ -116,7 +116,6 @@ public class Bubble : LayeredWindow
 
     private void Tick()
     {
-        frame++;
         float t = (float)(DateTime.Now - started).TotalSeconds;
 
         // Ease the shape towards its target (circle <-> pill), then fade the content in.
@@ -130,12 +129,11 @@ public class Bubble : LayeredWindow
             opacity = 0;
             frameTimer.Stop();
             Hide();
-            glow.Hide();
             return;
         }
 
         Render(t);
-        if (frame % 3 == 0) glow.Render(t, listening ? Recorder.Level : 0); // the big glow at ~20 fps is plenty
+        glow.Level = listening ? Recorder.Level : 0; // the glow draws itself on its own thread
     }
 
     private void Render(float t)
@@ -253,37 +251,99 @@ public class Bubble : LayeredWindow
     }
 }
 
-/// <summary>The soft purple/cyan glow along the edges of the main monitor. Click-through: it never blocks the mouse.</summary>
+/// <summary>
+/// The soft purple/cyan glow along the edges of the main monitor. Click-through: it never blocks the mouse.
+/// Drawn on its own thread in step with the screen's refresh (at least 60 fps), so it never slows down the bubble or Dave himself.
+/// </summary>
 public class Glow : LayeredWindow
 {
-    private Surface? surface;
-    private float opacity, targetOpacity;
+    private const int Detail = 2;          // drawn at half resolution and scaled up: it's soft anyway, and it's 4x less work
+    private const double TargetFps = 60;
+    private static readonly Stopwatch Clock = Stopwatch.StartNew();
+
+    private readonly object sync = new();
+    private Thread? renderer;
+    private IntPtr handle;
+    private volatile bool disposed;
+    private volatile float targetOpacity;
+    private float opacity; // only used by the render thread
+    private uint[] stretched = Array.Empty<uint>(); // scratch space for ScaleUp, kept between frames
+
+    /// <summary>How loud you're talking (0..1): the glow gets stronger with your voice.</summary>
+    public volatile float Level;
+
 
     public Glow() : base(clickThrough: true) { }
 
     public void FadeIn()
     {
-        targetOpacity = 1;
         if (!Visible) Show();
+        handle = Handle;
+        lock (sync)
+        {
+            targetOpacity = 1;
+            if (renderer != null) return;
+            renderer = new Thread(RenderLoop) { IsBackground = true, Name = "Glow", Priority = ThreadPriority.AboveNormal };
+            renderer.Start();
+        }
     }
 
     public void FadeOut() => targetOpacity = 0;
 
-    /// <summary>Draw one frame. [level] is how loud you're talking (0..1): the glow gets stronger with your voice.</summary>
-    public void Render(float t, float level)
+    private void RenderLoop()
     {
-        opacity += (targetOpacity - opacity) * 0.25f;
-        if (!Visible) return;
-        var bounds = Screen.PrimaryScreen!.Bounds;
-        if (surface == null || surface.Width != bounds.Width || surface.Height != bounds.Height)
+        Surface? small = null, full = null;
+        bool failed = false;
+        try
         {
-            surface?.Dispose();
-            surface = new Surface(bounds.Width, bounds.Height);
+            int vsyncs = VsyncsPerFrame();
+            double last = Clock.Elapsed.TotalSeconds;
+            while (!disposed)
+            {
+                double now = Clock.Elapsed.TotalSeconds;
+                float dt = (float)Math.Min(0.1, now - last);
+                last = now;
+                opacity += (targetOpacity - opacity) * (1 - MathF.Exp(-6 * dt));
+                lock (sync)
+                {
+                    if (targetOpacity == 0 && opacity < 0.02f) { opacity = 0; renderer = null; break; }
+                }
+
+                var bounds = Screen.PrimaryScreen!.Bounds;
+                if (full == null || small == null || full.Width != bounds.Width || full.Height != bounds.Height)
+                {
+                    small?.Dispose();
+                    full?.Dispose();
+                    full = new Surface(bounds.Width, bounds.Height);
+                    small = new Surface((bounds.Width + Detail - 1) / Detail, (bounds.Height + Detail - 1) / Detail);
+                    small.Graphics.ScaleTransform(1f / Detail, 1f / Detail);
+                }
+                Draw(small.Graphics, new Rectangle(0, 0, bounds.Width, bounds.Height), (float)now, Level);
+                ScaleUp(small, full);
+                Present(handle, full, bounds.Location, (byte)(Math.Clamp(opacity, 0, 1) * 255));
+                WaitForScreen(vsyncs);
+            }
         }
-        var g = surface.Graphics;
+        catch (Exception e)
+        {
+            Log.Write($"Glow stopped: {e.Message}");
+            failed = true;
+            lock (sync) renderer = null;
+        }
+        finally
+        {
+            small?.Dispose();
+            full?.Dispose();
+        }
+        // Hide it on the UI thread, unless it was faded in again in the meantime.
+        try { BeginInvoke(() => { if (failed || targetOpacity == 0) Hide(); }); } catch { } // already gone while shutting down
+    }
+
+    /// <summary>One frame, in full-screen coordinates. [level] is how loud you're talking (0..1).</summary>
+    private static void Draw(Graphics g, Rectangle rect, float t, float level)
+    {
         g.Clear(Color.Transparent);
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        var rect = new Rectangle(0, 0, bounds.Width, bounds.Height);
 
         // Soft blobs that drift around the edges, so the colours sway instead of sitting still.
         var blobs = new[] { (Palette.Purple, 0.00f, 0.031f), (Palette.Cyan, 0.36f, -0.024f), (Palette.Pink, 0.70f, 0.019f) };
@@ -321,10 +381,77 @@ public class Glow : LayeredWindow
             };
             g.FillPath(brush, ring);
         }
-
-        Present(surface, bounds.Location, (byte)(Math.Clamp(opacity, 0, 1) * 255));
-        if (targetOpacity == 0 && opacity < 0.02f) Hide();
     }
+
+    /// <summary>
+    /// Smooth 2x scale-up (bilinear) from [small] into [full], spread over all CPU cores. Much faster than GDI+,
+    /// which takes longer than a whole frame for this. Each new pixel is 3/4 its own source pixel and 1/4 its neighbour.
+    /// </summary>
+    private unsafe void ScaleUp(Surface small, Surface full)
+    {
+        int sw = small.Width, sh = small.Height, fw = full.Width, fh = full.Height;
+        if (stretched.Length != fw * sh) stretched = new uint[fw * sh];
+        var wide = stretched; // the small rows, already stretched to full width
+        uint* src = (uint*)small.Bits, dst = (uint*)full.Bits;
+
+        Parallel.For(0, sh, y =>
+        {
+            uint* row = src + y * sw;
+            fixed (uint* w = &wide[y * fw])
+                for (int x = 0; x < fw; x++)
+                {
+                    int i = x >> 1, n = Math.Clamp((x & 1) == 0 ? i - 1 : i + 1, 0, sw - 1);
+                    w[x] = Mix(row[i], row[n]);
+                }
+        });
+        Parallel.For(0, fh, y =>
+        {
+            int j = Math.Min(y >> 1, sh - 1), n = Math.Clamp((y & 1) == 0 ? j - 1 : j + 1, 0, sh - 1);
+            uint* output = dst + y * fw;
+            fixed (uint* a = &wide[j * fw], b = &wide[n * fw])
+                for (int x = 0; x < fw; x++) output[x] = Mix(a[x], b[x]);
+        });
+    }
+
+    /// <summary>3/4 of [a] plus 1/4 of [b], for all four colour channels at once.</summary>
+    private static uint Mix(uint a, uint b)
+    {
+        if ((a | b) == 0) return 0; // most of the screen: fully transparent
+        uint low = ((a & 0x00FF00FF) * 3 + (b & 0x00FF00FF)) >> 2 & 0x00FF00FF;
+        uint high = (((a >> 8) & 0x00FF00FF) * 3 + ((b >> 8) & 0x00FF00FF)) >> 2 & 0x00FF00FF;
+        return low | high << 8;
+    }
+
+    /// <summary>
+    /// How many screen refreshes to wait per frame for about 60 fps: 1 on a 60 Hz screen, 2 on 120-165 Hz, 4 on 240 Hz.
+    /// 0 when the screen's timing isn't available.
+    /// </summary>
+    private static int VsyncsPerFrame()
+    {
+        var intervals = new List<double>();
+        var watch = Stopwatch.StartNew();
+        for (int i = 0; i < 9; i++)
+        {
+            if (DwmFlush() != 0) return 0;
+            if (i > 0) intervals.Add(watch.Elapsed.TotalMilliseconds);
+            watch.Restart();
+        }
+        intervals.Sort();
+        double refreshMs = intervals[intervals.Count / 2]; // the middle one: ignores the odd early or late return
+        if (refreshMs < 2) return 0; // didn't actually wait for the screen
+        // The most refreshes that still give at least ~55 fps; same number every frame, so the motion stays even.
+        return Math.Clamp((int)(1000 / (TargetFps - 5) / refreshMs), 1, 8);
+    }
+
+    private static void WaitForScreen(int vsyncs)
+    {
+        if (vsyncs == 0) { Thread.Sleep(15); return; }
+        for (int i = 0; i < vsyncs; i++)
+            if (DwmFlush() != 0) { Thread.Sleep(15); return; }
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
 
     /// <summary>One wave band: how deep it reaches in, how much its inner edge swells, and the waves that move it.</summary>
     private record Band(float Depth, float Swell, int Alpha, float ColourShift, (float count, float speed, float weight)[] Waves);
@@ -411,7 +538,7 @@ public class Glow : LayeredWindow
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) surface?.Dispose();
+        disposed = true; // the render thread cleans up after itself
         base.Dispose(disposing);
     }
 }
@@ -443,13 +570,16 @@ public class LayeredWindow : Form
         }
     }
 
-    protected void Present(Surface surface, Point location, byte opacity)
+    protected void Present(Surface surface, Point location, byte opacity) => Present(Handle, surface, location, opacity);
+
+    /// <summary>Show [surface] in the window [hwnd]; unlike most window calls, this is fine from any thread.</summary>
+    protected static void Present(IntPtr hwnd, Surface surface, Point location, byte opacity)
     {
         var position = new NativePoint { X = location.X, Y = location.Y };
         var size = new NativeSize { Width = surface.Width, Height = surface.Height };
         var source = new NativePoint();
         var blend = new BlendFunction { BlendOp = 0, BlendFlags = 0, SourceConstantAlpha = opacity, AlphaFormat = 1 /* per-pixel alpha */ };
-        UpdateLayeredWindow(Handle, IntPtr.Zero, ref position, ref size, surface.DeviceContext, ref source, 0, ref blend, 2 /* ULW_ALPHA */);
+        UpdateLayeredWindow(hwnd, IntPtr.Zero, ref position, ref size, surface.DeviceContext, ref source, 0, ref blend, 2 /* ULW_ALPHA */);
     }
 
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
@@ -468,6 +598,8 @@ public sealed class Surface : IDisposable
     public int Height { get; }
     public IntPtr DeviceContext { get; }
     public Graphics Graphics { get; }
+    /// <summary>The pixels themselves (premultiplied BGRA, top row first), for fast direct access.</summary>
+    public IntPtr Bits { get; }
     private readonly Bitmap bitmap;
     private readonly IntPtr dib, previous;
 
@@ -478,6 +610,7 @@ public sealed class Surface : IDisposable
         var info = new BitmapInfo { Size = 40, Width = Width, Height = -Height /* top-down */, Planes = 1, BitCount = 32 };
         DeviceContext = CreateCompatibleDC(IntPtr.Zero);
         dib = CreateDIBSection(DeviceContext, ref info, 0, out var bits, IntPtr.Zero, 0);
+        Bits = bits;
         previous = SelectObject(DeviceContext, dib);
         bitmap = new Bitmap(Width, Height, Width * 4, PixelFormat.Format32bppPArgb, bits);
         Graphics = Graphics.FromImage(bitmap);
