@@ -34,6 +34,7 @@ public static class Commands
                 "open_app" => OpenApp(s, Str(args, "name")),
                 "open_website" => OpenWebsite(s, args),
                 "lock_pc" => LockPc(),
+                "find_file" => await FindFileAsync(s, args),
                 "close_app" => CloseApp(s, Str(args, "name")),
                 "close_all_apps" => CloseAll(s, Str(args, "keep")),
                 _ => new Outcome(s.Say("I can't do that yet.", "Dat kan ik nog niet."), true),
@@ -180,6 +181,37 @@ public static class Commands
         var browser = Str(args, "browser");
         if (browser.Length == 0) browser = s.Browser; // Dave's default browser from the settings
         return new Outcome("🌐 " + PcActions.OpenWebsite(Str(args, "url"), Str(args, "search"), browser));
+    }
+
+    private static async Task<Outcome> FindFileAsync(Settings s, JsonObject args)
+    {
+        var query = Str(args, "query");
+        var kind = Str(args, "kind") is { Length: > 0 } k ? k : "any";
+        var newest = args["newest"] is JsonValue v && v.TryGetValue<bool>(out var n) && n;
+        var action = Str(args, "action") is { Length: > 0 } a ? a : "open";
+
+        var found = await FileFinder.FindAsync(query, kind, newest);
+        if (found.Count == 0)
+        {
+            var what = query.Length > 0 ? query : s.Say("that", "dat");
+            return new Outcome(s.Say($"I couldn't find {what} on this PC.", $"Ik kon {what} niet vinden op deze pc."), true);
+        }
+        var best = found[0];
+        var name = Path.GetFileName(best.Path);
+        var where = FileFinder.Where(best.Path);
+        var more = found.Count > 1 ? s.Say($" There are {found.Count - 1} more like it.", $" Er zijn er nog {found.Count - 1} die erop lijken.") : "";
+        Log.Write($"Found {best.Path} ({found.Count} matches)");
+        switch (action)
+        {
+            case "show_in_folder":
+                FileFinder.ShowInFolder(best.Path);
+                return new Outcome("📁 " + name);
+            case "tell":
+                return new Outcome(s.Say($"{name} is in {where}.{more}", $"{name} staat in {where}.{more}"), true);
+            default:
+                FileFinder.Open(best.Path);
+                return new Outcome("📄 " + name);
+        }
     }
 
     private static Outcome CloseApp(Settings s, string name)
