@@ -74,7 +74,7 @@ public static class Groq
         form.Add(new StringContent("whisper-large-v3-turbo"), "model");
         form.Add(new StringContent("verbose_json"), "response_format");
         // A hint helps Whisper spell Dave's name and common commands right.
-        form.Add(new StringContent("Hé Dave, zet de muziek harder. Hey Dave, play the next song."), "prompt");
+        form.Add(new StringContent($"Hé {settings.Name}, zet de muziek harder. Hey {settings.Name}, play the next song."), "prompt");
 
         var (status, text) = await PostAsync(settings, "/audio/transcriptions", form);
         if (status is < 200 or >= 300) throw Failure(settings, status, text);

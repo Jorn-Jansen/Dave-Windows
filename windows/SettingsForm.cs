@@ -7,6 +7,8 @@ public class SettingsForm : Form
     private readonly Action<string>? askTyped;
     private readonly TextBox groqKey = new() { UseSystemPasswordChar = true, Width = 420 };
     private readonly TextBox country = new() { Width = 420 };
+    private readonly TextBox assistantName = new() { Width = 200, PlaceholderText = "Dave" };
+    private readonly TextBox wakePhrase = new() { Width = 300 };
     private readonly TextBox language = new() { Width = 120 };
     private readonly TextBox secondLanguage = new() { Width = 120 };
     private readonly ComboBox voice = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
@@ -56,6 +58,11 @@ public class SettingsForm : Form
 
         groqKey.Text = settings.GroqKey;
         country.Text = settings.Country;
+        assistantName.Text = settings.AssistantName;
+        wakePhrase.Text = settings.WakePhrase;
+        void UpdateWakeHint() => wakePhrase.PlaceholderText = $"hey {(assistantName.Text.Trim().Length > 0 ? assistantName.Text.Trim() : "Dave")}";
+        UpdateWakeHint();
+        assistantName.TextChanged += (_, _) => UpdateWakeHint();
         language.Text = settings.Language;
         secondLanguage.Text = settings.SecondLanguage;
         hotkeyBox.Text = settings.Hotkey;
@@ -96,6 +103,8 @@ public class SettingsForm : Form
 
         Row("Groq API key (free, console.groq.com/keys)", groqKey);
         Row("Country (units, currency)", country);
+        Row("Name (empty = Dave)", assistantName);
+        Row("Wake phrase (empty = hey + name)", Flow(wakePhrase, new Label { Text = "e.g. hey jarvis, whats up dave, yo computer", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(6, 8, 0, 0) }));
         Row("Main language", Flow(language, new Label { Text = "e.g. nl-NL", AutoSize = true, Margin = new Padding(6, 8, 0, 0) }));
         Row("Voice engine", Flow(engineWindows, engineAzure));
         Row("Main-language voice (Windows)", Flow(voice, preview));
@@ -121,7 +130,7 @@ public class SettingsForm : Form
 
         var save = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true };
         var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
-        save.Click += (_, _) => { Collect(); settings.Save(); };
+        save.Click += (_, _) => { Collect(); settings.Save(); WarnAboutWakePhrase(); };
         Row("", Flow(save, cancel));
         AcceptButton = save;
         CancelButton = cancel;
@@ -146,6 +155,8 @@ public class SettingsForm : Form
     private void Collect()
     {
         settings.GroqKey = groqKey.Text.Trim();
+        settings.AssistantName = assistantName.Text.Trim();
+        settings.WakePhrase = wakePhrase.Text.Trim();
         settings.Country = country.Text.Trim().Length > 0 ? country.Text.Trim() : "the Netherlands";
         settings.Language = language.Text.Trim().Length > 0 ? language.Text.Trim() : "nl-NL";
         settings.SecondLanguage = secondLanguage.Text.Trim();
@@ -166,6 +177,21 @@ public class SettingsForm : Form
             settings.SpotifyClientId = spotifyId.Text.Trim();
             settings.SpotifyRefresh = ""; // different app: log in again
         }
+    }
+
+    /// <summary>The offline listener only knows English words; say so instead of silently never waking up.</summary>
+    private void WarnAboutWakePhrase()
+    {
+        List<string> unknown;
+        try { unknown = WakeWord.UnknownWords(settings.EffectiveWakePhrase); }
+        catch { return; } // model not available: nothing to check against
+        if (unknown.Count == 0) return;
+        var fallback = WakeWord.UnknownWords($"hey {settings.Name}").Count == 0 ? $"hey {settings.Name}" : "hey dave";
+        MessageBox.Show(
+            $"The wake-word listener doesn't know: {string.Join(", ", unknown)}\n\n" +
+            $"It works offline with a fixed English vocabulary. Until you pick words it knows, it listens for \"{fallback}\".\n\n" +
+            "Tip: write it the way it sounds in English, or pick another word (names like Jarvis, Friday, Alexa and Kyle work).",
+            "Wake phrase", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private static string ShortName(object? item) => item switch
