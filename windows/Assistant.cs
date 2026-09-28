@@ -15,7 +15,7 @@ public static class Assistant
         - Use plain speech only: no markdown, lists, emojis, links, or symbols that sound strange read aloud.
         - Say numbers, times, and units the way a person would say them out loud.
         If you can search the web, use it for anything current, like news, weather, traffic, opening hours, scores, or prices.
-        When the user asks to control the music or volume, open or close a program or website, lock the PC, wants a music quiz, a mix,
+        When the user asks to control the music or volume, open or close a program or website, find a file, lock the PC, wants a music quiz, a mix,
         a reminder or timer, asks what song is playing, asks about something on their screen, or tells you something to remember ("onthoud dat…", "remember that…"),
         use the matching command instead of answering.
         Use what you remember about the user naturally when it's relevant.
@@ -102,6 +102,15 @@ public static class Assistant
                 ["browser"] = Str("Browser the user named, e.g. 'Brave', 'Chrome', 'Edge', 'Firefox'; leave empty if they didn't name one"),
             }),
         Tool("lock_pc", "Lock the PC (Windows lock screen)."),
+        Tool("find_file", "Find a file or folder on the PC by (part of) its name and/or type, then open it, show it in its folder, or just say where it is. " +
+            "E.g. 'find Dave.js', 'open my latest screenshot', 'where is my Roblox place file', 'show my newest video'.",
+            new JsonObject
+            {
+                ["query"] = Str("Words from the file name (without 'file'/'bestand'); empty if only the type matters, e.g. 'latest screenshot' -> 'Screenshot'"),
+                ["kind"] = Enum("any", "image", "video", "audio", "document", "code", "folder"),
+                ["newest"] = new JsonObject { ["type"] = "boolean", ["description"] = "true for 'latest', 'newest', 'most recent'" },
+                ["action"] = Enum("open", "show_in_folder", "tell"),
+            }, "query", "kind", "action"),
         Tool("close_app", "Close a program (all its windows) in the background, e.g. 'Chrome', 'Discord', 'Word'. Unsaved work still asks to save.",
             new JsonObject { ["name"] = Str("Name of the program to close") }, "name"),
         Tool("close_all_apps", "Close all open programs, except the ones the user wants to keep.",

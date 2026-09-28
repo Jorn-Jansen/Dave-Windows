@@ -23,6 +23,8 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
     <!-- Offline speech recognition for the "Hé Dave" wake word -->
     <PackageReference Include="Vosk" Version="0.3.38" />
+    <!-- Windows Search index, for finding files fast -->
+    <PackageReference Include="System.Data.OleDb" Version="8.0.1" />
   </ItemGroup>
 
   <ItemGroup>
