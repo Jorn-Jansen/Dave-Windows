@@ -16,7 +16,7 @@ public static class Assistant
         - Say numbers, times, and units the way a person would say them out loud.
         If you can search the web, use it for anything current, like news, weather, traffic, opening hours, scores, or prices.
         When the user asks to control the music or volume, open a program or website, lock the PC, wants a music quiz, a mix,
-        a reminder or timer, asks what song is playing, or tells you something to remember ("onthoud dat…", "remember that…"),
+        a reminder or timer, asks what song is playing, asks about something on their screen, or tells you something to remember ("onthoud dat…", "remember that…"),
         use the matching command instead of answering.
         Use what you remember about the user naturally when it's relevant.
         When a spoken answer invites a reply (a question back, a quiz question, "shall I…?"), end it with a question mark;
@@ -102,6 +102,9 @@ public static class Assistant
                 ["browser"] = Str("Browser the user named, e.g. 'Brave', 'Chrome', 'Edge', 'Firefox'; leave empty if they didn't name one"),
             }),
         Tool("lock_pc", "Lock the PC (Windows lock screen)."),
+        Tool("look_at_screen", "Look at the user's screen (a screenshot of the main monitor) to answer a question about what's on it: " +
+            "an error message, a game, a web page, text to read out or summarise, code, anything they point at with 'this' or 'here'.",
+            new JsonObject { ["question"] = Str("The user's question about the screen, in their own words") }, "question"),
         Tool("control_apps", "Do something inside apps on the PC: click buttons, type text, use menus, navigate. " +
             "E.g. 'open Notepad and write a shopping list', 'pause the YouTube video', 'open a new Chrome tab with nos.nl', " +
             "'set my Discord status to away'. For just opening a program, use open_app.",

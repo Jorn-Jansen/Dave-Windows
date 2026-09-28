@@ -46,6 +46,8 @@ public class Bubble : LayeredWindow
     public Bubble() : base(clickThrough: false)
     {
         _ = glow.Handle; // create it on this (UI) thread
+        Vision.HiddenFromScreenshots.Add(this);
+        Vision.HiddenFromScreenshots.Add(glow);
         frameTimer.Tick += (_, _) => Tick();
         hideTimer.Tick += (_, _) => { hideTimer.Stop(); FadeOut(); };
         MouseUp += (_, _) => Clicked?.Invoke();

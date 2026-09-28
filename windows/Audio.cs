@@ -145,6 +145,7 @@ public static class Speaker
         output.Init(reader);
         current = output;
         output.Play();
+        Ducker.OwnVolumeFull(); // Windows remembers per-app volume; make sure Dave himself isn't stuck low
         using (cancel.Register(() => output.Stop())) await finished.Task;
         current = null;
     }
@@ -155,38 +156,114 @@ public static class Speaker
     public static void Beep(int frequency = 880, int ms = 120) => Task.Run(() => Console.Beep(frequency, ms));
 }
 
-/// <summary>Turns other apps down while Dave talks, and back up afterwards.</summary>
+/// <summary>
+/// Turns other apps down while Dave talks, and back up afterwards.
+/// Safe against stacking (nested duckers share one ducking) and against Dave being closed halfway:
+/// the original volumes are saved, and <see cref="RestoreAfterCrash"/> puts them back at the next start.
+/// </summary>
 public sealed class Ducker : IDisposable
 {
-    private readonly List<(SimpleAudioVolume volume, float original)> lowered = new();
+    private static readonly object Sync = new();
+    private static int depth;
+    private static readonly List<(SimpleAudioVolume volume, float original)> Lowered = new();
+    private static readonly string SavedPath = Path.Combine(Settings.Folder, "ducked.json");
+    private bool disposed;
 
     public Ducker(double to)
     {
-        try
+        lock (Sync)
         {
-            using var enumerator = new MMDeviceEnumerator();
-            var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-            var sessions = device.AudioSessionManager.Sessions;
-            var me = (uint)Environment.ProcessId;
-            for (int i = 0; i < sessions.Count; i++)
+            if (depth++ > 0) return; // already turned down: don't do it twice (100 -> 30 -> 9 -> ...)
+            var saved = new Dictionary<string, float>();
+            try
             {
-                var session = sessions[i];
-                if (session.GetProcessID == me || session.IsSystemSoundsSession) continue;
-                var volume = session.SimpleAudioVolume;
-                lowered.Add((volume, volume.Volume));
-                volume.Volume = (float)(volume.Volume * to);
+                using var enumerator = new MMDeviceEnumerator();
+                var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                var sessions = device.AudioSessionManager.Sessions;
+                for (int i = 0; i < sessions.Count; i++)
+                {
+                    var session = sessions[i];
+                    if (session.IsSystemSoundsSession) continue;
+                    var app = AppName(session.GetProcessID);
+                    if (app is null or "Dave") continue; // never turn Dave down, not even another Dave
+                    var volume = session.SimpleAudioVolume;
+                    Lowered.Add((volume, volume.Volume));
+                    saved[app] = Math.Max(saved.GetValueOrDefault(app), volume.Volume);
+                    volume.Volume = (float)(volume.Volume * to);
+                }
+                Directory.CreateDirectory(Settings.Folder);
+                File.WriteAllText(SavedPath, System.Text.Json.JsonSerializer.Serialize(saved));
             }
+            catch (Exception e) { Log.Write($"Ducking failed: {e.Message}"); }
         }
-        catch (Exception e) { Log.Write($"Ducking failed: {e.Message}"); }
     }
 
     public void Dispose()
     {
-        foreach (var (volume, original) in lowered)
+        lock (Sync)
         {
-            try { volume.Volume = original; } catch { /* app may have closed */ }
+            if (disposed) return;
+            disposed = true;
+            if (--depth > 0) return; // an outer ducker still wants it quiet
+            foreach (var (volume, original) in Lowered)
+            {
+                try { volume.Volume = original; } catch { /* app may have closed */ }
+            }
+            Lowered.Clear();
+            try { File.Delete(SavedPath); } catch { }
         }
-        lowered.Clear();
+    }
+
+    /// <summary>If Dave was closed while other sound was turned down, turn it back up. Also sets Dave himself to 100%.</summary>
+    public static void RestoreAfterCrash()
+    {
+        try
+        {
+            var saved = File.Exists(SavedPath)
+                ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, float>>(File.ReadAllText(SavedPath)) ?? new()
+                : new Dictionary<string, float>();
+            using var enumerator = new MMDeviceEnumerator();
+            foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+            {
+                var sessions = device.AudioSessionManager.Sessions;
+                for (int i = 0; i < sessions.Count; i++)
+                {
+                    var app = AppName(sessions[i].GetProcessID);
+                    if (app == null) continue;
+                    var volume = sessions[i].SimpleAudioVolume;
+                    if (app == "Dave") volume.Volume = 1f;
+                    else if (saved.TryGetValue(app, out var original) && volume.Volume < original)
+                    {
+                        volume.Volume = original;
+                        Log.Write($"Restored {app} to {original:P0} (Dave was closed while it was turned down)");
+                    }
+                }
+            }
+            if (File.Exists(SavedPath)) File.Delete(SavedPath);
+        }
+        catch (Exception e) { Log.Write($"Restoring volumes failed: {e.Message}"); }
+    }
+
+    /// <summary>Set this Dave's own sound to 100% in the Volume mixer.</summary>
+    public static void OwnVolumeFull()
+    {
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            var me = (uint)Environment.ProcessId;
+            foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+            {
+                var sessions = device.AudioSessionManager.Sessions;
+                for (int i = 0; i < sessions.Count; i++)
+                    if (sessions[i].GetProcessID == me && sessions[i].SimpleAudioVolume.Volume < 0.99f) sessions[i].SimpleAudioVolume.Volume = 1f;
+            }
+        }
+        catch (Exception e) { Log.Write($"Setting Dave's volume failed: {e.Message}"); }
+    }
+
+    private static string? AppName(uint pid)
+    {
+        try { return Process.GetProcessById((int)pid).ProcessName; } catch { return null; }
     }
 }
 
