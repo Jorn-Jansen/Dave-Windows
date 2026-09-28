@@ -7,6 +7,13 @@ namespace DaveWindows;
 public class Settings
 {
     public string GroqKey { get; set; } = "";
+    /// <summary>What the assistant is called ("" = Dave).</summary>
+    public string AssistantName { get; set; } = "";
+    /// <summary>Wake phrase for hands-free use ("" = "hey [name]").</summary>
+    public string WakePhrase { get; set; } = "";
+
+    [JsonIgnore] public string Name => AssistantName.Trim().Length > 0 ? AssistantName.Trim() : "Dave";
+    [JsonIgnore] public string EffectiveWakePhrase => WakePhrase.Trim().Length > 0 ? WakePhrase.Trim() : $"hey {Name}";
     /// <summary>Country, for units and currency.</summary>
     public string Country { get; set; } = "the Netherlands";
     public string Language { get; set; } = "nl-NL";

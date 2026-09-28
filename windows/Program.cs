@@ -98,7 +98,7 @@ public class DaveApp : ApplicationContext
         tray = new NotifyIcon
         {
             Icon = SystemIcons.Information,
-            Text = "Dave",
+            Text = settings.Name,
             ContextMenuStrip = menu,
             Visible = true,
         };
@@ -112,7 +112,7 @@ public class DaveApp : ApplicationContext
         AnnounceDueReminders(); // ones that came due while the PC was off
 
         if (settings.GroqKey.Length == 0) OpenSettings();
-        else tray.ShowBalloonTip(3000, "Dave is ready", T($"Press {settings.Hotkey} to talk to me.", $"Druk op {settings.Hotkey} om met me te praten."), ToolTipIcon.None);
+        else tray.ShowBalloonTip(3000, $"{settings.Name} is ready", T($"Press {settings.Hotkey} to talk to me.", $"Druk op {settings.Hotkey} om met me te praten."), ToolTipIcon.None);
     }
 
     private async Task TestAsync(string question)
@@ -145,7 +145,7 @@ public class DaveApp : ApplicationContext
         wakeWord = null;
         if (settings.WakeWord)
         {
-            try { wakeWord = new WakeWord(() => bubble.BeginInvoke(Trigger)); }
+            try { wakeWord = new WakeWord(settings, () => bubble.BeginInvoke(Trigger)); }
             catch (Exception e) { Log.Write($"Wake word failed: {e}"); }
         }
 

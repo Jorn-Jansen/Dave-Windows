@@ -133,7 +133,7 @@ public static class Assistant
         var where = position != null ? $" {position}" : "";
         var context = $"[{TimeContext()} User's country: {settings.Country}; use its units and currency.{where} Answer in {languageName}.]";
 
-        var system = System;
+        var system = System.Replace("Dave", settings.Name) + $"\nYour name is {settings.Name}.";
         if (settings.IsDutch)
             system += "\nThe user speaks Dutch or English. For very short commands that could be either, assume Dutch: 'harder' means louder and 'zachter' means quieter.";
         if (settings.Memories.Count > 0)

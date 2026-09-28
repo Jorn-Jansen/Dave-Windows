@@ -25,7 +25,7 @@ public static class Vision
         var image = CaptureMainScreen();
         var language = CultureInfo.GetCultureInfo(languageTag).EnglishName.Split(' ')[0];
         var system = $"""
-            You are Dave, a voice assistant. The image is a screenshot of the user's main monitor, taken just now.
+            You are {settings.Name}, a voice assistant. The image is a screenshot of the user's main monitor, taken just now.
             You CAN see it: it is attached to the message. Never say you can't see the screen; describe what is in the image.
             Answer the user's question about it in {language}, in one to three short spoken sentences (more only if they ask to read or explain something longer).
             Plain speech only: no markdown, lists, emojis or symbols. Don't describe the screen in general unless that's what they asked.
