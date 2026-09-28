@@ -65,6 +65,8 @@ public static class AppAgent
             new JsonObject { ["keys"] = Str("Keys joined with +") }, "keys"),
         Tool("scroll", "Scroll the window in front.", new JsonObject { ["direction"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("up", "down") } }, "direction"),
         Tool("wait", "Wait for something to load.", new JsonObject { ["seconds"] = Int("1 to 10") }, "seconds"),
+        Tool("look_at_screen", "Look at a screenshot of the screen and answer a question about it. Use it when read_window shows little (games, 3D views, custom apps).",
+            new JsonObject { ["question"] = Str("What you want to know, e.g. 'where is the Play button?'") }, "question"),
         Tool("ask_user", "Ask the user a yes/no question out loud and get their spoken answer (for confirmations).",
             new JsonObject { ["question"] = Str("Short question in the user's language") }, "question"),
         Tool("finish", "The task is done (or impossible). Say what you did.",
@@ -215,6 +217,8 @@ public static class AppAgent
         {
             switch (name)
             {
+                case "look_at_screen":
+                    return await Vision.AskAboutScreenAsync(Settings.Load(), args["question"]?.ToString() ?? "What is on the screen?", "en-US");
                 case "list_windows":
                     return string.Join("\n", WindowList.List().Select(w => $"{w.title} — {w.process}"));
                 case "focus_window":

@@ -77,6 +77,7 @@ public class DaveApp : ApplicationContext
 
     public DaveApp(string? testQuestion = null)
     {
+        Ducker.RestoreAfterCrash(); // in case Dave was closed while other sound was turned down
         if (testQuestion != null)
         {
             _ = bubble.Handle;
@@ -277,6 +278,17 @@ public class DaveApp : ApplicationContext
                 if (command.Name == "start_music_quiz")
                 {
                     await QuizAsync(command.Args["theme"]?.ToString() ?? "mixed hits", cancel);
+                    return;
+                }
+                if (command.Name == "look_at_screen")
+                {
+                    Watchdog.Step = "looking at the screen";
+                    bubble.ShowText("👁 " + T("Looking at your screen…", "Ik kijk naar je scherm…"));
+                    var seen = await Vision.AskAboutScreenAsync(settings, command.Args["question"]?.ToString() ?? text, language);
+                    Log.Write($"Says (screen): {seen}");
+                    bubble.ShowText(seen);
+                    Watchdog.Step = "speaking";
+                    await Speaker.SpeakAsync(settings, seen, language, cancel);
                     return;
                 }
                 if (command.Name == "control_apps")
