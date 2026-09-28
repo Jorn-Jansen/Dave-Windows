@@ -15,7 +15,7 @@ public static class Assistant
         - Use plain speech only: no markdown, lists, emojis, links, or symbols that sound strange read aloud.
         - Say numbers, times, and units the way a person would say them out loud.
         If you can search the web, use it for anything current, like news, weather, traffic, opening hours, scores, or prices.
-        When the user asks to control the music or volume, open a program or website, lock the PC, wants a music quiz, a mix,
+        When the user asks to control the music or volume, open or close a program or website, lock the PC, wants a music quiz, a mix,
         a reminder or timer, asks what song is playing, asks about something on their screen, or tells you something to remember ("onthoud dat…", "remember that…"),
         use the matching command instead of answering.
         Use what you remember about the user naturally when it's relevant.
@@ -102,6 +102,10 @@ public static class Assistant
                 ["browser"] = Str("Browser the user named, e.g. 'Brave', 'Chrome', 'Edge', 'Firefox'; leave empty if they didn't name one"),
             }),
         Tool("lock_pc", "Lock the PC (Windows lock screen)."),
+        Tool("close_app", "Close a program (all its windows) in the background, e.g. 'Chrome', 'Discord', 'Word'. Unsaved work still asks to save.",
+            new JsonObject { ["name"] = Str("Name of the program to close") }, "name"),
+        Tool("close_all_apps", "Close all open programs, except the ones the user wants to keep.",
+            new JsonObject { ["keep"] = Str("Programs to keep open, comma-separated (e.g. 'Roblox, Discord'); empty to close everything") }),
         Tool("look_at_screen", "Look at the user's screen (a screenshot of the main monitor) to answer a question about what's on it: " +
             "an error message, a game, a web page, text to read out or summarise, code, anything they point at with 'this' or 'here'.",
             new JsonObject { ["question"] = Str("The user's question about the screen, in their own words") }, "question"),

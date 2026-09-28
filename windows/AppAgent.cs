@@ -373,7 +373,7 @@ public static class WindowList
             try { process = Process.GetProcessById((int)pid).ProcessName; } catch { process = "?"; }
             if (pid == Environment.ProcessId || process is "TextInputHost") return true; // skip Dave itself
             result.Add((h, title.ToString(), process));
-            return result.Count < 30;
+            return result.Count < 80;
         }, IntPtr.Zero);
         return result;
     }
