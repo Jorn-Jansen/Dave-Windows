@@ -213,10 +213,10 @@ public static class PcActions
 /// <summary>Timers and reminders, spoken out loud when due. Kept in settings, so they survive a restart.</summary>
 public static class Reminders
 {
-    public static DateTimeOffset? Schedule(Settings s, int? minutes, string? time, string message)
+    public static DateTimeOffset? Schedule(Settings s, double? minutes, string? time, string message)
     {
         DateTimeOffset? at = null;
-        if (minutes is > 0) at = DateTimeOffset.Now.AddMinutes(minutes.Value);
+        if (minutes is > 0) at = DateTimeOffset.Now.AddSeconds(Math.Round(minutes.Value * 60));
         else if (!string.IsNullOrWhiteSpace(time) && TimeSpan.TryParse(time.Trim(), out var clock))
         {
             var today = new DateTimeOffset(DateTime.Today.Add(clock));
@@ -247,8 +247,27 @@ public static class Reminders
         return due.Where(r => now - r.At < TimeSpan.FromHours(1)).ToList();
     }
 
-    public static string? Describe(Settings s) => s.Reminders.Count == 0 ? null :
-        string.Join("; ", s.Reminders.OrderBy(r => r.At).Select(r => $"{r.At:HH:mm} {r.Message}"));
+    /// <summary>For the AI: each reminder with its exact time and how long until then, so it doesn't have to work it out.</summary>
+    public static string? Describe(Settings s)
+    {
+        if (s.Reminders.Count == 0) return null;
+        var now = DateTimeOffset.Now;
+        return string.Join("; ", s.Reminders.OrderBy(r => r.At).Select(r =>
+            $"'{r.Message}' at {r.At:HH:mm:ss}, which is {Duration(r.At - now, dutch: false)} from now"));
+    }
+
+    /// <summary>A length of time as you'd say it: "2 minutes and 30 seconds", "1 uur en 5 minuten".</summary>
+    public static string Duration(TimeSpan span, bool dutch)
+    {
+        var total = Math.Max(0, (int)Math.Round(span.TotalSeconds));
+        int hours = total / 3600, minutes = total % 3600 / 60, seconds = total % 60;
+        var parts = new List<string>();
+        if (hours > 0) parts.Add(dutch ? $"{hours} uur" : $"{hours} hour{(hours == 1 ? "" : "s")}");
+        if (minutes > 0) parts.Add(dutch ? $"{minutes} {(minutes == 1 ? "minuut" : "minuten")}" : $"{minutes} minute{(minutes == 1 ? "" : "s")}");
+        if (seconds > 0 && hours == 0) parts.Add(dutch ? $"{seconds} seconden" : $"{seconds} second{(seconds == 1 ? "" : "s")}");
+        if (parts.Count == 0) return dutch ? "0 seconden" : "0 seconds";
+        return parts.Count == 1 ? parts[0] : string.Join(", ", parts.SkipLast(1)) + (dutch ? " en " : " and ") + parts[^1];
+    }
 }
 
 /// <summary>Where the PC is, via Windows location (Wi-Fi based). Optional: if it's off, Dave just uses the country.</summary>

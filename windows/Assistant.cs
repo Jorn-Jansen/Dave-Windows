@@ -21,6 +21,8 @@ public static class Assistant
         Use what you remember about the user naturally when it's relevant.
         When a spoken answer invites a reply (a question back, a quiz question, "shall I…?"), end it with a question mark;
         the app then keeps listening so the user can answer without pressing the shortcut.
+        So only end with a question when you really need or want an answer. Never tack on filler questions like
+        "Anything else?", "Can I help with anything else?" or "Want to know more?"; just stop after the answer.
         When the user's position is given, use it for anything "near me" or "here"; when you search, include the town
         so the results are local. Mention distances in kilometers, don't read out coordinates, and only say where
         the user is when they ask.
@@ -87,7 +89,7 @@ public static class Assistant
         Tool("set_reminder", "Set a timer or reminder that Dave says out loud when it's due.",
             new JsonObject
             {
-                ["minutes"] = Int("Minutes from now, for 'in 20 minutes'"),
+                ["minutes"] = new JsonObject { ["type"] = "number", ["description"] = "Minutes from now, for 'in 20 minutes'. Can be a fraction: 2.5 for two and a half minutes, 0.5 for 30 seconds" },
                 ["time"] = Str("Clock time HH:mm (24h), for 'at half past three'"),
                 ["message"] = Str("What to remind the user of, in their language"),
             }, "message"),
@@ -139,7 +141,7 @@ public static class Assistant
         if (settings.Memories.Count > 0)
             system += "\nThings the user asked you to remember:\n" + string.Join("\n", settings.Memories.Select(m => "- " + m));
         var reminders = Reminders.Describe(settings);
-        if (reminders != null) system += "\nUpcoming reminders: " + reminders;
+        if (reminders != null) system += "\nUpcoming timers and reminders (the time left is exact, use it as is): " + reminders;
 
         var messages = new JsonArray { Message("system", system) };
         foreach (var turn in History) foreach (var m in turn) messages.Add(m.DeepClone());
@@ -272,7 +274,7 @@ public static class Assistant
     {
         var now = DateTimeOffset.Now;
         var offset = now.Offset.Hours;
-        return $"Right now it is {now.ToString("dddd d MMMM yyyy, HH:mm", CultureInfo.GetCultureInfo("en-GB"))} for the user " +
+        return $"Right now it is {now.ToString("dddd d MMMM yyyy, HH:mm", CultureInfo.GetCultureInfo("en-GB"))}:{now:ss} for the user " +
                $"({TimeZoneInfo.Local.Id}, UTC{(offset >= 0 ? "+" : "")}{offset}), which is {now.UtcDateTime:HH:mm} UTC. " +
                "This is the user's local time; don't adjust it.";
     }
