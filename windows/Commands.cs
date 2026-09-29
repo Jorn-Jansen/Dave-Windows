@@ -157,8 +157,15 @@ public static class Commands
     {
         var message = Str(args, "message");
         if (message.Length == 0) message = s.Say("your reminder", "je herinnering");
-        var at = Reminders.Schedule(s, Int(args, "minutes"), Str(args, "time"), message);
+        var minutes = args["minutes"] is JsonValue v && v.TryGetValue<double>(out var m) ? m : (double?)null;
+        var at = Reminders.Schedule(s, minutes, Str(args, "time"), message);
         if (at == null) return new Outcome(s.Say("I didn't get when to remind you.", "Ik snapte niet wanneer ik je moet herinneren."), true);
+        if (minutes is > 0 and < 60)
+        {
+            // A timer: say how long, that's what you asked for (and it's exact, down to the second).
+            var span = TimeSpan.FromSeconds(Math.Round(minutes.Value * 60));
+            return new Outcome(s.Say($"Okay, timer set for {Reminders.Duration(span, false)}.", $"Oké, timer gezet voor {Reminders.Duration(span, true)}."), true);
+        }
         return new Outcome(s.Say($"Okay, I'll remind you at {at:HH:mm}.", $"Oké, ik herinner je om {at:HH:mm}."), true);
     }
 

@@ -425,8 +425,10 @@ public static class Keyboard
     {
         var codes = keys.ToLowerInvariant().Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(Code).Where(c => c != 0).ToList();
-        foreach (var c in codes) Send(c, up: false);
-        foreach (var c in Enumerable.Reverse(codes)) Send(c, up: true);
+        // Held for a moment like a real finger: games check keys once per frame and miss an instant tap.
+        foreach (var c in codes) { Send(c, up: false); Thread.Sleep(15); }
+        Thread.Sleep(50);
+        foreach (var c in Enumerable.Reverse(codes)) { Send(c, up: true); Thread.Sleep(15); }
     }
 
     private static ushort Code(string key)
@@ -449,11 +451,21 @@ public static class Keyboard
         }
     }
 
+    /// <summary>
+    /// Sent as the keyboard's hardware scan code, not just the key's name: games (Roblox and most others) read
+    /// the raw keyboard and ignore key presses without one.
+    /// </summary>
     private static void Send(ushort vk, bool up)
     {
-        var input = new Input { type = 1, u = new InputUnion { ki = new KeyboardInput { wVk = vk, dwFlags = up ? 2u : 0u } } };
+        var scan = (ushort)MapVirtualKey(vk, 0 /* MAPVK_VK_TO_VSC */);
+        uint flags = up ? 2u : 0u; // KEYEVENTF_KEYUP
+        if (scan != 0) flags |= 0x0008; // KEYEVENTF_SCANCODE
+        if (Extended.Contains(vk)) flags |= 0x0001; // KEYEVENTF_EXTENDEDKEY: arrows etc. share scan codes with the number pad
+        var input = new Input { type = 1, u = new InputUnion { ki = new KeyboardInput { wVk = vk, wScan = scan, dwFlags = flags } } };
         SendInput(1, new[] { input }, Marshal.SizeOf<Input>());
     }
+
+    private static readonly HashSet<ushort> Extended = new() { 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x5B };
 
     private static Input Unicode(char ch, bool up) =>
         new() { type = 1, u = new InputUnion { ki = new KeyboardInput { wScan = ch, dwFlags = 0x0004u | (up ? 2u : 0u) } } };
@@ -465,6 +477,7 @@ public static class Keyboard
 
     [DllImport("user32.dll")] internal static extern uint SendInput(uint count, Input[] inputs, int size);
     [DllImport("user32.dll")] private static extern short VkKeyScan(char ch);
+    [DllImport("user32.dll")] private static extern uint MapVirtualKey(uint code, uint mapType);
 }
 
 public static class Mouse

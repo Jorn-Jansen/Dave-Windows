@@ -66,7 +66,7 @@ public class DaveApp : ApplicationContext
     private readonly Bubble bubble = new();
     private readonly NotifyIcon tray;
     private readonly HotkeyWindow hotkey;
-    private readonly System.Windows.Forms.Timer reminderTimer = new() { Interval = 15_000 };
+    private readonly System.Windows.Forms.Timer reminderTimer = new() { Interval = 1_000 }; // every second, so timers go off on time
     private WakeWord? wakeWord;
 
     private CancellationTokenSource? session;          // the conversation or quiz that's running
