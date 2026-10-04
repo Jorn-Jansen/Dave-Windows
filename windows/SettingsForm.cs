@@ -18,6 +18,7 @@ public class SettingsForm : Form
     private readonly TextBox browser = new() { Width = 160, PlaceholderText = "Windows default" };
     private readonly CheckBox wakeWord = new() { Text = "Listen for “Hey Dave” (offline)", AutoSize = true };
     private readonly CheckBox autostart = new() { Text = "Start Dave with Windows", AutoSize = true };
+    private readonly CheckBox autoUpdate = new() { Text = $"Update Dave automatically (now version {Updater.Current.ToString(3)})", AutoSize = true };
     private readonly TextBox spotifyId = new() { Width = 420 };
     private readonly Label spotifyStatus = new() { AutoSize = true };
     private readonly TextBox question = new() { Width = 420, PlaceholderText = "Type a question to test Dave" };
@@ -69,6 +70,7 @@ public class SettingsForm : Form
         browser.Text = settings.Browser;
         wakeWord.Checked = settings.WakeWord;
         autostart.Checked = settings.StartWithWindows;
+        autoUpdate.Checked = settings.AutoUpdate;
         spotifyId.Text = settings.SpotifyClientId;
         engineAzure.Checked = settings.VoiceEngine == "azure";
         engineWindows.Checked = !engineAzure.Checked;
@@ -118,6 +120,7 @@ public class SettingsForm : Form
         Row("Browser for websites", Flow(browser, new Label { Text = "e.g. Brave (empty = Windows default)", AutoSize = true, Margin = new Padding(6, 8, 0, 0) }));
         Row("", wakeWord);
         Row("", autostart);
+        Row("", autoUpdate);
         Row("Spotify Client ID", spotifyId);
         Row("", new Label
         {
@@ -172,6 +175,7 @@ public class SettingsForm : Form
         settings.WakeWord = wakeWord.Checked;
         settings.Browser = browser.Text.Trim();
         settings.StartWithWindows = autostart.Checked;
+        settings.AutoUpdate = autoUpdate.Checked;
         if (spotifyId.Text.Trim() != settings.SpotifyClientId)
         {
             settings.SpotifyClientId = spotifyId.Text.Trim();

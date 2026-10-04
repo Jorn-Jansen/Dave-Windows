@@ -20,13 +20,16 @@ public static class Vision
     public static readonly List<Form> HiddenFromScreenshots = new();
 
     /// <summary>Take a screenshot and answer [question] about it, in [languageTag], as a short spoken answer.</summary>
-    public static async Task<string> AskAboutScreenAsync(Settings settings, string question, string languageTag)
+    public static Task<string> AskAboutScreenAsync(Settings settings, string question, string languageTag) =>
+        AskAboutImageAsync(settings, question, languageTag, CaptureMainScreen(), "a screenshot of the user's main monitor, taken just now");
+
+    /// <summary>Answer [question] about a JPEG ([image], base64), described to the AI as [whatItIs].</summary>
+    public static async Task<string> AskAboutImageAsync(Settings settings, string question, string languageTag, string image, string whatItIs)
     {
-        var image = CaptureMainScreen();
         var language = CultureInfo.GetCultureInfo(languageTag).EnglishName.Split(' ')[0];
         var system = $"""
-            You are {settings.Name}, a voice assistant. The image is a screenshot of the user's main monitor, taken just now.
-            You CAN see it: it is attached to the message. Never say you can't see the screen; describe what is in the image.
+            You are {settings.Name}, a voice assistant. The image is {whatItIs}.
+            You CAN see it: it is attached to the message. Never say you can't see it; describe what is in the image.
             Answer the user's question about it in {language}, in one to three short spoken sentences (more only if they ask to read or explain something longer).
             Plain speech only: no markdown, lists, emojis or symbols. Don't describe the screen in general unless that's what they asked.
             """;
@@ -70,28 +73,34 @@ public static class Vision
             var bounds = Screen.PrimaryScreen!.Bounds;
             using var full = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
             using (var g = Graphics.FromImage(full)) g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
-
-            var scale = Math.Min(1.0, MaxWidth / (double)bounds.Width);
-            using var small = new Bitmap((int)(bounds.Width * scale), (int)(bounds.Height * scale), PixelFormat.Format24bppRgb);
-            using (var g = Graphics.FromImage(small))
-            {
-                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                g.DrawImage(full, 0, 0, small.Width, small.Height);
-            }
-
-            using var stream = new MemoryStream();
-            var jpeg = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
-            using var quality = new EncoderParameters(1) { Param = { [0] = new EncoderParameter(Encoder.Quality, 80L) } };
-            small.Save(stream, jpeg, quality);
-            Log.Write($"Screenshot taken ({small.Width}x{small.Height}, {stream.Length / 1024} KB)");
+            var jpeg = ToJpeg(full);
+            Log.Write($"Screenshot taken ({jpeg.Length / 1024} KB)");
             // Keep the last one, so you can check what Dave saw.
-            try { File.WriteAllBytes(Path.Combine(Settings.Folder, "last-screenshot.jpg"), stream.ToArray()); } catch { }
-            return Convert.ToBase64String(stream.ToArray());
+            try { File.WriteAllBytes(Path.Combine(Settings.Folder, "last-screenshot.jpg"), jpeg); } catch { }
+            return Convert.ToBase64String(jpeg);
         }
         finally
         {
             foreach (var form in HiddenFromScreenshots) SetWindowDisplayAffinity(form.Handle, 0);
         }
+    }
+
+    /// <summary>[image] as a JPEG, at most 1600 px wide: small enough to send fast, text stays readable.</summary>
+    public static byte[] ToJpeg(Image image)
+    {
+        var scale = Math.Min(1.0, MaxWidth / (double)image.Width);
+        using var small = new Bitmap(Math.Max(1, (int)(image.Width * scale)), Math.Max(1, (int)(image.Height * scale)), PixelFormat.Format24bppRgb);
+        using (var g = Graphics.FromImage(small))
+        {
+            g.Clear(Color.White); // transparent parts (copied images often have them) would turn black
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.DrawImage(image, 0, 0, small.Width, small.Height);
+        }
+        using var stream = new MemoryStream();
+        var jpeg = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
+        using var quality = new EncoderParameters(1) { Param = { [0] = new EncoderParameter(Encoder.Quality, 80L) } };
+        small.Save(stream, jpeg, quality);
+        return stream.ToArray();
     }
 
     private const uint ExcludeFromCapture = 0x11; // WDA_EXCLUDEFROMCAPTURE (Windows 10 2004 and newer)

@@ -37,6 +37,8 @@ public static class Commands
                 "find_file" => await FindFileAsync(s, args),
                 "close_app" => CloseApp(s, Str(args, "name")),
                 "close_all_apps" => CloseAll(s, Str(args, "keep")),
+                "type_text" => await TypeAsync(s, Str(args, "text"), args["press_enter"] is JsonValue e && e.TryGetValue<bool>(out var enter) && enter),
+                "copy_to_clipboard" => CopyToClipboard(s, Str(args, "text")),
                 _ => new Outcome(s.Say("I can't do that yet.", "Dat kan ik nog niet."), true),
             };
         }
@@ -167,6 +169,26 @@ public static class Commands
             return new Outcome(s.Say($"Okay, timer set for {Reminders.Duration(span, false)}.", $"Oké, timer gezet voor {Reminders.Duration(span, true)}."), true);
         }
         return new Outcome(s.Say($"Okay, I'll remind you at {at:HH:mm}.", $"Oké, ik herinner je om {at:HH:mm}."), true);
+    }
+
+    /// <summary>Dictation: types into the window you're in (Dave's bubble never takes the focus away from it).</summary>
+    private static async Task<Outcome> TypeAsync(Settings s, string text, bool pressEnter)
+    {
+        if (text.Length == 0) return new Outcome(s.Say("I didn't get what to type.", "Ik snapte niet wat ik moest typen."), true);
+        await Task.Delay(300); // let the sound and bubble settle; the first letters can get lost otherwise
+        await Task.Run(() =>
+        {
+            Keyboard.Type(text);
+            if (pressEnter) { Thread.Sleep(80); Keyboard.Press("enter"); }
+        });
+        return new Outcome("⌨ " + text);
+    }
+
+    private static Outcome CopyToClipboard(Settings s, string text)
+    {
+        if (text.Length == 0) return new Outcome(s.Say("I didn't get what to copy.", "Ik snapte niet wat ik moest kopiëren."), true);
+        ClipboardTasks.Copy(text);
+        return new Outcome("📋 " + (text.Length > 80 ? text[..80] + "…" : text));
     }
 
     private static Outcome CancelReminders(Settings s)

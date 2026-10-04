@@ -68,6 +68,8 @@ public class DaveApp : ApplicationContext
     private readonly HotkeyWindow hotkey;
     private readonly System.Windows.Forms.Timer reminderTimer = new() { Interval = 1_000 }; // every second, so timers go off on time
     private WakeWord? wakeWord;
+    private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 6 * 60 * 60 * 1000 }; // look for a new version every 6 hours
+    private Updater.Release? pendingInstall; // asked for by voice: installed once Dave has finished talking
 
     private CancellationTokenSource? session;          // the conversation or quiz that's running
     private CancellationTokenSource? snippetCut;       // quiz: shortcut during a snippet stops it early
@@ -93,11 +95,12 @@ public class DaveApp : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add("Ask Dave", null, (_, _) => Trigger());
         menu.Items.Add("Settings", null, (_, _) => OpenSettings());
+        menu.Items.Add("Check for updates", null, async (_, _) => await CheckForUpdatesAsync(manual: true));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit", null, (_, _) => Quit());
         tray = new NotifyIcon
         {
-            Icon = SystemIcons.Information,
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Information, // Dave's own icon, built into Dave.exe
             Text = settings.Name,
             ContextMenuStrip = menu,
             Visible = true,
@@ -110,6 +113,11 @@ public class DaveApp : ApplicationContext
         reminderTimer.Tick += (_, _) => AnnounceDueReminders();
         reminderTimer.Start();
         AnnounceDueReminders(); // ones that came due while the PC was off
+
+        updateTimer.Tick += async (_, _) => await CheckForUpdatesAsync(manual: false);
+        updateTimer.Start();
+        _ = Task.Delay(TimeSpan.FromMinutes(1)).ContinueWith(_ => CheckForUpdatesAsync(manual: false),
+            TaskScheduler.FromCurrentSynchronizationContext()); // first look a minute after starting, when the PC has settled
 
         if (settings.GroqKey.Length == 0) OpenSettings();
         else tray.ShowBalloonTip(3000, $"{settings.Name} is ready", T($"Press {settings.Hotkey} to talk to me.", $"Druk op {settings.Hotkey} om met me te praten."), ToolTipIcon.None);
@@ -158,6 +166,81 @@ public class DaveApp : ApplicationContext
     {
         using var form = new SettingsForm(settings, AskTyped);
         if (form.ShowDialog() == DialogResult.OK) ApplySettings();
+    }
+
+    // --- Updates ---
+
+    /// <summary>
+    /// Look for a new version; install it right away (automatic) or after asking (manual, from the tray menu).
+    /// Only for a Dave installed with DaveSetup.exe.
+    /// </summary>
+    private async Task CheckForUpdatesAsync(bool manual)
+    {
+        if (!manual && !settings.AutoUpdate) return;
+        if (!Updater.IsInstalled)
+        {
+            if (manual) tray.ShowBalloonTip(5000, settings.Name, T("This Dave was built from the source code. To update him, run Build Dave.bat.",
+                "Deze Dave is zelf gebouwd. Update hem met Build Dave.bat."), ToolTipIcon.Info);
+            return;
+        }
+        Updater.Release? release;
+        try { release = await Updater.CheckAsync(); }
+        catch (Exception e)
+        {
+            Log.Write($"Update check failed: {e.Message}");
+            if (manual) tray.ShowBalloonTip(4000, settings.Name, T("I couldn't check for updates right now.", "Ik kon nu niet checken op updates."), ToolTipIcon.Warning);
+            return;
+        }
+        if (release == null)
+        {
+            if (manual) tray.ShowBalloonTip(3000, settings.Name, T($"You have the newest version ({Updater.Current.ToString(3)}).",
+                $"Je hebt de nieuwste versie ({Updater.Current.ToString(3)})."), ToolTipIcon.None);
+            return;
+        }
+        Log.Write($"Update available: {release.Version}");
+        if (manual && MessageBox.Show(T($"Version {release.Version} is available (you have {Updater.Current.ToString(3)}). Update now?",
+                $"Versie {release.Version} is beschikbaar (je hebt {Updater.Current.ToString(3)}). Nu updaten?"),
+                settings.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        while (session != null) await Task.Delay(TimeSpan.FromSeconds(20)); // never in the middle of a conversation
+        await InstallUpdateAsync(release);
+    }
+
+    /// <summary>"Update yourself": what to say. When there's a new version, it's installed after Dave has said so.</summary>
+    private async Task<string> UpdateOnRequestAsync()
+    {
+        var current = Updater.Current.ToString(3);
+        if (!Updater.IsInstalled)
+            return T($"I'm version {current}, built from the source code. To update me, run Build Dave dot bat.",
+                     $"Ik ben versie {current}, zelf gebouwd van de broncode. Update me met Build Dave punt bat.");
+        try
+        {
+            var release = await Updater.CheckAsync();
+            if (release == null) return T($"I'm up to date: version {current}.", $"Ik ben up-to-date: versie {current}.");
+            pendingInstall = release;
+            return T($"Version {release.Version} is out. I'm updating now, I'll be right back.",
+                     $"Versie {release.Version} is uit. Ik update nu, ik ben zo terug.");
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Update check failed: {e.Message}");
+            return T("I couldn't check for updates right now.", "Ik kon nu niet checken op updates.");
+        }
+    }
+
+    private async Task InstallUpdateAsync(Updater.Release release)
+    {
+        tray.ShowBalloonTip(4000, settings.Name, T($"Updating to version {release.Version}… I'll be back in a moment.",
+            $"Updaten naar versie {release.Version}… Ik ben zo terug."), ToolTipIcon.None);
+        try
+        {
+            await Updater.InstallAsync(release);
+            Quit(); // the installer replaces the files and starts the new Dave
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Update failed: {e}");
+            tray.ShowBalloonTip(4000, settings.Name, T("The update didn't work. I'll try again later.", "De update lukte niet. Ik probeer het later opnieuw."), ToolTipIcon.Warning);
+        }
     }
 
     private void Quit()
@@ -289,6 +372,33 @@ public class DaveApp : ApplicationContext
                     bubble.ShowText(seen);
                     Watchdog.Step = "speaking";
                     await Speaker.SpeakAsync(settings, seen, language, cancel);
+                    return;
+                }
+                if (command.Name is "use_clipboard" or "pc_stats" or "update_dave")
+                {
+                    string answer;
+                    if (command.Name == "use_clipboard")
+                    {
+                        Watchdog.Step = "working on the clipboard";
+                        bubble.ShowText("📋 " + T("Looking at what you copied…", "Ik kijk naar wat je kopieerde…"));
+                        answer = await ClipboardTasks.RunAsync(settings, command.Args["task"]?.ToString() ?? text,
+                            command.Args["output"]?.ToString() == "copy", language);
+                    }
+                    else if (command.Name == "pc_stats")
+                    {
+                        Watchdog.Step = "checking the PC";
+                        bubble.ShowText("📊 " + T("Checking your PC…", "Ik check je pc…"));
+                        var stats = await Task.Run(PcStats.Collect);
+                        Log.Write("PC stats:\n" + stats.TrimEnd());
+                        answer = await Assistant.WorkOnAsync(settings, command.Args["question"]?.ToString() ?? text, stats,
+                            "a report of the user's PC, measured just now", language, spoken: true);
+                    }
+                    else answer = await UpdateOnRequestAsync();
+                    Log.Write($"Says: {answer}");
+                    bubble.ShowText(answer);
+                    Watchdog.Step = "speaking";
+                    await Speaker.SpeakAsync(settings, answer, language, cancel);
+                    if (pendingInstall != null) { await InstallUpdateAsync(pendingInstall); pendingInstall = null; }
                     return;
                 }
                 if (command.Name == "control_apps")
