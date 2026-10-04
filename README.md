@@ -1,54 +1,38 @@
-# Dave Windows
+# Dave
 
-Dave as a Windows program, a copy of the car version (the car version lives in `Desktop\Dave` and is untouched).
-The `android/` and `backend/` folders here are just the copied car version, for reference.
-The Windows program is in `windows/`.
+A voice assistant for Windows. Talk to him with a shortcut or a wake word, in English or Dutch.
 
-## Install the easy way
-Download **`DaveSetup.exe`** from the [Releases](../../releases) page and run it. It installs Dave for you
-(no admin needed, nothing else to install), adds him to the Start menu and your desktop, and starts him.
-In the settings window that opens, enter your own free Groq key (console.groq.com/keys) and click Save.
-Windows may show "Windows protected your PC" because the installer isn't signed: click **More info** → **Run anyway**.
-To update, run the newer `DaveSetup.exe`; to remove Dave, uninstall him from Settings → Apps.
+## Install
+1. Download **`DaveSetup.exe`** from [Releases](../../releases/latest) and run it.
+   If Windows says "Windows protected your PC", click **More info** → **Run anyway** (the installer isn't signed).
+2. In the settings window that opens, paste your own free Groq key from [console.groq.com/keys](https://console.groq.com/keys) and click **Save**.
 
-### Making the installer (for whoever shares Dave)
-Double-click **`Make Installer.bat`**. It builds Dave with .NET included and packs him into
-`installer\Output\DaveSetup.exe` (about 90 MB). Raise `<Version>` in `windows\DaveWindows.csproj` for each new one.
-Your keys are never in it: they live in `%APPDATA%\Dave Windows\settings.json`, not in the program.
+Dave updates himself when a new version is released. To remove him: Settings → Apps → Dave.
 
-**Automatic updates:** installed Daves check this repo's newest release every 6 hours and update themselves.
-To ship an update: raise `<Version>`, run `Make Installer.bat`, then make a GitHub release with the tag
-`v` + that version (e.g. `v1.1.0`) and attach `DaveSetup.exe` (keep that exact name).
-This only works while the repo (or the one in `Updater.Repo` in `windows\Updater.cs`) is **public**.
+## Use
+- Press **Ctrl+Alt+D** (works in games too), say **"Hey Dave"** (if turned on), or click the tray icon.
+- Talk after the beep. Press the shortcut again or click the bubble to cancel.
+- Right-click the tray icon for **Settings**, **Check for updates** and **Quit**.
 
-## Install from the source (first time, or to update)
-Double-click **`Build Dave.bat`**. It installs the .NET 8 SDK if it's missing (via winget),
-builds Dave, puts a **Dave** shortcut on your desktop and starts him.
-In the settings window that opens, enter your own free Groq key (console.groq.com/keys) and click Save.
+## What he can do
+- **Questions:** anything, with live web search; remembers your conversations for 30 days
+- **Music (Spotify Premium):** play songs, artists or playlists, random songs, DJ mixes, a music quiz, like songs
+- **PC control:** volume, open and close programs, websites, lock the PC, find files, do things inside apps
+- **Your screen:** "what's this error?", "read this out"
+- **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
+- **PC stats:** "how hot is my GPU?", "what's using my memory?"
+- **Reminders and timers**, and **heads-ups:** "tell me when Roblox closes", "let me know when my download is done"
+- **Settings:** custom name and wake phrase, voices (Windows or Azure), language
 
-To update after pulling new changes: close nothing, just run `Build Dave.bat` again.
+### Spotify
+In Settings, paste your app's Client ID from [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard),
+add `http://127.0.0.1:8765/callback` as a Redirect URI in that app, then click **Connect Spotify**.
 
-## Start
-Double-click **Dave** on the desktop. A Dave icon appears next to the clock.
-
-- **Ctrl+Alt+D** (from any program, also games), or **"Hey Dave"** if turned on, or left-click the tray icon
-- Speak after the beep; Dave stops recording when you stop talking
-- Press the shortcut again (or click the bubble) to cancel
-- Right-click the tray icon for **Settings** and **Quit**
-
-## What it can do
-Everything from the car version (questions with web search, memory, reminders, conversation mode,
-Spotify, music quiz, DJ mode, Dutch + English), plus:
-- Windows volume: "harder", "zachter", "zet het volume op 30 procent", "zet het geluid uit"
-- Open programs: "open Roblox Studio", "open Discord"
-- Websites: "open YouTube", "zoek naar pizza recepten"
-- "vergrendel mijn pc"
-- Other sound goes quieter while Dave talks
-
-## Spotify
-In Settings: paste the Client ID, and add `http://127.0.0.1:8765/callback` as an extra
-Redirect URI in your app at developer.spotify.com/dashboard. Then click **Connect Spotify**.
-
-## Build
-`windows/`: `dotnet build -c Release` (needs the .NET 8 SDK).
-Settings and log: `%APPDATA%\Dave Windows\` (`settings.json`, `dave.log`).
+## For developers
+- **Run from source:** double-click `Build Dave.bat` (installs the .NET 8 SDK if needed, builds, adds a desktop shortcut).
+- **Release an update:**
+  1. Raise `<Version>` in `windows/DaveWindows.csproj`.
+  2. Run `Make Installer.bat` → `installer/Output/DaveSetup.exe`.
+  3. Create a GitHub release tagged `v` + that version (e.g. `v1.1.1`) and attach `DaveSetup.exe` with that exact name.
+  Installed copies pick it up within 6 hours. The repo must be public for this.
+- **Settings, keys, logs:** `%APPDATA%\Dave Windows\`. Nothing personal is stored in the repo or the installer.
