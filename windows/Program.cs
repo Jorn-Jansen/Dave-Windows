@@ -70,6 +70,7 @@ public class DaveApp : ApplicationContext
     private WakeWord? wakeWord;
     private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 6 * 60 * 60 * 1000 }; // look for a new version every 6 hours
     private Updater.Release? pendingInstall; // asked for by voice: installed once Dave has finished talking
+    private readonly Queue<string> headsUps = new(); // things Dave was watching for that happened; said once he's free
 
     private CancellationTokenSource? session;          // the conversation or quiz that's running
     private CancellationTokenSource? snippetCut;       // quiz: shortcut during a snippet stops it early
@@ -80,6 +81,7 @@ public class DaveApp : ApplicationContext
     public DaveApp(string? testQuestion = null)
     {
         Ducker.RestoreAfterCrash(); // in case Dave was closed while other sound was turned down
+        Watchers.Triggered += message => bubble.BeginInvoke(() => headsUps.Enqueue(message)); // said at the next tick, when Dave is free
         if (testQuestion != null)
         {
             _ = bubble.Handle;
@@ -139,6 +141,9 @@ public class DaveApp : ApplicationContext
         }
         Log.Write($"TEST ask: {question}");
         await RunSessionAsync(question);
+        // For testing things that happen later (watchers): DAVE_TEST_LINGER=seconds keeps the test running that long.
+        if (int.TryParse(Environment.GetEnvironmentVariable("DAVE_TEST_LINGER"), out var linger))
+            for (int i = 0; i < linger; i++) { await Task.Delay(1000); AnnounceDueReminders(); }
         await Task.Delay(1600);
         ExitThread();
     }
@@ -278,7 +283,7 @@ public class DaveApp : ApplicationContext
         Speaker.Stop();
     }
 
-    private async Task RunSessionAsync(string? typed, string? announcement = null)
+    private async Task RunSessionAsync(string? typed, string? announcement = null, bool isReminder = true)
     {
         if (settings.GroqKey.Length == 0) { OpenSettings(); return; }
         session = new CancellationTokenSource();
@@ -291,8 +296,9 @@ public class DaveApp : ApplicationContext
                 using (new Ducker(settings.DuckTo))
                 {
                     Speaker.Beep();
-                    var text = T("Reminder: ", "Herinnering: ") + announcement;
-                    bubble.ShowText("⏰ " + text);
+                    var text = isReminder ? T("Reminder: ", "Herinnering: ") + announcement : announcement;
+                    bubble.ShowText((isReminder ? "⏰ " : "👀 ") + text);
+                    ConversationLog.Add(isReminder ? "(reminder went off)" : "(something you asked me to watch for happened)", text);
                     await Speaker.SpeakAsync(settings, text, settings.Language, cancel);
                 }
                 return;
@@ -348,6 +354,7 @@ public class DaveApp : ApplicationContext
                 if (result is Assistant.Speak speak)
                 {
                     Log.Write($"Says ({language}): {speak.Text}");
+                    ConversationLog.Add(text, speak.Text);
                     bubble.ShowText(speak.Text);
                     Watchdog.Step = "speaking";
                     await Speaker.SpeakAsync(settings, speak.Text, language, cancel);
@@ -360,7 +367,7 @@ public class DaveApp : ApplicationContext
                 duck.Dispose(); // give the sound back before touching music or volume
                 if (command.Name == "start_music_quiz")
                 {
-                    await QuizAsync(command.Args["theme"]?.ToString() ?? "mixed hits", cancel);
+                    ConversationLog.Add(text, $"(started a music quiz: {command.Args["theme"]})");
                     return;
                 }
                 if (command.Name == "look_at_screen")
@@ -369,12 +376,13 @@ public class DaveApp : ApplicationContext
                     bubble.ShowText("👁 " + T("Looking at your screen…", "Ik kijk naar je scherm…"));
                     var seen = await Vision.AskAboutScreenAsync(settings, command.Args["question"]?.ToString() ?? text, language);
                     Log.Write($"Says (screen): {seen}");
+                    ConversationLog.Add(text, $"(looked at the screen) {seen}");
                     bubble.ShowText(seen);
                     Watchdog.Step = "speaking";
                     await Speaker.SpeakAsync(settings, seen, language, cancel);
                     return;
                 }
-                if (command.Name is "use_clipboard" or "pc_stats" or "update_dave")
+                if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation")
                 {
                     string answer;
                     if (command.Name == "use_clipboard")
@@ -393,8 +401,18 @@ public class DaveApp : ApplicationContext
                         answer = await Assistant.WorkOnAsync(settings, command.Args["question"]?.ToString() ?? text, stats,
                             "a report of the user's PC, measured just now", language, spoken: true);
                     }
+                    else if (command.Name == "recall_conversation")
+                    {
+                        Watchdog.Step = "remembering";
+                        bubble.ShowText("💭 " + T("Thinking back…", "Even terugdenken…"));
+                        int Days(string key) => command.Args[key] is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<int>(out var d) ? Math.Max(0, d) : 0;
+                        var earlier = ConversationLog.Search(command.Args["about"]?.ToString() ?? "", Days("from_days_ago"), Days("to_days_ago"));
+                        answer = await Assistant.WorkOnAsync(settings, text, earlier,
+                            "what the user and you (the assistant) said in earlier conversations, with dates and times", language, spoken: true);
+                    }
                     else answer = await UpdateOnRequestAsync();
                     Log.Write($"Says: {answer}");
+                    ConversationLog.Add(text, answer);
                     bubble.ShowText(answer);
                     Watchdog.Step = "speaking";
                     await Speaker.SpeakAsync(settings, answer, language, cancel);
@@ -412,6 +430,7 @@ public class DaveApp : ApplicationContext
                         },
                         cancel);
                     Log.Write($"Agent done: {summary}");
+                    ConversationLog.Add(text, $"(did it in the apps) {summary}");
                     bubble.ShowText("✅ " + summary);
                     await Speaker.SpeakAsync(settings, summary, language, cancel);
                     return;
@@ -419,6 +438,7 @@ public class DaveApp : ApplicationContext
                 Watchdog.Step = $"command {command.Name}";
                 var outcome = await Commands.RunAsync(settings, command.Name, command.Args);
                 Log.Write($"Outcome: {outcome.Text}");
+                ConversationLog.Add(text, $"({command.Name}) {outcome.Text}");
                 bubble.ShowText(outcome.Text);
                 if (outcome.Speak) await Speaker.SpeakAsync(settings, outcome.Text, settings.Language, cancel);
                 else Speaker.Beep(1320, 90);
@@ -574,7 +594,13 @@ public class DaveApp : ApplicationContext
     {
         if (session != null) return; // try again at the next tick
         var due = Reminders.TakeDue(settings);
-        if (due.Count > 0) _ = RunSessionAsync(null, string.Join(". ", due.Select(r => r.Message)));
+        if (due.Count > 0) { _ = RunSessionAsync(null, string.Join(". ", due.Select(r => r.Message))); return; }
+        if (headsUps.Count > 0)
+        {
+            var messages = new List<string>();
+            while (headsUps.Count > 0) messages.Add(headsUps.Dequeue());
+            _ = RunSessionAsync(null, string.Join(" ", messages), isReminder: false);
+        }
     }
 }
 

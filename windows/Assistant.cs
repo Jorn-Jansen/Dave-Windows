@@ -17,7 +17,8 @@ public static class Assistant
         If you can search the web, use it for anything current, like news, weather, traffic, opening hours, scores, or prices.
         When the user asks to control the music or volume, open or close a program or website, find a file, lock the PC, wants a music quiz, a mix,
         a reminder or timer, asks what song is playing, asks about something on their screen, wants something typed or copied, asks about what they copied,
-        asks how their PC is doing, asks to update you, or tells you something to remember ("onthoud dat…", "remember that…"),
+        asks how their PC is doing, asks to update you, asks about an earlier conversation, wants you to tell them when something happens,
+        or tells you something to remember ("onthoud dat…", "remember that…"),
         use the matching command instead of answering.
         Use what you remember about the user naturally when it's relevant.
         When a spoken answer invites a reply (a question back, a quiz question, "shall I…?"), end it with a question mark;
@@ -149,6 +150,24 @@ public static class Assistant
             "free disk space, battery, how long it's been on. E.g. 'how hot is my GPU', 'why is my PC slow', 'how much space is left on C'.",
             new JsonObject { ["question"] = Str("The user's question, in their own words") }, "question"),
         Tool("update_dave", "Check for a new version of Dave and install it ('update yourself', 'are you up to date', 'which version are you')."),
+        Tool("recall_conversation", "Look up what the user and you talked about earlier (kept for 30 days): 'what did I ask you yesterday', " +
+            "'what was that game you recommended', 'what did we talk about this morning'. Not needed for the last few minutes; you already see those.",
+            new JsonObject
+            {
+                ["about"] = Str("Keywords of the topic, in the language it was probably said in, e.g. 'game recommend'; empty for 'everything'"),
+                ["from_days_ago"] = Int("Start of the period in days ago: 0 = today, 1 = yesterday, 7 = a week ago"),
+                ["to_days_ago"] = Int("End of the period in days ago (0 = today)"),
+            }, "about", "from_days_ago", "to_days_ago"),
+        Tool("watch_for", "Keep an eye on something and tell the user when it happens: 'tell me when Roblox closes', 'let me know when my download is done', " +
+            "'warn me if my GPU goes above 80 degrees', 'tell me when Discord starts', 'warn me when the battery is below 20 percent'.",
+            new JsonObject
+            {
+                ["what"] = Enum("program_closes", "program_starts", "download_done", "gpu_temp_above", "gpu_use_above", "cpu_use_above", "ram_use_above", "battery_below"),
+                ["program"] = Str("For program_closes / program_starts: the program's name, e.g. 'Roblox', 'Discord', 'Chrome'"),
+                ["number"] = new JsonObject { ["type"] = "number", ["description"] = "The limit: degrees for gpu_temp_above, percent for the others" },
+                ["message"] = Str("What to say when it happens, short, in the user's language, e.g. 'Roblox just closed.'"),
+            }, "what", "message"),
+        Tool("stop_watching", "Stop keeping an eye on things ('stop watching', 'never mind the download')."),
     };
 
     /// <summary>
@@ -199,6 +218,9 @@ public static class Assistant
             system += "\nThings the user asked you to remember:\n" + string.Join("\n", settings.Memories.Select(m => "- " + m));
         var reminders = Reminders.Describe(settings);
         if (reminders != null) system += "\nUpcoming timers and reminders (the time left is exact, use it as is): " + reminders;
+        if (Watchers.DescribeAll() is { } watching) system += "\nThings you're keeping an eye on for the user: " + watching;
+        if (History.Count == 0 && ConversationLog.RecentTopics() is { } recent)
+            system += "\nThe last things the user asked you before this conversation (use recall_conversation for details): " + recent;
 
         var messages = new JsonArray { Message("system", system) };
         foreach (var turn in History) foreach (var m in turn) messages.Add(m.DeepClone());
@@ -234,6 +256,7 @@ public static class Assistant
         else
         {
             var reply = message["content"]?.GetValue<string>()?.Trim() ?? "";
+            reply = Speakable(reply);
             result = new Speak(reply.Length > 0 ? reply : settings.Say("Sorry, I didn't get an answer for that.", "Sorry, daar kreeg ik geen antwoord op."));
         }
 
@@ -325,7 +348,7 @@ public static class Assistant
 
     /// <summary>Drop emojis and symbols text-to-speech would read out.</summary>
     public static string Speakable(string text) =>
-        Regex.Replace(Regex.Replace(text, @"[\p{So}\p{Cs}️‍]", ""), @"\s+", " ").Trim();
+        Regex.Replace(Regex.Replace(Regex.Replace(text, @"\*\*|__|`|^#+\s*", "", RegexOptions.Multiline), @"[\p{So}\p{Cs}️‍]", ""), @"\s+", " ").Trim();
 
     private static string TimeContext()
     {

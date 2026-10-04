@@ -39,6 +39,11 @@ public static class Commands
                 "close_all_apps" => CloseAll(s, Str(args, "keep")),
                 "type_text" => await TypeAsync(s, Str(args, "text"), args["press_enter"] is JsonValue e && e.TryGetValue<bool>(out var enter) && enter),
                 "copy_to_clipboard" => CopyToClipboard(s, Str(args, "text")),
+                "watch_for" => new Outcome(Watchers.Add(s, Str(args, "what"), Str(args, "program"),
+                    args["number"] is JsonValue n && n.TryGetValue<double>(out var limit) ? limit : 0, Str(args, "message")), true),
+                "stop_watching" => new Outcome(Watchers.CancelAll() is var stopped and > 0
+                    ? s.Say($"Okay, I stopped watching {stopped} thing{(stopped == 1 ? "" : "s")}.", $"Oké, ik let er niet meer op ({stopped}).")
+                    : s.Say("I wasn't keeping an eye on anything.", "Ik lette nergens op."), true),
                 _ => new Outcome(s.Say("I can't do that yet.", "Dat kan ik nog niet."), true),
             };
         }
