@@ -16,3 +16,8 @@ backend/node_modules/
 # Logs
 *.log
 build-log.txt
+
+# Installer output (share DaveSetup.exe as a GitHub release, not in the repo)
+installer/app/
+installer/Output/
+installer-log.txt

@@ -16,7 +16,8 @@ public static class Assistant
         - Say numbers, times, and units the way a person would say them out loud.
         If you can search the web, use it for anything current, like news, weather, traffic, opening hours, scores, or prices.
         When the user asks to control the music or volume, open or close a program or website, find a file, lock the PC, wants a music quiz, a mix,
-        a reminder or timer, asks what song is playing, asks about something on their screen, or tells you something to remember ("onthoud dat…", "remember that…"),
+        a reminder or timer, asks what song is playing, asks about something on their screen, wants something typed or copied, asks about what they copied,
+        asks how their PC is doing, asks to update you, or tells you something to remember ("onthoud dat…", "remember that…"),
         use the matching command instead of answering.
         Use what you remember about the user naturally when it's relevant.
         When a spoken answer invites a reply (a question back, a quiz question, "shall I…?"), end it with a question mark;
@@ -67,7 +68,7 @@ public static class Assistant
         Tool("play_music", "Start playing a specific song, artist, album, playlist or genre on Spotify.",
             new JsonObject
             {
-                ["query"] = Str("What to play, e.g. 'Hangover Taio Cruz' or 'chill'"),
+                ["query"] = Str("What to play, e.g. 'Hangover Taio Cruz' or 'chill'. For a random song: 'random', or e.g. 'random rock' / 'random Drake'"),
                 ["kind"] = Enum("song", "artist", "album", "playlist"),
             }, "query", "kind"),
         Tool("start_music_quiz", "Start a music quiz: the app plays short bits of songs and the players guess them.",
@@ -124,7 +125,62 @@ public static class Assistant
             "E.g. 'open Notepad and write a shopping list', 'pause the YouTube video', 'open a new Chrome tab with nos.nl', " +
             "'set my Discord status to away'. For just opening a program, use open_app.",
             new JsonObject { ["task"] = Str("The full task in the user's own words, with all details they gave") }, "task"),
+        Tool("type_text", "Dictation: type text into the window the user is working in (a chat, document, search bar...). " +
+            "E.g. 'type: see you in five minutes', 'typ dat ik eraan kom', 'write hello everyone and send it'.",
+            new JsonObject
+            {
+                ["text"] = Str("Exactly what to type, written out properly (spelling, capitals, punctuation), in the language they spoke"),
+                ["press_enter"] = new JsonObject { ["type"] = "boolean", ["description"] = "true if they want it sent or submitted ('and send it', 'press enter')" },
+            }, "text"),
+        Tool("use_clipboard", "Do something with what the user copied (text or an image): read it out, summarise, translate, explain, " +
+            "fix spelling, answer a question about it. E.g. 'read what I copied', 'translate this to English', 'what does this code do'.",
+            new JsonObject
+            {
+                ["task"] = Str("What to do with it, in the user's own words"),
+                ["output"] = new JsonObject
+                {
+                    ["type"] = "string", ["enum"] = new JsonArray("say", "copy"),
+                    ["description"] = "'copy' when they want the result on the clipboard ('and copy it', 'put it on my clipboard', 'zet het op mijn klembord'); otherwise 'say'",
+                },
+            }, "task", "output"),
+        Tool("copy_to_clipboard", "Put text on the clipboard so the user can paste it, e.g. 'copy that' (your previous answer) or 'copy the address'.",
+            new JsonObject { ["text"] = Str("Exactly the text to copy") }, "text"),
+        Tool("pc_stats", "Check how the PC is doing: processor and graphics card use and temperature, memory (RAM), what's using it, " +
+            "free disk space, battery, how long it's been on. E.g. 'how hot is my GPU', 'why is my PC slow', 'how much space is left on C'.",
+            new JsonObject { ["question"] = Str("The user's question, in their own words") }, "question"),
+        Tool("update_dave", "Check for a new version of Dave and install it ('update yourself', 'are you up to date', 'which version are you')."),
     };
+
+    /// <summary>
+    /// Do [task] with [material] (clipboard text, PC stats...), as a short spoken answer, or as just the resulting text
+    /// when [spoken] is false (to put on the clipboard). The result is remembered, so follow-up questions work.
+    /// </summary>
+    public static async Task<string> WorkOnAsync(Settings settings, string task, string material, string what, string languageTag, bool spoken)
+    {
+        var language = CultureInfo.GetCultureInfo(languageTag).EnglishName.Split(' ')[0];
+        var style = spoken
+            ? $"Answer in {language}, as speech: one to three short sentences (more only if they ask to read something out or explain it in detail). " +
+              "When asked to read text out, read it as it is if it's short, otherwise summarise it. Plain speech only: no markdown, lists, emojis or symbols."
+            : "Reply with only the resulting text, exactly as it should be pasted: no introduction, quotes or comments.";
+        var system = $"You are {settings.Name}, a voice assistant on the user's PC. Below is {what}. Do what the user asks with it. {style}";
+        var body = new JsonObject
+        {
+            ["model"] = Groq.Model,
+            ["reasoning_effort"] = "low",
+            ["messages"] = new JsonArray { Message("system", system), Message("user", $"{task}\n\n---\n{material}") },
+        };
+        var answer = (await Groq.ChatAsync(settings, body))["content"]?.GetValue<string>()?.Trim() ?? "";
+        RememberResult(answer);
+        return spoken ? Speakable(answer) : answer;
+    }
+
+    /// <summary>What the last command came up with, so follow-ups ("copy that", "and in Dutch?") know about it.</summary>
+    public static void RememberResult(string result)
+    {
+        if (History.Count == 0) return;
+        var tool = History[^1].LastOrDefault(m => m["role"]?.GetValue<string>() == "tool");
+        if (tool != null) tool["content"] = result.Length > 3000 ? result[..3000] + "…" : result;
+    }
 
     public static async Task<Result> AskAsync(Settings settings, string text, string answerLanguage, string? position)
     {
@@ -135,7 +191,8 @@ public static class Assistant
         var where = position != null ? $" {position}" : "";
         var context = $"[{TimeContext()} User's country: {settings.Country}; use its units and currency.{where} Answer in {languageName}.]";
 
-        var system = System.Replace("Dave", settings.Name) + $"\nYour name is {settings.Name}.";
+        var system = System.Replace("Dave", settings.Name) + $"\nYour name is {settings.Name}. You are version {Updater.Current.ToString(3)}; " +
+                     "for questions about updating or newer versions, use update_dave.";
         if (settings.IsDutch)
             system += "\nThe user speaks Dutch or English. For very short commands that could be either, assume Dutch: 'harder' means louder and 'zachter' means quieter.";
         if (settings.Memories.Count > 0)

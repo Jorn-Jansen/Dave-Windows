@@ -54,8 +54,9 @@ public sealed class WakeWord : IDisposable
     private bool disposed;
     private DateTime lastTrigger = DateTime.MinValue;
 
-    /// <summary>While true (Dave is listening or talking), wake words are ignored.</summary>
+    /// <summary>While true (Dave is listening to you or talking), wake words are ignored.</summary>
     public volatile bool Paused;
+    private bool wasDeaf; // skipped audio since the last chunk, so start fresh before listening again
 
     /// <param name="onWake">Called on the audio thread; marshal to the UI yourself.</param>
     public WakeWord(Settings settings, Action onWake)
@@ -92,16 +93,19 @@ public sealed class WakeWord : IDisposable
 
     private void OnAudio(object? sender, WaveInEventArgs e)
     {
-        if (Paused) return;
         string heard;
         lock (sync)
         {
             if (disposed) return; // audio can still arrive while shutting down; the recognizer may be gone
+            // Never while you're talking to Dave, or while Dave is talking (or just stopped): his own voice can't wake him.
+            if (Paused || Speaker.IsBusy) { wasDeaf = true; return; }
+            if (wasDeaf) { wasDeaf = false; recognizer.Reset(); } // forget half-heard sound from before
             string json, key;
             if (recognizer.AcceptWaveform(e.Buffer, e.BytesRecorded)) { json = recognizer.Result(); key = "text"; }
             else { json = recognizer.PartialResult(); key = "partial"; }
             heard = (JsonNode.Parse(json)?[key]?.GetValue<string>() ?? "").Trim();
-            if (heard.Length == 0 || !phrases.Any(heard.EndsWith)) return;
+            // Only the wake phrase on its own, at the start of what you say: not somewhere in the middle of talking.
+            if (!phrases.Contains(heard)) return;
             if (DateTime.Now - lastTrigger < TimeSpan.FromSeconds(3)) return;
             lastTrigger = DateTime.Now;
             recognizer.Reset();

@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace DaveWindows;
 
@@ -126,6 +127,7 @@ public static class Spotify
 
     public static async Task<string> PlayAsync(Settings s, string query, string kind)
     {
+        if (kind is "song" or "" && RandomRequest(query) is { } topic) return await PlayRandomAsync(s, topic);
         var type = kind switch { "artist" => "artist", "album" => "album", "playlist" => "playlist", _ => "track" };
         var (_, text) = await ApiAsync(s, HttpMethod.Get, $"/search?type={type}&limit=5{Market(s)}&q={Uri.EscapeDataString(query)}");
         var items = JsonNode.Parse(text)?[$"{type}s"]?["items"]?.AsArray() ?? new JsonArray();
@@ -135,6 +137,41 @@ public static class Spotify
         else await PlayerCommandAsync(s, HttpMethod.Put, "/me/player/play", new JsonObject { ["context_uri"] = found["uri"]!.GetValue<string>() });
         var artist = found["artists"]?[0]?["name"]?.GetValue<string>();
         return artist != null ? $"{found["name"]} – {artist}" : found["name"]!.GetValue<string>();
+    }
+
+    private static readonly HashSet<string> RandomWords = new() { "random", "any", "anything", "something", "whatever", "surprise", "willekeurig", "willekeurige", "iets", "random's" };
+    private static readonly HashSet<string> FillerWords = new() { "a", "an", "some", "song", "songs", "track", "music", "me", "play", "een", "nummer", "nummertje", "liedje", "muziek", "maar", "wat" };
+
+    /// <summary>
+    /// For "random song" / "something" / "a random rock song": what to pick from ("" for anything), or null when it's a normal request.
+    /// Searching for "random song" literally always gave the same result ("Ransom").
+    /// </summary>
+    private static string? RandomRequest(string query)
+    {
+        var words = Regex.Replace(query.ToLowerInvariant(), @"[^\p{L}\p{N}' ]", " ").Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        if (words.Count == 0) return "";
+        if (!words.Any(RandomWords.Contains)) return null;
+        return string.Join(' ', words.Where(w => !RandomWords.Contains(w) && !FillerWords.Contains(w)));
+    }
+
+    /// <summary>A random song: from a random spot in the search results for [topic], or for a random letter when it's just "anything".</summary>
+    private static async Task<string> PlayRandomAsync(Settings s, string topic)
+    {
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            var q = topic.Length > 0 ? topic : ((char)('a' + Random.Shared.Next(26))).ToString();
+            var offset = Random.Shared.Next(topic.Length > 0 ? 40 : 200); // popular songs: deeper for "anything", shallower for a topic
+            var (_, text) = await ApiAsync(s, HttpMethod.Get, $"/search?type=track&limit=10&offset={offset}{Market(s)}&q={Uri.EscapeDataString(q)}");
+            var items = (JsonNode.Parse(text)?["tracks"]?["items"]?.AsArray() ?? new JsonArray()).Where(i => i != null).ToList();
+            if (items.Count == 0) continue;
+            var found = items[Random.Shared.Next(items.Count)]!;
+            if (ToSong(found) is not { } song) continue;
+            await PlaySongAsync(s, song, 0);
+            Log.Write($"Random song (from '{q}', offset {offset})");
+            var artist = found["artists"]?[0]?["name"]?.GetValue<string>();
+            return artist != null ? $"{found["name"]} – {artist}" : found["name"]!.GetValue<string>();
+        }
+        throw new SpotifyException(s.Say("I couldn't find a random song right now.", "Ik kon nu geen willekeurig nummer vinden."));
     }
 
     /// <summary>Play one song from [positionMs], as "its album, starting at this song" (works on the desktop app too).</summary>

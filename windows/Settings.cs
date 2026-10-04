@@ -38,6 +38,7 @@ public class Settings
     /// <summary>Browser for websites when you don't name one, e.g. "Brave" ("" = Windows' default).</summary>
     public string Browser { get; set; } = "";
     public bool StartWithWindows { get; set; } = false;
+    public bool AutoUpdate { get; set; } = true;
     /// <summary>How quiet other sound gets while Dave talks (0.3 = 30%).</summary>
     public double DuckTo { get; set; } = 0.3;
 

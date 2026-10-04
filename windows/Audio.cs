@@ -95,6 +95,11 @@ public static class Recorder
 public static class Speaker
 {
     private static WaveOutEvent? current;
+    private static int playing;
+    private static DateTime lastSound = DateTime.MinValue;
+
+    /// <summary>True while Dave's voice is playing, and for a moment after (sound still leaving the speakers).</summary>
+    public static bool IsBusy => playing > 0 || DateTime.Now - lastSound < TimeSpan.FromSeconds(1.5);
 
     public static IEnumerable<VoiceInformation> VoicesFor(string languageTag) =>
         SpeechSynthesizer.AllVoices.Where(v =>
@@ -144,10 +149,19 @@ public static class Speaker
         output.PlaybackStopped += (_, _) => finished.TrySetResult(true);
         output.Init(reader);
         current = output;
-        output.Play();
-        Ducker.OwnVolumeFull(); // Windows remembers per-app volume; make sure Dave himself isn't stuck low
-        using (cancel.Register(() => output.Stop())) await finished.Task;
-        current = null;
+        Interlocked.Increment(ref playing);
+        try
+        {
+            output.Play();
+            Ducker.OwnVolumeFull(); // Windows remembers per-app volume; make sure Dave himself isn't stuck low
+            using (cancel.Register(() => output.Stop())) await finished.Task;
+        }
+        finally
+        {
+            lastSound = DateTime.Now;
+            Interlocked.Decrement(ref playing);
+            current = null;
+        }
     }
 
     public static void Stop() => current?.Stop();
