@@ -36,3 +36,6 @@ add `http://127.0.0.1:8765/callback` as a Redirect URI in that app, then click *
   3. Create a GitHub release tagged `v` + that version (e.g. `v1.1.1`) and attach `DaveSetup.exe` with that exact name.
   Installed copies pick it up within 6 hours. The repo must be public for this.
 - **Settings, keys, logs:** `%APPDATA%\Dave Windows\`. Nothing personal is stored in the repo or the installer.
+
+## Licence
+[MIT](LICENSE). Uses [NAudio](https://github.com/naudio/NAudio) (MIT) and [Vosk](https://alphacephei.com/vosk/) with its small English model (Apache 2.0).
