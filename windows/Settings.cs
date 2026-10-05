@@ -85,6 +85,12 @@ public class Settings
         public long Id { get; set; }
         public DateTimeOffset At { get; set; }
         public string Message { get; set; } = "";
+        /// <summary>"" (once), "daily", "weekdays", "weekends", "weekly" (on <see cref="Days"/>), "monthly" or "every" (<see cref="EveryMinutes"/>).</summary>
+        public string Repeat { get; set; } = "";
+        public List<DayOfWeek> Days { get; set; } = new();
+        public int EveryMinutes { get; set; }
+        /// <summary>For monthly: the day of the month (stays the 31st in long months, even after a short one).</summary>
+        public int MonthDay { get; set; }
     }
 
     [JsonIgnore] public bool IsDutch => Language.StartsWith("nl", StringComparison.OrdinalIgnoreCase);

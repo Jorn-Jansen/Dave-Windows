@@ -22,7 +22,7 @@ Dave updates himself when a new version is released. To remove him: Settings →
 - **Your screen:** "what's this error?", "read this out"
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
 - **PC stats:** "how hot is my GPU?", "what's using my memory?"
-- **Reminders and timers**, and **heads-ups:** "tell me when Roblox closes", "let me know when my download is done"
+- **Reminders and timers**, also repeating ("every weekday at 8", "every 2 hours"), and **heads-ups:** "tell me when Roblox closes", "let me know when my download is done"
 - **Windows:** "put this on my other screen", "Chrome and Discord side by side", "minimise everything"
 - **Screenshots:** "screenshot this and copy it", "save a screenshot on my desktop"
 - **Calendar:** "what do I have tomorrow?", "put football on Saturday at 2 in my calendar" (paste your calendar's iCal link in Settings)
