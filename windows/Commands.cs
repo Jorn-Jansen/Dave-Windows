@@ -9,7 +9,8 @@ public static class Commands
     /// <summary>[Text] is shown in the bubble; [Speak] means say it out loud (answers, problems, confirmations).</summary>
     public record Outcome(string Text, bool Speak = false);
 
-    public static async Task<Outcome> RunAsync(Settings s, string name, JsonObject args)
+    /// <param name="said">What the user said, word for word (for choices that shouldn't depend on the AI, like play vs. queue).</param>
+    public static async Task<Outcome> RunAsync(Settings s, string name, JsonObject args, string said = "")
     {
         Log.Write($"Command {name} {args.ToJsonString()}");
         var spotify = Spotify.IsConnected(s);
@@ -20,7 +21,7 @@ public static class Commands
                 "media_control" => await MediaControlAsync(s, Str(args, "action"), spotify),
                 "set_volume" => SetVolume(s, args),
                 "play_music" => !spotify ? NeedSpotify(s)
-                    : Bool(args, "next") && Str(args, "kind") is "song" or ""
+                    : WantsQueue(said) && Str(args, "kind") is "song" or ""
                         ? new Outcome("⏭ " + await Spotify.QueueAsync(s, Str(args, "query")))
                         : new Outcome("🎵 " + await Spotify.PlayAsync(s, Str(args, "query"), Str(args, "kind"))),
                 "dislike_song" => await DislikeAsync(s),
@@ -33,7 +34,7 @@ public static class Commands
                     : new Outcome("❤ " + (await Spotify.LikeCurrentAsync(s)).Name),
                 "add_to_playlist" => !spotify ? NeedSpotify(s) : !await MediaSession.IsSpotifyOrNothingAsync() ? OnlySpotify(s)
                     : await AddToPlaylistAsync(s, Str(args, "playlist")),
-                "play_mix" => spotify ? await PlayMixAsync(s, Str(args, "description"), Int(args, "minutes") ?? 30, Bool(args, "queue")) : NeedSpotify(s),
+                "play_mix" => spotify ? await PlayMixAsync(s, Str(args, "description"), Int(args, "minutes") ?? 30, WantsQueue(said)) : NeedSpotify(s),
                 "remember" => Remember(s, Str(args, "fact")),
                 "forget" => Forget(s, Str(args, "fact")),
                 "set_reminder" => SetReminder(s, args),
@@ -67,6 +68,14 @@ public static class Commands
 
     private static string Str(JsonObject args, string key) => args[key]?.ToString() ?? "";
     private static int? Int(JsonObject args, string key) => args[key] is JsonValue v && v.TryGetValue<int>(out var i) ? i : null;
+    /// <summary>
+    /// Queue instead of play only when the user said so in their own words ("queue", "next", "after this", "wachtrij",
+    /// "hierna", "daarna"). Decided here, not by the AI: "play X" must always just play it.
+    /// </summary>
+    private static bool WantsQueue(string said) =>
+        System.Text.RegularExpressions.Regex.IsMatch(said.ToLowerInvariant(),
+            @"\bqueue|\bnext\b|after th(is|at|e current)|wachtrij|\bhierna\b|\bdaarna\b|als volgende|na dit|erachter");
+
     private static bool Bool(JsonObject args, string key) => args[key] is JsonValue v && v.TryGetValue<bool>(out var b) && b;
 
     private static Outcome NeedSpotify(Settings s) => new(s.Say(

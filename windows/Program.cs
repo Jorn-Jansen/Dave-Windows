@@ -487,7 +487,7 @@ public class DaveApp : ApplicationContext
                     return;
                 }
                 Watchdog.Step = $"command {command.Name}";
-                var outcome = await Commands.RunAsync(settings, command.Name, command.Args);
+                var outcome = await Commands.RunAsync(settings, command.Name, command.Args, text);
                 Log.Write($"Outcome: {outcome.Text}");
                 ConversationLog.Add(text, $"({command.Name}) {outcome.Text}");
                 bubble.ShowText(outcome.Text);

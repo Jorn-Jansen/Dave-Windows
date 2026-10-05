@@ -67,13 +67,12 @@ public static class Assistant
             new JsonObject { ["action"] = Enum("play", "pause", "next", "previous") }, "action"),
         Tool("set_volume", "PC volume: change for louder/quieter, level for an exact percentage, mute to (un)mute.",
             new JsonObject { ["change"] = Enum("up", "down"), ["level"] = Int("0-100"), ["mute"] = new JsonObject { ["type"] = "boolean" } }),
-        Tool("play_music", "Play a song, artist, album, playlist (the user's own first) or genre on Spotify, or their liked songs.",
+        Tool("play_music", "Play (or queue) a song, artist, album, playlist (the user's own first) or genre on Spotify, or their liked songs.",
             new JsonObject
             {
                 ["query"] = Str("e.g. 'Hangover Taio Cruz', 'chill', 'gaming' for 'my gaming playlist'; 'random' or 'random rock' for a random song"),
                 ["kind"] = Enum("song", "artist", "album", "playlist", "liked_songs"),
-                ["next"] = new JsonObject { ["type"] = "boolean", ["description"] = "true for 'play X next' / 'queue X': after the current song" },
-            }, "query", "kind"),
+            }, "query", "kind"), // play or queue: decided from the user's own words ("queue", "next"), not here
         Tool("dislike_song", "The user doesn't like the song that's playing: skip it and never play it again."),
         Tool("undislike_song", "Allow a song again that the user said they didn't like.", new JsonObject { ["song"] = Str("Song title") }, "song"),
         Tool("music_settings", "Shuffle on/off, repeat (this song / the playlist / off), or jump within the song ('skip 30 seconds', 'start this song over').",
@@ -95,7 +94,6 @@ public static class Assistant
             {
                 ["description"] = Str("e.g. 'gaming session'; for 'something like this': 'songs similar to <title> by <artist>' (the song now playing)"),
                 ["minutes"] = Int("Length; 30 if not said"),
-                ["queue"] = new JsonObject { ["type"] = "boolean", ["description"] = "true to add them after the current song instead of starting now ('queue some songs like this')" },
             }, "description"),
         Tool("remember", "Remember a fact about the user.", new JsonObject { ["fact"] = Str("Short English sentence") }, "fact"),
         Tool("forget", "Forget a remembered fact.", new JsonObject { ["fact"] = Str("Which, or 'everything'") }, "fact"),

@@ -168,21 +168,38 @@ public static class Spotify
     /// <summary>A random song: from a random spot in the search results for [topic], or for a random letter when it's just "anything".</summary>
     private static async Task<string> PlayRandomAsync(Settings s, string topic)
     {
-        for (int attempt = 0; attempt < 3; attempt++)
+        var (found, song) = await FindRandomAsync(s, topic);
+        await PlaySongAsync(s, song, 0);
+        return Describe(found);
+    }
+
+    /// <summary>
+    /// A random song: from a random spot in the search results for [topic], or for a random letter when it's just "anything".
+    /// Never one you said you don't like.
+    /// </summary>
+    private static async Task<(JsonNode found, Song song)> FindRandomAsync(Settings s, string topic)
+    {
+        for (int attempt = 0; attempt < 4; attempt++)
         {
             var q = topic.Length > 0 ? topic : ((char)('a' + Random.Shared.Next(26))).ToString();
             var offset = Random.Shared.Next(topic.Length > 0 ? 40 : 200); // popular songs: deeper for "anything", shallower for a topic
             var (_, text) = await ApiAsync(s, HttpMethod.Get, $"/search?type=track&limit=10&offset={offset}{Market(s)}&q={Uri.EscapeDataString(q)}");
-            var items = (JsonNode.Parse(text)?["tracks"]?["items"]?.AsArray() ?? new JsonArray()).Where(i => i != null).ToList();
+            var items = (JsonNode.Parse(text)?["tracks"]?["items"]?.AsArray() ?? new JsonArray())
+                .Where(i => i != null && !MusicWatcher.IsDisliked(s, i["name"]?.GetValue<string>() ?? "", i["artists"]?[0]?["name"]?.GetValue<string>() ?? ""))
+                .ToList();
             if (items.Count == 0) continue;
             var found = items[Random.Shared.Next(items.Count)]!;
             if (ToSong(found) is not { } song) continue;
-            await PlaySongAsync(s, song, 0);
-            Log.Write($"Random song (from '{q}', offset {offset})");
-            var artist = found["artists"]?[0]?["name"]?.GetValue<string>();
-            return artist != null ? $"{found["name"]} – {artist}" : found["name"]!.GetValue<string>();
+            Log.Write($"Random song (from '{q}', offset {offset}): {Describe(found)}");
+            return (found, song);
         }
         throw new SpotifyException(s.Say("I couldn't find a random song right now.", "Ik kon nu geen willekeurig nummer vinden."));
+    }
+
+    private static string Describe(JsonNode track)
+    {
+        var artist = track["artists"]?[0]?["name"]?.GetValue<string>();
+        return artist != null ? $"{track["name"]} – {artist}" : track["name"]!.GetValue<string>();
     }
 
     /// <summary>Play one song from [positionMs], as "its album, starting at this song" (works on the desktop app too).</summary>
@@ -231,6 +248,12 @@ public static class Spotify
     /// <summary>"Play X next": the first matching song goes into the queue, after the current one.</summary>
     public static async Task<string> QueueAsync(Settings s, string query)
     {
+        if (RandomRequest(query) is { } topic) // "queue a random song": not a search for the word "random"
+        {
+            var (random, song) = await FindRandomAsync(s, topic);
+            await PlayerCommandAsync(s, HttpMethod.Post, $"/me/player/queue?uri={Uri.EscapeDataString(song.Uri)}", null);
+            return Describe(random);
+        }
         var (_, text) = await ApiAsync(s, HttpMethod.Get, $"/search?type=track&limit=1{Market(s)}&q={Uri.EscapeDataString(query)}");
         var found = JsonNode.Parse(text)?["tracks"]?["items"]?[0]
                     ?? throw new SpotifyException(s.Say($"I couldn't find {query} on Spotify.", $"Ik kon {query} niet vinden op Spotify."));
