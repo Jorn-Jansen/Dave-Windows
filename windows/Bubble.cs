@@ -28,6 +28,7 @@ public class Bubble : LayeredWindow
     private const float CircleSize = 88f;
     private const int MaxTextWidth = 860;
     private static readonly Font TextFont = new("Segoe UI", 21f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font EmojiFont = new("Segoe UI Emoji", 20f, FontStyle.Regular, GraphicsUnit.Pixel); // see BubbleText
 
     private readonly Glow glow = new();
     private readonly System.Windows.Forms.Timer frameTimer = new() { Interval = 16 };
@@ -109,7 +110,7 @@ public class Bubble : LayeredWindow
         using var bmp = new Bitmap(1, 1);
         using var g = Graphics.FromImage(bmp);
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-        return g.MeasureString(s, TextFont, MaxTextWidth);
+        return BubbleText.Layout(g, s, TextFont, EmojiFont, MaxTextWidth).size;
     }
 
     // --- Animation ---
@@ -210,8 +211,12 @@ public class Bubble : LayeredWindow
         var area = new RectangleF(shape.X + 28, shape.Y + 15, shape.Width - 56 + 4, shape.Height - 30 + 4);
         using var shadow = new SolidBrush(Color.FromArgb(alpha / 3, 0, 0, 0));
         using var white = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255));
-        g.DrawString(text, TextFont, shadow, new RectangleF(area.X + 1, area.Y + 1, area.Width, area.Height));
-        g.DrawString(text, TextFont, white, area);
+        var (pieces, _) = BubbleText.Layout(g, text, TextFont, EmojiFont, MaxTextWidth); // emoji in their own font, not squares
+        var clip = g.Clip;
+        g.SetClip(RectangleF.Inflate(area, 2, 2)); // while the pill is still growing, keep the text inside it
+        BubbleText.Draw(g, pieces, shadow, new PointF(area.X + 1, area.Y + 1));
+        BubbleText.Draw(g, pieces, white, area.Location);
+        g.Clip = clip;
     }
 
     private static LinearGradientBrush Gradient(RectangleF rect, float angle, int alpha)

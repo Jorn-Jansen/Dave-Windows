@@ -252,7 +252,15 @@ public static class Assistant
         var playing = await MediaSession.NowPlayingAsync();
         var music = playing != null ? $" Now playing: \"{playing.Title}\"{(playing.Artist.Length > 0 ? $" by {playing.Artist}" : "")}." : " No music or video is playing.";
         if (MusicWatcher.EarlierSongs(playing) is { } earlier) music += $" Songs before that: {earlier}.";
-        var context = $"[{TimeContext()} User's country: {settings.Country}; use its units and currency.{where}{music} Answer in {languageName}.]";
+        // The current state, right next to the question, also when there's nothing: otherwise the AI goes by what was said
+        // earlier in the chat ("tell me when Discord closes") and thinks those are still running.
+        var reminderState = Reminders.Describe(settings) is { } due
+            ? $" Timers and reminders right now (exact, use as is): {due}."
+            : " There are no timers or reminders right now.";
+        var watchState = Watchers.DescribeAll() is { } watched
+            ? $" You're keeping an eye on, right now: {watched}."
+            : " You're not keeping an eye on anything right now; earlier ones in the chat are finished or stopped.";
+        var context = $"[{TimeContext()} User's country: {settings.Country}; use its units and currency.{where}{music}{reminderState}{watchState} Answer in {languageName}.]";
 
         var system = System.Replace("Dave", settings.Name) + $"\nYour name is {settings.Name}. You are version {Updater.Current.ToString(3)}; " +
                      "for questions about updating or newer versions, use update_dave.";
@@ -260,9 +268,6 @@ public static class Assistant
             system += "\nThe user speaks Dutch or English. For very short commands that could be either, assume Dutch: 'harder' means louder and 'zachter' means quieter.";
         if (settings.Memories.Count > 0)
             system += "\nThings the user asked you to remember:\n" + string.Join("\n", settings.Memories.Select(m => "- " + m));
-        var reminders = Reminders.Describe(settings);
-        if (reminders != null) system += "\nUpcoming timers and reminders (the time left is exact, use it as is): " + reminders;
-        if (Watchers.DescribeAll() is { } watching) system += "\nThings you're keeping an eye on for the user: " + watching;
         if (settings.IsQuiet)
             system += $"\nQuiet mode is on{(settings.QuietUntil < DateTime.MaxValue ? $" until {settings.QuietUntil:HH:mm}" : "")}: your answers are only shown, not spoken. " +
                       "When the user says you can talk again ('je mag weer praten'), use quiet_mode with on=false.";

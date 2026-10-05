@@ -60,9 +60,9 @@ public static class Watchers
             case "program_closes" or "program_starts" when target.Length == 0:
                 return s.Say("Which program should I keep an eye on?", "Op welk programma moet ik letten?");
             case "program_closes" when !IsRunning(target):
-                return s.Say($"{target} isn't running right now.", $"{target} draait nu niet.");
+                return s.Say($"{target} isn't open right now.", $"{target} staat nu niet open.");
             case "program_starts" when IsRunning(target):
-                return s.Say($"{target} is already running.", $"{target} draait al.");
+                return s.Say($"{target} is already open.", $"{target} staat al open.");
             case "download_done" when PartialFiles().Count == 0:
                 return s.Say("I don't see a download in progress in your Downloads folder.", "Ik zie geen download bezig in je Downloads-map.");
             case "gpu_temp_above" or "gpu_use_above" when Gpu() == null:
@@ -145,25 +145,44 @@ public static class Watchers
 
     private static string Simple(string s) => Regex.Replace(s.ToLowerInvariant(), @"[^a-z0-9]", "");
 
-    /// <summary>Is a program like "Roblox" (RobloxPlayerBeta.exe) or "Discord" running? Matches the process and program name.</summary>
+    /// <summary>
+    /// Does a program like "Roblox" (RobloxPlayerBeta.exe) or "Discord" have a window open? Its window, not just
+    /// its process: Discord and SteelSeries GG keep running in the tray after you close them, and Roblox leaves a
+    /// crash handler running, so "closed" is when its last window is gone.
+    /// </summary>
     private static bool IsRunning(string name)
     {
         var wanted = Simple(name);
         if (wanted.Length == 0) return false;
-        foreach (var p in Process.GetProcesses())
+        foreach (var (handle, title, process) in WindowList.List())
         {
-            using (p)
-            {
-                if (Simple(p.ProcessName).Contains(wanted)) return true;
-                try
-                {
-                    if (p.MainWindowHandle != IntPtr.Zero && Simple(p.MainModule?.FileVersionInfo.ProductName ?? "").Contains(wanted)) return true;
-                }
-                catch { /* some processes can't be read */ }
-            }
+            if (title == "Program Manager" || WindowControl.IsCloaked(handle)) continue; // the desktop, or a hidden Store app window
+            var p = Simple(process);
+            if (p.Contains(wanted) || (p.Length > 3 && wanted.Contains(p))) return true;
+            if (process == "ApplicationFrameHost" && Simple(title).Contains(wanted)) return true; // Store apps (Calculator, Settings…)
+            if (ProductName(handle) is { } product && Simple(product).Contains(wanted)) return true; // "Microsoft Word" for WINWORD
         }
         return false;
     }
+
+    private static readonly Dictionary<IntPtr, string?> Products = new();
+
+    private static string? ProductName(IntPtr window)
+    {
+        if (Products.TryGetValue(window, out var cached)) return cached;
+        string? name = null;
+        try
+        {
+            GetWindowThreadProcessId(window, out var pid);
+            using var p = Process.GetProcessById((int)pid);
+            name = p.MainModule?.FileVersionInfo.ProductName;
+        }
+        catch { /* some processes can't be read */ }
+        if (Products.Count > 500) Products.Clear();
+        return Products[window] = name;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
 
     private static List<string> PartialFiles()
     {
