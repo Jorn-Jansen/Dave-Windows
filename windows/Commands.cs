@@ -19,15 +19,21 @@ public static class Commands
             {
                 "media_control" => await MediaControlAsync(s, Str(args, "action"), spotify),
                 "set_volume" => SetVolume(s, args),
-                "play_music" => spotify
-                    ? new Outcome("🎵 " + await Spotify.PlayAsync(s, Str(args, "query"), Str(args, "kind")))
-                    : NeedSpotify(s),
+                "play_music" => !spotify ? NeedSpotify(s)
+                    : Bool(args, "next") && Str(args, "kind") is "song" or ""
+                        ? new Outcome("⏭ " + await Spotify.QueueAsync(s, Str(args, "query")))
+                        : new Outcome("🎵 " + await Spotify.PlayAsync(s, Str(args, "query"), Str(args, "kind"))),
+                "dislike_song" => await DislikeAsync(s),
+                "undislike_song" => new Outcome(MusicWatcher.Undislike(s, Str(args, "song")) > 0
+                    ? s.Say("Okay, I'll play that one again.", "Oké, die mag weer.")
+                    : s.Say("That song wasn't on your skip list.", "Dat nummer stond niet op je overslaan-lijst."), true),
+                "music_settings" => spotify ? await MusicSettingsAsync(s, args) : NeedSpotify(s),
                 "now_playing" => await NowPlayingAsync(s),
                 "like_song" => !spotify ? NeedSpotify(s) : !await MediaSession.IsSpotifyOrNothingAsync() ? OnlySpotify(s)
                     : new Outcome("❤ " + (await Spotify.LikeCurrentAsync(s)).Name),
                 "add_to_playlist" => !spotify ? NeedSpotify(s) : !await MediaSession.IsSpotifyOrNothingAsync() ? OnlySpotify(s)
                     : await AddToPlaylistAsync(s, Str(args, "playlist")),
-                "play_mix" => spotify ? await PlayMixAsync(s, Str(args, "description"), Int(args, "minutes") ?? 30) : NeedSpotify(s),
+                "play_mix" => spotify ? await PlayMixAsync(s, Str(args, "description"), Int(args, "minutes") ?? 30, Bool(args, "queue")) : NeedSpotify(s),
                 "remember" => Remember(s, Str(args, "fact")),
                 "forget" => Forget(s, Str(args, "fact")),
                 "set_reminder" => SetReminder(s, args),
@@ -60,6 +66,7 @@ public static class Commands
 
     private static string Str(JsonObject args, string key) => args[key]?.ToString() ?? "";
     private static int? Int(JsonObject args, string key) => args[key] is JsonValue v && v.TryGetValue<int>(out var i) ? i : null;
+    private static bool Bool(JsonObject args, string key) => args[key] is JsonValue v && v.TryGetValue<bool>(out var b) && b;
 
     private static Outcome NeedSpotify(Settings s) => new(s.Say(
         "For that I need Spotify. Connect it in Dave's settings first.",
@@ -123,17 +130,54 @@ public static class Commands
     }
 
     /// <summary>DJ mode: the AI picks songs, Spotify plays them in order.</summary>
-    private static async Task<Outcome> PlayMixAsync(Settings s, string description, int minutes)
+    private static async Task<Outcome> PlayMixAsync(Settings s, string description, int minutes, bool queue)
     {
         if (string.IsNullOrWhiteSpace(description)) description = "mixed hits";
         var count = Math.Clamp((int)Math.Round(minutes / 3.5), 5, 20);
-        var songs = await Assistant.MixSongsAsync(s, description, count);
+        var songs = (await Assistant.MixSongsAsync(s, description, count))
+            .Where(song => !MusicWatcher.IsDisliked(s, song?["title"]?.ToString() ?? "", song?["artist"]?.ToString() ?? "")) // in case the AI picked one anyway
+            .ToList();
         var lookups = songs.Select(song => Spotify.FindTrackAsync(s, song?["title"]?.ToString() ?? "", song?["artist"]?.ToString() ?? ""));
         var found = (await Task.WhenAll(lookups.Select(async t => { try { return await t; } catch { return null; } })))
             .Where(u => u != null).Cast<Spotify.Song>().ToList();
         if (found.Count == 0) return new Outcome(s.Say("I couldn't put that mix together.", "Ik kon die mix niet samenstellen."), true);
-        await Spotify.PlaySongsAsync(s, found);
-        return new Outcome($"🎧 {description} · {found.Count}");
+        if (queue) await Spotify.QueueSongsAsync(s, found);
+        else await Spotify.PlaySongsAsync(s, found);
+        return new Outcome($"🎧 {description} · {found.Count}{(queue ? s.Say(" queued", " in de wachtrij") : "")}");
+    }
+
+    private static async Task<Outcome> DislikeAsync(Settings s)
+    {
+        var song = await MusicWatcher.DislikeCurrentAsync(s);
+        if (song == null) return new Outcome(s.Say("Nothing is playing right now.", "Er speelt nu niets."), true);
+        return new Outcome(s.Say($"Skipped. I won't play {song.Title} again.", $"Overgeslagen. {song.Title} hoor je niet meer."), true);
+    }
+
+    /// <summary>Shuffle, repeat, and jumping within the song.</summary>
+    private static async Task<Outcome> MusicSettingsAsync(Settings s, JsonObject args)
+    {
+        var done = new List<string>();
+        if (args["shuffle"] is JsonValue shuffle && shuffle.TryGetValue<bool>(out var on))
+        {
+            await Spotify.SetShuffleAsync(s, on);
+            done.Add(on ? "🔀 shuffle on" : "shuffle off");
+        }
+        if (Str(args, "repeat") is { Length: > 0 } repeat)
+        {
+            await Spotify.SetRepeatAsync(s, repeat);
+            done.Add(repeat switch { "track" => "🔂 repeat song", "context" => "🔁 repeat", _ => "repeat off" });
+        }
+        if (Int(args, "seek_to") is int to)
+        {
+            await Spotify.SeekAsync(s, to, absolute: true);
+            done.Add(to == 0 ? "⏮ from the start" : $"⏩ {to / 60}:{to % 60:00}");
+        }
+        else if (Int(args, "seek_seconds") is int by and not 0)
+        {
+            await Spotify.SeekAsync(s, by, absolute: false);
+            done.Add(by > 0 ? $"⏩ +{by} s" : $"⏪ {by} s");
+        }
+        return done.Count > 0 ? new Outcome(string.Join(" · ", done)) : new Outcome(s.Say("I didn't get what to change.", "Ik snapte niet wat ik moest veranderen."), true);
     }
 
     private static Outcome Remember(Settings s, string fact)

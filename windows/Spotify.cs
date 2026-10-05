@@ -128,6 +128,17 @@ public static class Spotify
     public static async Task<string> PlayAsync(Settings s, string query, string kind)
     {
         if (kind is "song" or "" && RandomRequest(query) is { } topic) return await PlayRandomAsync(s, topic);
+        if (kind == "liked_songs")
+        {
+            await PlayLikedSongsAsync(s);
+            return s.Say("Your liked songs, shuffled", "Je favoriete nummers, geshuffeld");
+        }
+        if (kind == "playlist" && s.SpotifyScopes.Contains("playlist-read-private") && await FindOwnPlaylistAsync(s, query) is { } own)
+        {
+            // The user's own playlists first: "my gaming playlist" is theirs, not a public one called "gaming"
+            await PlayerCommandAsync(s, HttpMethod.Put, "/me/player/play", new JsonObject { ["context_uri"] = own.uri });
+            return own.name;
+        }
         var type = kind switch { "artist" => "artist", "album" => "album", "playlist" => "playlist", _ => "track" };
         var (_, text) = await ApiAsync(s, HttpMethod.Get, $"/search?type={type}&limit=5{Market(s)}&q={Uri.EscapeDataString(query)}");
         var items = JsonNode.Parse(text)?[$"{type}s"]?["items"]?.AsArray() ?? new JsonArray();
@@ -217,6 +228,54 @@ public static class Spotify
         try { await ControlAsync(s, "pause"); } catch (SpotifyException) { /* already paused */ }
     }
 
+    /// <summary>"Play X next": the first matching song goes into the queue, after the current one.</summary>
+    public static async Task<string> QueueAsync(Settings s, string query)
+    {
+        var (_, text) = await ApiAsync(s, HttpMethod.Get, $"/search?type=track&limit=1{Market(s)}&q={Uri.EscapeDataString(query)}");
+        var found = JsonNode.Parse(text)?["tracks"]?["items"]?[0]
+                    ?? throw new SpotifyException(s.Say($"I couldn't find {query} on Spotify.", $"Ik kon {query} niet vinden op Spotify."));
+        await PlayerCommandAsync(s, HttpMethod.Post, $"/me/player/queue?uri={Uri.EscapeDataString(found["uri"]!.GetValue<string>())}", null);
+        return $"{found["name"]} – {found["artists"]?[0]?["name"]}";
+    }
+
+    /// <summary>Songs after the current one, for "queue some songs like this".</summary>
+    public static async Task QueueSongsAsync(Settings s, IEnumerable<Song> songs)
+    {
+        foreach (var song in songs)
+        {
+            try { await PlayerCommandAsync(s, HttpMethod.Post, $"/me/player/queue?uri={Uri.EscapeDataString(song.Uri)}", null); }
+            catch (SpotifyException e) { Log.Write($"Queueing failed: {e.Message}"); }
+        }
+    }
+
+    /// <summary>The user's Liked Songs, shuffled.</summary>
+    public static async Task PlayLikedSongsAsync(Settings s)
+    {
+        var (_, me) = await ApiAsync(s, HttpMethod.Get, "/me");
+        var id = JsonNode.Parse(me)?["id"]?.GetValue<string>() ?? throw new SpotifyException(s.Say("Spotify didn't tell me who you are.", "Spotify vertelde niet wie je bent."));
+        await PlayerCommandAsync(s, HttpMethod.Put, "/me/player/play", new JsonObject { ["context_uri"] = $"spotify:user:{id}:collection" });
+        try { await ApiAsync(s, HttpMethod.Put, "/me/player/shuffle?state=true"); } catch (SpotifyException) { /* shuffle is a bonus */ }
+    }
+
+    public static Task SetShuffleAsync(Settings s, bool on) => PlayerCommandAsync(s, HttpMethod.Put, $"/me/player/shuffle?state={(on ? "true" : "false")}", null);
+
+    /// <summary>[mode]: "track" (this song), "context" (the album/playlist) or "off".</summary>
+    public static Task SetRepeatAsync(Settings s, string mode) => PlayerCommandAsync(s, HttpMethod.Put, $"/me/player/repeat?state={mode}", null);
+
+    /// <summary>Jump within the song: [seconds] forward (negative = back), or to [seconds] from the start when [absolute].</summary>
+    public static async Task SeekAsync(Settings s, int seconds, bool absolute)
+    {
+        var position = 0L;
+        if (!absolute)
+        {
+            var (status, text) = await ApiAsync(s, HttpMethod.Get, "/me/player");
+            if (status == 204 || string.IsNullOrWhiteSpace(text)) throw new SpotifyException(s.Say("Nothing is playing right now.", "Er speelt nu niets."));
+            position = JsonNode.Parse(text)?["progress_ms"]?.GetValue<long>() ?? 0;
+        }
+        var target = Math.Max(0, position + seconds * 1000L);
+        await PlayerCommandAsync(s, HttpMethod.Put, $"/me/player/seek?position_ms={target}", null);
+    }
+
     // --- What's playing, liking, playlists ---
 
     private static void RequireScope(Settings s, string scope)
@@ -255,20 +314,34 @@ public static class Spotify
         return track;
     }
 
-    private static async Task<string?> FindPlaylistAsync(Settings s, string name)
+    /// <summary>
+    /// One of the user's own playlists by name: an exact match first, otherwise the closest one
+    /// ("gaming" finds "Gaming 🎮" or "My gaming mix"). Null when none comes close.
+    /// </summary>
+    private static async Task<string?> FindPlaylistAsync(Settings s, string name) => (await FindOwnPlaylistAsync(s, name))?.id;
+
+    private static async Task<(string id, string name, string uri)?> FindOwnPlaylistAsync(Settings s, string name)
     {
+        static string Simple(string x) => new(x.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+        var wanted = Simple(name.Replace("playlist", "", StringComparison.OrdinalIgnoreCase));
+        if (wanted.Length == 0) return null;
+        (string id, string name, string uri)? close = null;
         string? path = "/me/playlists?limit=50";
         for (int page = 0; page < 5 && path != null; page++)
         {
             var (_, text) = await ApiAsync(s, HttpMethod.Get, path);
             var json = JsonNode.Parse(text)!;
             foreach (var playlist in json["items"]?.AsArray() ?? new JsonArray())
-                if (string.Equals(playlist?["name"]?.GetValue<string>(), name, StringComparison.OrdinalIgnoreCase))
-                    return playlist!["id"]!.GetValue<string>();
+            {
+                var title = playlist?["name"]?.GetValue<string>() ?? "";
+                var found = (playlist!["id"]!.GetValue<string>(), title, playlist["uri"]?.GetValue<string>() ?? "");
+                if (Simple(title) == wanted) return found;
+                if (close == null && Simple(title).Length > 0 && (Simple(title).Contains(wanted) || wanted.Contains(Simple(title)))) close = found;
+            }
             var next = json["next"]?.GetValue<string>();
             path = next != null && next.StartsWith(Api) ? next[Api.Length..] : null;
         }
-        return null;
+        return close;
     }
 
     private static async Task<string> CreatePlaylistAsync(Settings s, string name)
