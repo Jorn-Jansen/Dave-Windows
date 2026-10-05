@@ -249,13 +249,15 @@ public class SettingsForm : Form
         Collect();
         if (string.IsNullOrWhiteSpace(languageTag)) return;
         var chosen = settings.VoiceEngine;
+        var quietUntil = settings.QuietUntil;
         settings.VoiceEngine = engine;
+        settings.QuietUntil = DateTime.MinValue; // a preview is always heard, also in quiet mode
         try
         {
             var sample = languageTag.StartsWith("nl") ? "Hoi, ik ben Dave. Waar kan ik je mee helpen?" : "Hi, I'm Dave. How can I help?";
             await Speaker.SpeakAsync(settings, sample, languageTag);
         }
-        finally { settings.VoiceEngine = chosen; }
+        finally { settings.VoiceEngine = chosen; settings.QuietUntil = quietUntil; }
     }
 
     private async Task LoadAzureVoicesAsync(Button button)

@@ -50,6 +50,7 @@ public static class Commands
                     ? new Outcome(problem, true) : new Outcome("🪟 " + Str(args, "action").Replace('_', ' ')),
                 "screenshot" => Screenshots.Take(s, Str(args, "what"), Str(args, "action") is { Length: > 0 } a ? a : "copy", Str(args, "where")),
                 "calendar" => AddToCalendar(s, args),
+                "quiet_mode" => QuietMode(s, Bool(args, "on"), Int(args, "minutes") ?? 0),
                 "watch_for" => new Outcome(Watchers.Add(s, Str(args, "what"), Str(args, "program"),
                     args["number"] is JsonValue n && n.TryGetValue<double>(out var limit) ? limit : 0, Str(args, "message")), true),
                 "stop_watching" => new Outcome(Watchers.CancelAll() is var stopped and > 0
@@ -251,6 +252,17 @@ public static class Commands
             if (pressEnter) { Thread.Sleep(80); Keyboard.Press("enter"); }
         });
         return new Outcome("⌨ " + text);
+    }
+
+    /// <summary>Quiet mode on (for [minutes], or until turned off) or off. While on, answers only show in the bubble.</summary>
+    private static Outcome QuietMode(Settings s, bool on, int minutes)
+    {
+        s.QuietUntil = !on ? DateTime.MinValue : minutes > 0 ? DateTime.Now.AddMinutes(minutes) : DateTime.MaxValue;
+        s.Save();
+        if (!on) return new Outcome(s.Say("Okay, I'll talk again.", "Oké, ik praat weer."), true);
+        return new Outcome("🤫 " + (minutes > 0
+            ? s.Say($"Quiet until {s.QuietUntil:HH:mm}. I'll show my answers here.", $"Stil tot {s.QuietUntil:HH:mm}. Ik laat mijn antwoorden hier zien.")
+            : s.Say("Quiet mode on. I'll show my answers here until you say I can talk again.", "Stille modus aan. Ik laat mijn antwoorden hier zien tot je zegt dat ik weer mag praten.")), true);
     }
 
     /// <summary>Opens the event, filled in, in your calendar; you click Save (reading happens in Program, with the AI).</summary>

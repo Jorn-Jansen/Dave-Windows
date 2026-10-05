@@ -39,6 +39,9 @@ public class Settings
     public string Browser { get; set; } = "";
     public bool StartWithWindows { get; set; } = false;
     public bool AutoUpdate { get; set; } = true;
+    /// <summary>Quiet mode: until when Dave only shows his answers instead of saying them (MinValue = off).</summary>
+    public DateTime QuietUntil { get; set; } = DateTime.MinValue;
+    [JsonIgnore] public bool IsQuiet => DateTime.Now < QuietUntil;
     /// <summary>Private iCal link(s) of your calendar(s), space-separated (Google: "Secret address in iCal format").</summary>
     public string CalendarLinks { get; set; } = "";
 
