@@ -82,6 +82,7 @@ public class DaveApp : ApplicationContext
     {
         Ducker.RestoreAfterCrash(); // in case Dave was closed while other sound was turned down
         Watchers.Triggered += message => bubble.BeginInvoke(() => headsUps.Enqueue(message)); // said at the next tick, when Dave is free
+        if (testQuestion == null) MusicWatcher.Start(settings); // song history, and skipping songs you don't like
         if (testQuestion != null)
         {
             _ = bubble.Handle;

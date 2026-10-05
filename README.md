@@ -16,7 +16,8 @@ Dave updates himself when a new version is released. To remove him: Settings →
 
 ## What he can do
 - **Questions:** anything, with live web search; remembers your conversations for 30 days
-- **Music (Spotify Premium):** play songs, artists or playlists, random songs, DJ mixes, a music quiz, like songs
+- **Music (Spotify Premium):** play songs, artists, your playlists or liked songs, random songs, DJ mixes, a music quiz;
+  "what's this song about?", "play something like this", "play X next", "I don't like this song" (never plays it again), shuffle, repeat, skip ahead
 - **PC control:** volume, open and close programs, websites, lock the PC, find files, do things inside apps
 - **Your screen:** "what's this error?", "read this out"
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied

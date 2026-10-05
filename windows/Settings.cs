@@ -70,6 +70,14 @@ public class Settings
     public string SpotifyScopes { get; set; } = "";
 
     public List<string> Memories { get; set; } = new();
+    /// <summary>Songs you said you don't like: skipped when they come on in Spotify, left out of mixes.</summary>
+    public List<Song> DislikedSongs { get; set; } = new();
+
+    public class Song
+    {
+        public string Title { get; set; } = "";
+        public string Artist { get; set; } = "";
+    }
     public List<Reminder> Reminders { get; set; } = new();
 
     public class Reminder

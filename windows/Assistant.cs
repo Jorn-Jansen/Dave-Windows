@@ -67,20 +67,36 @@ public static class Assistant
             new JsonObject { ["action"] = Enum("play", "pause", "next", "previous") }, "action"),
         Tool("set_volume", "PC volume: change for louder/quieter, level for an exact percentage, mute to (un)mute.",
             new JsonObject { ["change"] = Enum("up", "down"), ["level"] = Int("0-100"), ["mute"] = new JsonObject { ["type"] = "boolean" } }),
-        Tool("play_music", "Play a song, artist, album, playlist or genre on Spotify.",
+        Tool("play_music", "Play a song, artist, album, playlist (the user's own first) or genre on Spotify, or their liked songs.",
             new JsonObject
             {
-                ["query"] = Str("e.g. 'Hangover Taio Cruz', 'chill'; 'random' or 'random rock' for a random song"),
-                ["kind"] = Enum("song", "artist", "album", "playlist"),
+                ["query"] = Str("e.g. 'Hangover Taio Cruz', 'chill', 'gaming' for 'my gaming playlist'; 'random' or 'random rock' for a random song"),
+                ["kind"] = Enum("song", "artist", "album", "playlist", "liked_songs"),
+                ["next"] = new JsonObject { ["type"] = "boolean", ["description"] = "true for 'play X next' / 'queue X': after the current song" },
             }, "query", "kind"),
+        Tool("dislike_song", "The user doesn't like the song that's playing: skip it and never play it again."),
+        Tool("undislike_song", "Allow a song again that the user said they didn't like.", new JsonObject { ["song"] = Str("Song title") }, "song"),
+        Tool("music_settings", "Shuffle on/off, repeat (this song / the playlist / off), or jump within the song ('skip 30 seconds', 'start this song over').",
+            new JsonObject
+            {
+                ["shuffle"] = new JsonObject { ["type"] = "boolean" },
+                ["repeat"] = Enum("track", "context", "off"),
+                ["seek_seconds"] = Int("Jump forward (negative = back), e.g. 30 or -10"),
+                ["seek_to"] = Int("Jump to this second of the song; 0 to start over"),
+            }),
         Tool("start_music_quiz", "Music quiz: play bits of songs for the players to guess.",
             new JsonObject { ["theme"] = Str("e.g. '2000s hits'; 'mixed hits' if none") }, "theme"),
         Tool("now_playing", "Which song is playing."),
         Tool("like_song", "Like the song that's playing."),
         Tool("add_to_playlist", "Add the playing song to a playlist.",
             new JsonObject { ["playlist"] = Str("Name; 'Dave' if none") }, "playlist"),
-        Tool("play_mix", "DJ mode: play a mix for a mood, activity or length of time.",
-            new JsonObject { ["description"] = Str("e.g. 'gaming session'"), ["minutes"] = Int("Length; 30 if not said") }, "description"),
+        Tool("play_mix", "DJ mode: play a mix for a mood, activity or length of time, or songs like the one playing ('play something like this').",
+            new JsonObject
+            {
+                ["description"] = Str("e.g. 'gaming session'; for 'something like this': 'songs similar to <title> by <artist>' (the song now playing)"),
+                ["minutes"] = Int("Length; 30 if not said"),
+                ["queue"] = new JsonObject { ["type"] = "boolean", ["description"] = "true to add them after the current song instead of starting now ('queue some songs like this')" },
+            }, "description"),
         Tool("remember", "Remember a fact about the user.", new JsonObject { ["fact"] = Str("Short English sentence") }, "fact"),
         Tool("forget", "Forget a remembered fact.", new JsonObject { ["fact"] = Str("Which, or 'everything'") }, "fact"),
         Tool("set_reminder", "Timer or reminder, said out loud when due.",
@@ -209,7 +225,11 @@ public static class Assistant
 
         var languageName = CultureInfo.GetCultureInfo(answerLanguage).EnglishName.Split(' ')[0];
         var where = position != null ? $" {position}" : "";
-        var context = $"[{TimeContext()} User's country: {settings.Country}; use its units and currency.{where} Answer in {languageName}.]";
+        // What's playing, so "what's this song about", "who sings this" and "play something like this" just work
+        var playing = await MediaSession.NowPlayingAsync();
+        var music = playing != null ? $" Now playing: \"{playing.Title}\"{(playing.Artist.Length > 0 ? $" by {playing.Artist}" : "")}." : " No music or video is playing.";
+        if (MusicWatcher.EarlierSongs(playing) is { } earlier) music += $" Songs before that: {earlier}.";
+        var context = $"[{TimeContext()} User's country: {settings.Country}; use its units and currency.{where}{music} Answer in {languageName}.]";
 
         var system = System.Replace("Dave", settings.Name) + $"\nYour name is {settings.Name}. You are version {Updater.Current.ToString(3)}; " +
                      "for questions about updating or newer versions, use update_dave.";
@@ -295,6 +315,7 @@ public static class Assistant
     public static Task<JsonArray> MixSongsAsync(Settings settings, string description, int count) => PickSongsAsync(settings, description, $"""
         You are a DJ. Pick {count} songs for this mix: "{description}". Order them so the mix flows well,
         vary the artists (at most two songs per artist), and prefer songs that are easy to find on Spotify.
+        {(settings.DislikedSongs.Count > 0 ? "The user doesn't like these, never pick them: " + string.Join("; ", settings.DislikedSongs.TakeLast(40).Select(d => $"{d.Title} by {d.Artist}")) : "")}
         """);
 
     private static async Task<JsonArray> PickSongsAsync(Settings settings, string request, string instructions)
