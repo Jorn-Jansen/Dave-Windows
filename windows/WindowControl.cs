@@ -97,7 +97,8 @@ public static class WindowControl
         if (maximized) Show(window, Maximize);
     }
 
-    private static bool IsCloaked(IntPtr window) =>
+    /// <summary>A window that's "open" but invisible (Store apps keep these around).</summary>
+    public static bool IsCloaked(IntPtr window) =>
         DwmGetCloaked(window, 14 /* DWMWA_CLOAKED */, out var cloaked, sizeof(int)) == 0 && cloaked != 0;
 
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] private static extern int DwmGetCloaked(IntPtr hWnd, int attribute, out int value, int size);
