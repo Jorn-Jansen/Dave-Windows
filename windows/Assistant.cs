@@ -18,6 +18,7 @@ public static class Assistant
         When the user asks to control the music or volume, open or close a program or website, find a file, lock the PC, wants a music quiz, a mix,
         a reminder or timer, asks what song is playing, asks about something on their screen, wants something typed or copied, asks about what they copied,
         asks how their PC is doing, asks to update you, asks about an earlier conversation, wants you to tell them when something happens,
+        wants windows arranged or a screenshot, asks about or adds to their calendar,
         or tells you something to remember ("onthoud dat…", "remember that…"),
         use the matching command instead of answering.
         Use what you remember about the user naturally when it's relevant.
@@ -62,112 +63,112 @@ public static class Assistant
     /// <summary>Commands the AI can call instead of answering. Carried out by <see cref="Commands"/>.</summary>
     private static JsonArray CommandTools() => new()
     {
-        Tool("media_control", "Control the music that's playing: play, pause, skip to the next song, or go back to the previous one.",
+        Tool("media_control", "Play, pause, next or previous song.",
             new JsonObject { ["action"] = Enum("play", "pause", "next", "previous") }, "action"),
-        Tool("set_volume", "Change the PC's volume. Use change for relative requests (louder, a bit quieter), level for an exact percentage, mute to mute or unmute.",
-            new JsonObject { ["change"] = Enum("up", "down"), ["level"] = Int("Exact volume from 0 to 100"), ["mute"] = new JsonObject { ["type"] = "boolean" } }),
-        Tool("play_music", "Start playing a specific song, artist, album, playlist or genre on Spotify.",
+        Tool("set_volume", "PC volume: change for louder/quieter, level for an exact percentage, mute to (un)mute.",
+            new JsonObject { ["change"] = Enum("up", "down"), ["level"] = Int("0-100"), ["mute"] = new JsonObject { ["type"] = "boolean" } }),
+        Tool("play_music", "Play a song, artist, album, playlist or genre on Spotify.",
             new JsonObject
             {
-                ["query"] = Str("What to play, e.g. 'Hangover Taio Cruz' or 'chill'. For a random song: 'random', or e.g. 'random rock' / 'random Drake'"),
+                ["query"] = Str("e.g. 'Hangover Taio Cruz', 'chill'; 'random' or 'random rock' for a random song"),
                 ["kind"] = Enum("song", "artist", "album", "playlist"),
             }, "query", "kind"),
-        Tool("start_music_quiz", "Start a music quiz: the app plays short bits of songs and the players guess them.",
-            new JsonObject { ["theme"] = Str("Theme the players asked for, e.g. '2000s hits' or 'Dutch songs'; 'mixed hits' if none") }, "theme"),
-        Tool("now_playing", "Say which song is playing right now."),
-        Tool("like_song", "Save the song that's playing to the user's liked songs."),
-        Tool("add_to_playlist", "Add the song that's playing to a playlist.",
-            new JsonObject { ["playlist"] = Str("Playlist name the user said; 'Dave' if they didn't name one") }, "playlist"),
-        Tool("play_mix", "DJ mode: build and play a mix of songs for a mood, activity or length of time.",
+        Tool("start_music_quiz", "Music quiz: play bits of songs for the players to guess.",
+            new JsonObject { ["theme"] = Str("e.g. '2000s hits'; 'mixed hits' if none") }, "theme"),
+        Tool("now_playing", "Which song is playing."),
+        Tool("like_song", "Like the song that's playing."),
+        Tool("add_to_playlist", "Add the playing song to a playlist.",
+            new JsonObject { ["playlist"] = Str("Name; 'Dave' if none") }, "playlist"),
+        Tool("play_mix", "DJ mode: play a mix for a mood, activity or length of time.",
+            new JsonObject { ["description"] = Str("e.g. 'gaming session'"), ["minutes"] = Int("Length; 30 if not said") }, "description"),
+        Tool("remember", "Remember a fact about the user.", new JsonObject { ["fact"] = Str("Short English sentence") }, "fact"),
+        Tool("forget", "Forget a remembered fact.", new JsonObject { ["fact"] = Str("Which, or 'everything'") }, "fact"),
+        Tool("set_reminder", "Timer or reminder, said out loud when due.",
             new JsonObject
             {
-                ["description"] = Str("What the mix is for, e.g. 'gaming session' or '2010s party hits'"),
-                ["minutes"] = Int("How long it should last; 30 if not said"),
-            }, "description"),
-        Tool("remember", "Remember something about the user for later conversations (likes, names, habits, plans).",
-            new JsonObject { ["fact"] = Str("The fact, written in English as a short sentence") }, "fact"),
-        Tool("forget", "Forget something you remembered about the user.",
-            new JsonObject { ["fact"] = Str("Which fact to forget, or 'everything'") }, "fact"),
-        Tool("set_reminder", "Set a timer or reminder that Dave says out loud when it's due.",
-            new JsonObject
-            {
-                ["minutes"] = new JsonObject { ["type"] = "number", ["description"] = "Minutes from now, for 'in 20 minutes'. Can be a fraction: 2.5 for two and a half minutes, 0.5 for 30 seconds" },
-                ["time"] = Str("Clock time HH:mm (24h), for 'at half past three'"),
-                ["message"] = Str("What to remind the user of, in their language"),
+                ["minutes"] = new JsonObject { ["type"] = "number", ["description"] = "From now; fractions allowed (2.5, 0.5 = 30 s)" },
+                ["time"] = Str("Clock time HH:mm (24h)"),
+                ["message"] = Str("In the user's language"),
             }, "message"),
         Tool("cancel_reminders", "Cancel all timers and reminders."),
-        Tool("open_app", "Open a program on the PC, e.g. 'Roblox Studio', 'Discord', 'Spotify', 'Blender'.",
-            new JsonObject { ["name"] = Str("Name of the program") }, "name"),
-        Tool("open_website", "Open a website or search the web in the browser.",
+        Tool("open_app", "Open a program.", new JsonObject { ["name"] = Str("e.g. 'Roblox Studio'") }, "name"),
+        Tool("open_website", "Open a website or web search.",
+            new JsonObject { ["url"] = Str("Address of a specific site"), ["search"] = Str("Search words"), ["browser"] = Str("Only if the user named one") }),
+        Tool("lock_pc", "Lock the PC."),
+        Tool("find_file", "Find a file or folder by name and/or type; open it, show it in its folder, or say where it is.",
             new JsonObject
             {
-                ["url"] = Str("Full address if it's a specific site, e.g. https://www.youtube.com"),
-                ["search"] = Str("Search words if they want to search for something"),
-                ["browser"] = Str("Browser the user named, e.g. 'Brave', 'Chrome', 'Edge', 'Firefox'; leave empty if they didn't name one"),
-            }),
-        Tool("lock_pc", "Lock the PC (Windows lock screen)."),
-        Tool("find_file", "Find a file or folder on the PC by (part of) its name and/or type, then open it, show it in its folder, or just say where it is. " +
-            "E.g. 'find Dave.js', 'open my latest screenshot', 'where is my Roblox place file', 'show my newest video'.",
-            new JsonObject
-            {
-                ["query"] = Str("Words from the file name (without 'file'/'bestand'); empty if only the type matters, e.g. 'latest screenshot' -> 'Screenshot'"),
+                ["query"] = Str("Words from the name; e.g. 'latest screenshot' -> 'Screenshot'"),
                 ["kind"] = Enum("any", "image", "video", "audio", "document", "code", "folder"),
-                ["newest"] = new JsonObject { ["type"] = "boolean", ["description"] = "true for 'latest', 'newest', 'most recent'" },
+                ["newest"] = new JsonObject { ["type"] = "boolean", ["description"] = "For latest/newest" },
                 ["action"] = Enum("open", "show_in_folder", "tell"),
             }, "query", "kind", "action"),
-        Tool("close_app", "Close a program (all its windows) in the background, e.g. 'Chrome', 'Discord', 'Word'. Unsaved work still asks to save.",
-            new JsonObject { ["name"] = Str("Name of the program to close") }, "name"),
-        Tool("close_all_apps", "Close all open programs, except the ones the user wants to keep.",
-            new JsonObject { ["keep"] = Str("Programs to keep open, comma-separated (e.g. 'Roblox, Discord'); empty to close everything") }),
-        Tool("look_at_screen", "Look at the user's screen (a screenshot of the main monitor) to answer a question about what's on it: " +
-            "an error message, a game, a web page, text to read out or summarise, code, anything they point at with 'this' or 'here'.",
-            new JsonObject { ["question"] = Str("The user's question about the screen, in their own words") }, "question"),
-        Tool("control_apps", "Do something inside apps on the PC: click buttons, type text, use menus, navigate. " +
-            "E.g. 'open Notepad and write a shopping list', 'pause the YouTube video', 'open a new Chrome tab with nos.nl', " +
-            "'set my Discord status to away'. For just opening a program, use open_app.",
-            new JsonObject { ["task"] = Str("The full task in the user's own words, with all details they gave") }, "task"),
-        Tool("type_text", "Dictation: type text into the window the user is working in (a chat, document, search bar...). " +
-            "E.g. 'type: see you in five minutes', 'typ dat ik eraan kom', 'write hello everyone and send it'.",
+        Tool("close_app", "Close a program.", new JsonObject { ["name"] = Str("e.g. 'Chrome'") }, "name"),
+        Tool("close_all_apps", "Close all programs except some.", new JsonObject { ["keep"] = Str("Comma-separated, e.g. 'Roblox, Discord'") }),
+        Tool("look_at_screen", "Look at the screen to answer about what's on it (an error, a game, a page, 'this', 'here').",
+            new JsonObject { ["question"] = Str("The user's question") }, "question"),
+        Tool("control_apps", "Do things inside apps: click, type, menus, e.g. 'open Notepad and write a list', 'pause the YouTube video'.",
+            new JsonObject { ["task"] = Str("The full task with all details") }, "task"),
+        Tool("type_text", "Dictation: type text into the window the user is in ('type: see you soon', 'and send it').",
             new JsonObject
             {
-                ["text"] = Str("Exactly what to type, written out properly (spelling, capitals, punctuation), in the language they spoke"),
-                ["press_enter"] = new JsonObject { ["type"] = "boolean", ["description"] = "true if they want it sent or submitted ('and send it', 'press enter')" },
+                ["text"] = Str("Exactly what to type, properly written, in the language they spoke"),
+                ["press_enter"] = new JsonObject { ["type"] = "boolean", ["description"] = "To send/submit it" },
             }, "text"),
-        Tool("use_clipboard", "Do something with what the user copied (text or an image): read it out, summarise, translate, explain, " +
-            "fix spelling, answer a question about it. E.g. 'read what I copied', 'translate this to English', 'what does this code do'.",
+        Tool("use_clipboard", "Work with what the user copied (text or image): read out, summarise, translate, explain, answer about it.",
             new JsonObject
             {
-                ["task"] = Str("What to do with it, in the user's own words"),
-                ["output"] = new JsonObject
-                {
-                    ["type"] = "string", ["enum"] = new JsonArray("say", "copy"),
-                    ["description"] = "'copy' when they want the result on the clipboard ('and copy it', 'put it on my clipboard', 'zet het op mijn klembord'); otherwise 'say'",
-                },
+                ["task"] = Str("What to do, in the user's words"),
+                ["output"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("say", "copy"), ["description"] = "'copy' to put the result on the clipboard" },
             }, "task", "output"),
-        Tool("copy_to_clipboard", "Put text on the clipboard so the user can paste it, e.g. 'copy that' (your previous answer) or 'copy the address'.",
-            new JsonObject { ["text"] = Str("Exactly the text to copy") }, "text"),
-        Tool("pc_stats", "Check how the PC is doing: processor and graphics card use and temperature, memory (RAM), what's using it, " +
-            "free disk space, battery, how long it's been on. E.g. 'how hot is my GPU', 'why is my PC slow', 'how much space is left on C'.",
-            new JsonObject { ["question"] = Str("The user's question, in their own words") }, "question"),
-        Tool("update_dave", "Check for a new version of Dave and install it ('update yourself', 'are you up to date', 'which version are you')."),
-        Tool("recall_conversation", "Look up what the user and you talked about earlier (kept for 30 days): 'what did I ask you yesterday', " +
-            "'what was that game you recommended', 'what did we talk about this morning'. Not needed for the last few minutes; you already see those.",
+        Tool("copy_to_clipboard", "Copy text to the clipboard ('copy that' = your previous answer).", new JsonObject { ["text"] = Str("The text") }, "text"),
+        Tool("pc_stats", "How the PC is doing: CPU/GPU use and temperature, RAM and what uses it, disk space, battery, uptime.",
+            new JsonObject { ["question"] = Str("The user's question") }, "question"),
+        Tool("update_dave", "Check for and install a new version of Dave."),
+        Tool("recall_conversation", "Look up earlier conversations (last 30 days), e.g. 'what did I ask you yesterday'.",
             new JsonObject
             {
-                ["about"] = Str("Keywords of the topic, in the language it was probably said in, e.g. 'game recommend'; empty for 'everything'"),
-                ["from_days_ago"] = Int("Start of the period in days ago: 0 = today, 1 = yesterday, 7 = a week ago"),
-                ["to_days_ago"] = Int("End of the period in days ago (0 = today)"),
+                ["about"] = Str("Topic keywords; empty for everything"),
+                ["from_days_ago"] = Int("0 = today, 1 = yesterday"),
+                ["to_days_ago"] = Int("0 = today"),
             }, "about", "from_days_ago", "to_days_ago"),
-        Tool("watch_for", "Keep an eye on something and tell the user when it happens: 'tell me when Roblox closes', 'let me know when my download is done', " +
-            "'warn me if my GPU goes above 80 degrees', 'tell me when Discord starts', 'warn me when the battery is below 20 percent'.",
+        Tool("watch_for", "Tell the user when something happens ('tell me when Roblox closes', 'when my download is done', 'if my GPU goes above 80').",
             new JsonObject
             {
                 ["what"] = Enum("program_closes", "program_starts", "download_done", "gpu_temp_above", "gpu_use_above", "cpu_use_above", "ram_use_above", "battery_below"),
-                ["program"] = Str("For program_closes / program_starts: the program's name, e.g. 'Roblox', 'Discord', 'Chrome'"),
-                ["number"] = new JsonObject { ["type"] = "number", ["description"] = "The limit: degrees for gpu_temp_above, percent for the others" },
-                ["message"] = Str("What to say when it happens, short, in the user's language, e.g. 'Roblox just closed.'"),
+                ["program"] = Str("For program_*: e.g. 'Roblox'"),
+                ["number"] = new JsonObject { ["type"] = "number", ["description"] = "Degrees for gpu_temp_above, otherwise percent" },
+                ["message"] = Str("What to say then, short, in the user's language"),
             }, "what", "message"),
-        Tool("stop_watching", "Stop keeping an eye on things ('stop watching', 'never mind the download')."),
+        Tool("stop_watching", "Stop watching for things."),
+        Tool("window_control", "Arrange windows: other screen, left/right half, two side by side, maximise, minimise, centre, front, minimise all.",
+            new JsonObject
+            {
+                ["action"] = Enum("other_screen", "move_to_screen", "left_half", "right_half", "side_by_side", "maximize", "minimize", "restore",
+                    "center", "focus", "minimize_all", "restore_all"),
+                ["app"] = Str("Program, e.g. 'Chrome'; empty for the current window"),
+                ["app2"] = Str("side_by_side: program for the right half"),
+                ["screen"] = Int("move_to_screen, only when they name a number: 1 = leftmost (use other_screen for 'my other screen')"),
+            }, "action"),
+        Tool("screenshot", "Screenshot to copy (to paste somewhere) and/or save.",
+            new JsonObject
+            {
+                ["what"] = Enum("screen", "window", "all_screens"),
+                ["action"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("copy", "save", "both"), ["description"] = "'copy' unless they say save" },
+                ["where"] = Enum("pictures", "desktop"),
+            }, "what", "action"),
+        Tool("calendar", "The user's calendar: what's planned ('what do I have tomorrow', 'am I free Saturday'), or add an event.",
+            new JsonObject
+            {
+                ["action"] = Enum("list", "add"),
+                ["from_date"] = Str("list: first day, yyyy-MM-dd"),
+                ["to_date"] = Str("list: last day, yyyy-MM-dd (a month ahead for 'next event')"),
+                ["title"] = Str("add: what, in the user's language"),
+                ["start"] = Str("add: yyyy-MM-ddTHH:mm local time, or yyyy-MM-dd for all day"),
+                ["minutes"] = Int("add: length, 60 if not said"),
+                ["all_day"] = new JsonObject { ["type"] = "boolean" },
+                ["location"] = Str("add: where"),
+            }, "action"),
     };
 
     /// <summary>

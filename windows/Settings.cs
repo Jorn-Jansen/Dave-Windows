@@ -39,6 +39,26 @@ public class Settings
     public string Browser { get; set; } = "";
     public bool StartWithWindows { get; set; } = false;
     public bool AutoUpdate { get; set; } = true;
+    /// <summary>Private iCal link(s) of your calendar(s), space-separated (Google: "Secret address in iCal format").</summary>
+    public string CalendarLinks { get; set; } = "";
+
+    // The AI: Groq by default (free, fastest); or another provider with an OpenAI-style API
+    /// <summary>"groq", "openai", "openrouter" or "custom".</summary>
+    public string AiProvider { get; set; } = "groq";
+    /// <summary>Key for the provider when it isn't Groq.</summary>
+    public string AiKey { get; set; } = "";
+    /// <summary>Model to use instead of the provider's default ("" = default).</summary>
+    public string AiModel { get; set; } = "";
+    /// <summary>For "custom": the API address, e.g. http://localhost:11434/v1 (Ollama).</summary>
+    public string AiBaseUrl { get; set; } = "";
+
+    /// <summary>Whether Dave has what he needs to think (a key for the chosen provider; a local custom one may not need one).</summary>
+    [JsonIgnore] public bool HasAiKey => AiProvider switch
+    {
+        "openai" or "openrouter" => AiKey.Length > 0,
+        "custom" => AiBaseUrl.Length > 0,
+        _ => GroqKey.Length > 0,
+    };
     /// <summary>How quiet other sound gets while Dave talks (0.3 = 30%).</summary>
     public double DuckTo { get; set; } = 0.3;
 

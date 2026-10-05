@@ -19,6 +19,13 @@ public class SettingsForm : Form
     private readonly CheckBox wakeWord = new() { Text = "Listen for “Hey Dave” (offline)", AutoSize = true };
     private readonly CheckBox autostart = new() { Text = "Start Dave with Windows", AutoSize = true };
     private readonly CheckBox autoUpdate = new() { Text = $"Update Dave automatically (now version {Updater.Current.ToString(3)})", AutoSize = true };
+    private readonly ComboBox provider = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
+    private readonly TextBox aiKey = new() { UseSystemPasswordChar = true, Width = 260, PlaceholderText = "API key" };
+    private readonly TextBox aiModel = new() { Width = 200 };
+    private readonly TextBox aiBaseUrl = new() { Width = 420, PlaceholderText = "e.g. http://localhost:11434/v1 (Ollama)" };
+    private readonly TextBox calendarLinks = new() { Width = 420, PlaceholderText = "https://calendar.google.com/calendar/ical/…/basic.ics" };
+    private static readonly (string id, string name)[] Providers =
+        { ("groq", "Groq (free, fastest)"), ("openai", "OpenAI"), ("openrouter", "OpenRouter"), ("custom", "Custom (OpenAI-compatible)") };
     private readonly TextBox spotifyId = new() { Width = 420 };
     private readonly Label spotifyStatus = new() { AutoSize = true };
     private readonly TextBox question = new() { Width = 420, PlaceholderText = "Type a question to test Dave" };
@@ -58,6 +65,21 @@ public class SettingsForm : Form
         }
 
         groqKey.Text = settings.GroqKey;
+        foreach (var (_, name) in Providers) provider.Items.Add(name);
+        provider.SelectedIndex = Math.Max(0, Array.FindIndex(Providers, p => p.id == settings.AiProvider));
+        aiKey.Text = settings.AiKey;
+        aiModel.Text = settings.AiModel;
+        aiBaseUrl.Text = settings.AiBaseUrl;
+        calendarLinks.Text = settings.CalendarLinks;
+        void UpdateProvider()
+        {
+            var id = Providers[Math.Max(0, provider.SelectedIndex)].id;
+            aiKey.Enabled = aiModel.Enabled = id != "groq";
+            aiBaseUrl.Enabled = id == "custom";
+            aiModel.PlaceholderText = id switch { "openai" => "gpt-4.1-mini", "openrouter" => "openai/gpt-oss-120b", "custom" => "model name", _ => "" };
+        }
+        UpdateProvider();
+        provider.SelectedIndexChanged += (_, _) => UpdateProvider();
         country.Text = settings.Country;
         assistantName.Text = settings.AssistantName;
         wakePhrase.Text = settings.WakePhrase;
@@ -104,6 +126,9 @@ public class SettingsForm : Form
         ask.Click += (_, _) => { Collect(); settings.Save(); askTyped?.Invoke(question.Text); };
 
         Row("Groq API key (free, console.groq.com/keys)", groqKey);
+        Row("AI provider", Flow(provider, new Label { Text = "listening always uses the Groq key (or OpenAI)", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(6, 8, 0, 0) }));
+        Row("Provider key and model", Flow(aiKey, aiModel));
+        Row("Provider address (custom)", aiBaseUrl);
         Row("Country (units, currency)", country);
         Row("Name (empty = Dave)", assistantName);
         Row("Wake phrase (empty = hey + name)", Flow(wakePhrase, new Label { Text = "e.g. hey jarvis, whats up dave, yo computer", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(6, 8, 0, 0) }));
@@ -121,6 +146,14 @@ public class SettingsForm : Form
         Row("", wakeWord);
         Row("", autostart);
         Row("", autoUpdate);
+        Row("Calendar link (iCal)", calendarLinks);
+        Row("", new Label
+        {
+            Text = "Google Calendar: Settings → your calendar → \"Secret address in iCal format\".\n" +
+                   "Outlook: Settings → Calendar → Shared calendars → Publish → ICS link. Several links: separate with spaces.",
+            AutoSize = true,
+            ForeColor = Color.DimGray,
+        });
         Row("Spotify Client ID", spotifyId);
         Row("", new Label
         {
@@ -158,6 +191,11 @@ public class SettingsForm : Form
     private void Collect()
     {
         settings.GroqKey = groqKey.Text.Trim();
+        settings.AiProvider = Providers[Math.Max(0, provider.SelectedIndex)].id;
+        settings.AiKey = aiKey.Text.Trim();
+        settings.AiModel = aiModel.Text.Trim();
+        settings.AiBaseUrl = aiBaseUrl.Text.Trim();
+        settings.CalendarLinks = calendarLinks.Text.Trim();
         settings.AssistantName = assistantName.Text.Trim();
         settings.WakePhrase = wakePhrase.Text.Trim();
         settings.Country = country.Text.Trim().Length > 0 ? country.Text.Trim() : "the Netherlands";

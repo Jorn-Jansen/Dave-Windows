@@ -22,7 +22,10 @@ Dave updates himself when a new version is released. To remove him: Settings →
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
 - **PC stats:** "how hot is my GPU?", "what's using my memory?"
 - **Reminders and timers**, and **heads-ups:** "tell me when Roblox closes", "let me know when my download is done"
-- **Settings:** custom name and wake phrase, voices (Windows or Azure), language
+- **Windows:** "put this on my other screen", "Chrome and Discord side by side", "minimise everything"
+- **Screenshots:** "screenshot this and copy it", "save a screenshot on my desktop"
+- **Calendar:** "what do I have tomorrow?", "put football on Saturday at 2 in my calendar" (paste your calendar's iCal link in Settings)
+- **Settings:** custom name and wake phrase, voices (Windows or Azure), language, AI provider (Groq, OpenAI, OpenRouter or your own)
 
 ### Spotify
 In Settings, paste your app's Client ID from [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard),

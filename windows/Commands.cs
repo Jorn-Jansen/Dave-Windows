@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 
 namespace DaveWindows;
@@ -39,6 +40,10 @@ public static class Commands
                 "close_all_apps" => CloseAll(s, Str(args, "keep")),
                 "type_text" => await TypeAsync(s, Str(args, "text"), args["press_enter"] is JsonValue e && e.TryGetValue<bool>(out var enter) && enter),
                 "copy_to_clipboard" => CopyToClipboard(s, Str(args, "text")),
+                "window_control" => WindowControl.Run(s, Str(args, "action"), Str(args, "app"), Str(args, "app2"), Int(args, "screen") ?? 0) is { } problem
+                    ? new Outcome(problem, true) : new Outcome("🪟 " + Str(args, "action").Replace('_', ' ')),
+                "screenshot" => Screenshots.Take(s, Str(args, "what"), Str(args, "action") is { Length: > 0 } a ? a : "copy", Str(args, "where")),
+                "calendar" => AddToCalendar(s, args),
                 "watch_for" => new Outcome(Watchers.Add(s, Str(args, "what"), Str(args, "program"),
                     args["number"] is JsonValue n && n.TryGetValue<double>(out var limit) ? limit : 0, Str(args, "message")), true),
                 "stop_watching" => new Outcome(Watchers.CancelAll() is var stopped and > 0
@@ -188,6 +193,23 @@ public static class Commands
         });
         return new Outcome("⌨ " + text);
     }
+
+    /// <summary>Opens the event, filled in, in your calendar; you click Save (reading happens in Program, with the AI).</summary>
+    private static Outcome AddToCalendar(Settings s, JsonObject args)
+    {
+        if (CalendarFeed.Links(s).Count == 0) return NoCalendar(s);
+        var title = Str(args, "title");
+        if (title.Length == 0 || !DateTime.TryParse(Str(args, "start"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var start))
+            return new Outcome(s.Say("I didn't get what or when.", "Ik snapte niet wat of wanneer."), true);
+        var allDay = args["all_day"] is JsonValue v && v.TryGetValue<bool>(out var ad) && ad || Str(args, "start").Length <= 10;
+        var end = allDay ? start.Date.AddDays(1) : start.AddMinutes(Int(args, "minutes") is int m and > 0 ? m : 60);
+        CalendarFeed.Add(s, title, allDay ? start.Date : start, end, allDay, Str(args, "location"));
+        return new Outcome(s.Say($"I've opened {title} in your calendar, just click Save.", $"Ik heb {title} in je agenda geopend, klik nog even op Opslaan."), true);
+    }
+
+    public static Outcome NoCalendar(Settings s) => new(s.Say(
+        "I don't know your calendar yet. Paste its private iCal link in my settings.",
+        "Ik ken je agenda nog niet. Plak de privé iCal-link in mijn instellingen."), true);
 
     private static Outcome CopyToClipboard(Settings s, string text)
     {
