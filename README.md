@@ -12,6 +12,8 @@ Dave updates himself when a new version is released. To remove him: Settings →
 ## Use
 - Press **Ctrl+Alt+D** (works in games too), say **"Hey Dave"** (if turned on), or click the tray icon.
 - Talk after the beep. Press the shortcut again or click the bubble to cancel.
+- Press **Ctrl+Alt+W** for Dave's window: your chat history (type to Dave there too), reminders, memories, screen time,
+  music, what he's watching for, and all settings.
 - Right-click the tray icon for **Settings**, **Check for updates** and **Quit**.
 
 ## What he can do

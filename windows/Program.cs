@@ -66,6 +66,8 @@ public class DaveApp : ApplicationContext
     private readonly Bubble bubble = new();
     private readonly NotifyIcon tray;
     private readonly HotkeyWindow hotkey;
+    private HotkeyWindow? windowHotkey;
+    private DaveWindow? window; // made the first time you open it
     private readonly System.Windows.Forms.Timer reminderTimer = new() { Interval = 1_000 }; // every second, so timers go off on time
     private WakeWord? wakeWord;
     private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 6 * 60 * 60 * 1000 }; // look for a new version every 6 hours
@@ -101,6 +103,7 @@ public class DaveApp : ApplicationContext
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Ask Dave", null, (_, _) => Trigger());
+        menu.Items.Add($"Open {settings.Name} ({settings.WindowHotkey})", null, (_, _) => ToggleWindow());
         menu.Items.Add("Settings", null, (_, _) => OpenSettings());
         menu.Items.Add("Check for updates", null, async (_, _) => await CheckForUpdatesAsync(manual: true));
         menu.Items.Add(new ToolStripSeparator());
@@ -115,6 +118,7 @@ public class DaveApp : ApplicationContext
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) Trigger(); };
 
         hotkey = new HotkeyWindow(Trigger);
+        windowHotkey = new HotkeyWindow(ToggleWindow);
         ApplySettings();
 
         reminderTimer.Tick += (_, _) => AnnounceDueReminders();
@@ -158,6 +162,8 @@ public class DaveApp : ApplicationContext
     {
         if (!hotkey.Register(settings.Hotkey))
             tray.ShowBalloonTip(4000, "Dave", $"Shortcut {settings.Hotkey} is already used by another program. Pick another in Settings.", ToolTipIcon.Warning);
+        if (windowHotkey != null && settings.WindowHotkey.Trim().Length > 0 && !windowHotkey.Register(settings.WindowHotkey))
+            tray.ShowBalloonTip(4000, "Dave", $"Shortcut {settings.WindowHotkey} (Dave's window) is already used by another program. Pick another in Settings.", ToolTipIcon.Warning);
 
         wakeWord?.Dispose();
         wakeWord = null;
@@ -172,11 +178,26 @@ public class DaveApp : ApplicationContext
         else run?.DeleteValue("Dave", throwOnMissingValue: false);
     }
 
+    /// <summary>The settings: as a panel in Dave's window; the old settings window only if that window can't run.</summary>
     private void OpenSettings()
     {
+        if (window is not { Broken: true })
+        {
+            Window().ShowSettings();
+            return;
+        }
         using var form = new SettingsForm(settings, AskTyped);
         if (form.ShowDialog() == DialogResult.OK) ApplySettings();
     }
+
+    /// <summary>Dave's window (chat history, reminders, screen time…): only opens with its shortcut or from the tray menu.</summary>
+    private void ToggleWindow() => Window().Toggle();
+
+    private DaveWindow Window() => window ??= new DaveWindow(settings,
+        ask: question => { if (session != null) return false; AskTyped(question); return true; },
+        listen: () => { if (session == null) Trigger(); },
+        applySettings: ApplySettings,
+        busy: () => session != null);
 
     // --- Updates ---
 
@@ -259,6 +280,8 @@ public class DaveApp : ApplicationContext
         ScreenTime.Flush();
         wakeWord?.Dispose();
         hotkey.Dispose();
+        windowHotkey?.Dispose();
+        window?.Dispose();
         tray.Visible = false;
         ExitThread();
     }
