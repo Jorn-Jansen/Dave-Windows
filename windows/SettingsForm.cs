@@ -15,6 +15,7 @@ public class SettingsForm : Form
     private readonly ComboBox secondVoice = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
     private readonly ComboBox speed = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
     private readonly TextBox hotkeyBox = new() { Width = 160 };
+    private readonly TextBox windowHotkeyBox = new() { Width = 160 };
     private readonly TextBox browser = new() { Width = 160, PlaceholderText = "Windows default" };
     private readonly CheckBox wakeWord = new() { Text = "Listen for “Hey Dave” (offline)", AutoSize = true };
     private readonly CheckBox autostart = new() { Text = "Start Dave with Windows", AutoSize = true };
@@ -89,6 +90,7 @@ public class SettingsForm : Form
         language.Text = settings.Language;
         secondLanguage.Text = settings.SecondLanguage;
         hotkeyBox.Text = settings.Hotkey;
+        windowHotkeyBox.Text = settings.WindowHotkey;
         browser.Text = settings.Browser;
         wakeWord.Checked = settings.WakeWord;
         autostart.Checked = settings.StartWithWindows;
@@ -142,6 +144,7 @@ public class SettingsForm : Form
         Row("Second-language voice (Azure)", Flow(azureSecondVoice, previewAzureSecond));
         Row("Speaking speed", speed);
         Row("Shortcut", Flow(hotkeyBox, new Label { Text = "e.g. Ctrl+Alt+D", AutoSize = true, Margin = new Padding(6, 8, 0, 0) }));
+        Row("Window shortcut", Flow(windowHotkeyBox, new Label { Text = "opens Dave's window (chat, reminders, screen time)", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(6, 8, 0, 0) }));
         Row("Browser for websites", Flow(browser, new Label { Text = "e.g. Brave (empty = Windows default)", AutoSize = true, Margin = new Padding(6, 8, 0, 0) }));
         Row("", wakeWord);
         Row("", autostart);
@@ -210,6 +213,7 @@ public class SettingsForm : Form
         settings.AzureVoice = ShortName(azureVoice.SelectedItem);
         settings.AzureSecondVoice = ShortName(azureSecondVoice.SelectedItem);
         settings.Hotkey = hotkeyBox.Text.Trim().Length > 0 ? hotkeyBox.Text.Trim() : "Ctrl+Alt+D";
+        settings.WindowHotkey = windowHotkeyBox.Text.Trim().Length > 0 ? windowHotkeyBox.Text.Trim() : "Ctrl+Alt+W";
         settings.WakeWord = wakeWord.Checked;
         settings.Browser = browser.Text.Trim();
         settings.StartWithWindows = autostart.Checked;

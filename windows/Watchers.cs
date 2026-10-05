@@ -36,6 +36,12 @@ public static class Watchers
     /// <summary>Raised (on a background thread) with the message to say when something you're waiting for happens.</summary>
     public static event Action<string>? Triggered;
 
+    /// <summary>What Dave is keeping an eye on, one line each.</summary>
+    public static List<string> List()
+    {
+        lock (Sync) return Active.Select(w => $"{w.Describe()} (set {w.Created:HH:mm})").ToList();
+    }
+
     public static string? DescribeAll()
     {
         lock (Sync) return Active.Count == 0 ? null : string.Join("; ", Active.Select(w => $"{w.Describe()} (set {w.Created:HH:mm})"));

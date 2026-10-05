@@ -34,6 +34,8 @@ public class Settings
     public double SpeechRate { get; set; } = 1.0;
     /// <summary>Global shortcut, e.g. "Ctrl+Alt+D".</summary>
     public string Hotkey { get; set; } = "Ctrl+Alt+D";
+    /// <summary>Shortcut that opens and closes Dave's window (chat history, reminders, screen time…).</summary>
+    public string WindowHotkey { get; set; } = "Ctrl+Alt+W";
     public bool WakeWord { get; set; } = false;
     /// <summary>Browser for websites when you don't name one, e.g. "Brave" ("" = Windows' default).</summary>
     public string Browser { get; set; } = "";

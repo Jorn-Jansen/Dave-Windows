@@ -100,6 +100,33 @@ public static class ScreenTime
         }
     }
 
+    /// <summary>Seconds per app from [from] to [to], most used first.</summary>
+    public static List<(string app, int seconds)> AppTotals(DateTime from, DateTime to)
+    {
+        lock (Sync)
+        {
+            var all = Load();
+            var total = new Dictionary<string, int>();
+            for (var day = from.Date; day <= to.Date; day = day.AddDays(1))
+                if (all.TryGetValue(day.ToString("yyyy-MM-dd"), out var apps))
+                    foreach (var (app, seconds) in apps) total[app] = total.GetValueOrDefault(app) + seconds;
+            return total.OrderByDescending(a => a.Value).Select(a => (a.Key, a.Value)).ToList();
+        }
+    }
+
+    /// <summary>Total seconds at the PC for each day from [from] to [to].</summary>
+    public static List<(DateTime day, int seconds)> DayTotals(DateTime from, DateTime to)
+    {
+        lock (Sync)
+        {
+            var all = Load();
+            var result = new List<(DateTime, int)>();
+            for (var day = from.Date; day <= to.Date; day = day.AddDays(1))
+                result.Add((day, all.TryGetValue(day.ToString("yyyy-MM-dd"), out var apps) ? apps.Values.Sum() : 0));
+            return result;
+        }
+    }
+
     private static string Hours(int seconds) => seconds >= 3600 ? $"{seconds / 3600}h {seconds % 3600 / 60}m" : $"{Math.Max(1, seconds / 60)}m";
 
     private static Dictionary<string, Dictionary<string, int>> Load()

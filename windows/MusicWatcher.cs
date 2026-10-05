@@ -43,6 +43,12 @@ public static class MusicWatcher
         }
     }
 
+    /// <summary>The last [count] songs that came on, newest first.</summary>
+    public static List<Played> Recent(int count)
+    {
+        lock (Sync) return History.TakeLast(count).Reverse().ToList();
+    }
+
     /// <summary>For the AI: the last few songs before [current] (the one playing now), newest first.</summary>
     public static string? EarlierSongs(MediaSession.Playing? current)
     {

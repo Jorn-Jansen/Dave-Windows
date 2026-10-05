@@ -18,7 +18,22 @@ public static class ConversationLog
     private static List<Entry>? entries;
     private const int KeepDays = 30, MaxEntries = 2000;
 
+    /// <summary>Raised after an exchange is added (on whatever thread added it), e.g. to update Dave's window.</summary>
+    public static event Action? Added;
+
+    /// <summary>The last [count] exchanges, oldest first.</summary>
+    public static List<Entry> Recent(int count)
+    {
+        lock (Sync) return Load().TakeLast(count).ToList();
+    }
+
     public static void Add(string you, string dave)
+    {
+        try { AddEntry(you, dave); }
+        finally { Added?.Invoke(); }
+    }
+
+    private static void AddEntry(string you, string dave)
     {
         if (string.IsNullOrWhiteSpace(you) || string.IsNullOrWhiteSpace(dave)) return;
         lock (Sync)
