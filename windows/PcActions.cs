@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
@@ -210,41 +211,165 @@ public static class PcActions
     private static extern bool LockWorkStation();
 }
 
-/// <summary>Timers and reminders, spoken out loud when due. Kept in settings, so they survive a restart.</summary>
+/// <summary>
+/// Timers and reminders, spoken out loud when due: once, or repeating (every day, on weekdays, on certain days,
+/// monthly, or every so many minutes). Kept in settings, so they survive a restart.
+/// </summary>
 public static class Reminders
 {
-    public static DateTimeOffset? Schedule(Settings s, double? minutes, string? time, string message)
+    /// <summary>Add a reminder. Null when it's not clear when.</summary>
+    /// <param name="repeat">"" (once), daily, weekdays, weekends, weekly, monthly or every.</param>
+    /// <param name="days">For weekly: e.g. "monday, thursday" (also Dutch day names).</param>
+    /// <param name="monthDay">For monthly: the day of the month (0 = today's).</param>
+    public static Settings.Reminder? Schedule(Settings s, double? minutes, string? time, string message, string repeat = "", string days = "", int everyMinutes = 0, int monthDay = 0)
     {
-        DateTimeOffset? at = null;
-        if (minutes is > 0) at = DateTimeOffset.Now.AddSeconds(Math.Round(minutes.Value * 60));
-        else if (!string.IsNullOrWhiteSpace(time) && TimeSpan.TryParse(time.Trim(), out var clock))
+        var now = DateTimeOffset.Now;
+        var reminder = new Settings.Reminder { Id = DateTime.Now.Ticks, Message = message, Repeat = repeat };
+        TimeSpan? clock = !string.IsNullOrWhiteSpace(time) && TimeSpan.TryParse(time.Trim(), out var c) ? c : null;
+
+        switch (repeat)
         {
-            var today = new DateTimeOffset(DateTime.Today.Add(clock));
-            at = today < DateTimeOffset.Now ? today.AddDays(1) : today;
+            case "every":
+                if (everyMinutes < 1) return null;
+                reminder.EveryMinutes = everyMinutes;
+                reminder.At = clock is { } start ? NextClock(start) : now.AddMinutes(minutes is > 0 ? minutes.Value : everyMinutes);
+                break;
+            case "daily" or "weekdays" or "weekends" or "weekly" or "monthly":
+                if (clock == null) return null;
+                reminder.Days = ParseDays(days);
+                var first = new DateTimeOffset(DateTime.Today.Add(clock.Value));
+                if (repeat == "monthly")
+                {
+                    reminder.MonthDay = monthDay is >= 1 and <= 31 ? monthDay : first.Day;
+                    var thisMonth = new DateTime(first.Year, first.Month, Math.Min(reminder.MonthDay, DateTime.DaysInMonth(first.Year, first.Month)));
+                    first = new DateTimeOffset(thisMonth.Add(clock.Value));
+                    if (first <= now) first = AddMonth(first, reminder.MonthDay);
+                }
+                else
+                {
+                    if (repeat == "weekly" && reminder.Days.Count == 0)
+                        reminder.Days.Add((first <= now ? first.AddDays(1) : first).DayOfWeek);
+                    for (int i = 0; i < 8 && (first <= now || !OnDay(reminder, first)); i++) first = first.AddDays(1);
+                }
+                reminder.At = first;
+                break;
+            default:
+                reminder.Repeat = "";
+                if (minutes is > 0) reminder.At = now.AddSeconds(Math.Round(minutes.Value * 60));
+                else if (clock != null) reminder.At = NextClock(clock.Value);
+                else return null;
+                break;
         }
-        if (at == null) return null;
-        s.Reminders.Add(new Settings.Reminder { Id = DateTime.Now.Ticks, At = at.Value, Message = message });
+        s.Reminders.Add(reminder);
         s.Save();
-        return at;
+        return reminder;
     }
 
-    public static int CancelAll(Settings s)
+    private static DateTimeOffset NextClock(TimeSpan clock)
     {
-        var count = s.Reminders.Count;
-        s.Reminders.Clear();
+        var today = new DateTimeOffset(DateTime.Today.Add(clock));
+        return today < DateTimeOffset.Now ? today.AddDays(1) : today;
+    }
+
+    /// <summary>Cancel the reminders matching [which] (words from the message, e.g. "water"), or all when it's empty. Returns how many.</summary>
+    public static int Cancel(Settings s, string which)
+    {
+        static string Simple(string x) => new(x.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+        var words = which.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(Simple).Where(w => w.Length > 2).ToList();
+        var count = words.Count == 0
+            ? s.Reminders.RemoveAll(_ => true)
+            : s.Reminders.RemoveAll(r => words.Any(w => Simple(r.Message).Contains(w)));
         s.Save();
         return count;
     }
 
-    /// <summary>Reminders that are due now (removed from the list). Ones more than an hour late are dropped.</summary>
+    /// <summary>
+    /// Reminders that are due now. One-off ones are removed; repeating ones move on to their next time.
+    /// Ones more than an hour late (the PC was off) aren't said anymore.
+    /// </summary>
     public static List<Settings.Reminder> TakeDue(Settings s)
     {
         var now = DateTimeOffset.Now;
         var due = s.Reminders.Where(r => r.At <= now).ToList();
         if (due.Count == 0) return due;
-        s.Reminders.RemoveAll(r => r.At <= now);
+        var announce = due.Where(r => now - r.At < TimeSpan.FromHours(1))
+            .Select(r => new Settings.Reminder { Id = r.Id, At = r.At, Message = r.Message, Repeat = r.Repeat }).ToList();
+        foreach (var r in due)
+        {
+            if (r.Repeat.Length == 0) s.Reminders.Remove(r);
+            else r.At = Next(r, now);
+        }
         s.Save();
-        return due.Where(r => now - r.At < TimeSpan.FromHours(1)).ToList();
+        return announce;
+    }
+
+    /// <summary>The first time after [after] a repeating reminder goes off again.</summary>
+    private static DateTimeOffset Next(Settings.Reminder r, DateTimeOffset after)
+    {
+        var next = r.At;
+        for (int i = 0; i < 100_000 && next <= after; i++)
+        {
+            next = r.Repeat switch
+            {
+                "every" => next.AddMinutes(Math.Max(1, r.EveryMinutes)),
+                "monthly" => AddMonth(next, r.MonthDay > 0 ? r.MonthDay : next.Day),
+                _ => next.AddDays(1),
+            };
+            if (r.Repeat is "every" or "monthly") continue;
+            while (!OnDay(r, next)) next = next.AddDays(1);
+        }
+        return next;
+    }
+
+    private static bool OnDay(Settings.Reminder r, DateTimeOffset date) => r.Repeat switch
+    {
+        "weekdays" => date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday),
+        "weekends" => date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday,
+        "weekly" => r.Days.Count == 0 || r.Days.Contains(date.DayOfWeek),
+        _ => true,
+    };
+
+    /// <summary>Same time, next month, on [day] (or the last day of a shorter month).</summary>
+    private static DateTimeOffset AddMonth(DateTimeOffset date, int day)
+    {
+        var month = new DateTime(date.Year, date.Month, 1).AddMonths(1);
+        var d = Math.Min(day, DateTime.DaysInMonth(month.Year, month.Month));
+        return new DateTimeOffset(month.AddDays(d - 1).Add(date.TimeOfDay));
+    }
+
+    private static List<DayOfWeek> ParseDays(string days)
+    {
+        var names = new Dictionary<string, DayOfWeek>
+        {
+            ["mon"] = DayOfWeek.Monday, ["ma"] = DayOfWeek.Monday, ["tue"] = DayOfWeek.Tuesday, ["di"] = DayOfWeek.Tuesday,
+            ["wed"] = DayOfWeek.Wednesday, ["wo"] = DayOfWeek.Wednesday, ["thu"] = DayOfWeek.Thursday, ["do"] = DayOfWeek.Thursday,
+            ["fri"] = DayOfWeek.Friday, ["vr"] = DayOfWeek.Friday, ["sat"] = DayOfWeek.Saturday, ["za"] = DayOfWeek.Saturday,
+            ["sun"] = DayOfWeek.Sunday, ["zo"] = DayOfWeek.Sunday,
+        };
+        return days.ToLowerInvariant().Split(new[] { ',', ' ', ';', '/', '&' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(d => names.FirstOrDefault(n => d.StartsWith(n.Key)))
+            .Where(n => n.Key != null).Select(n => n.Value).Distinct().ToList();
+    }
+
+    /// <summary>How a reminder repeats, as you'd say it: "every weekday at 10:00", "elke maandag en donderdag om 19:00".</summary>
+    public static string DescribeRepeat(Settings.Reminder r, bool dutch)
+    {
+        var at = r.At.ToString("HH:mm");
+        string DayNames() => string.Join(dutch ? " en " : " and ",
+            r.Days.OrderBy(d => ((int)d + 6) % 7).Select(d => CultureInfo.GetCultureInfo(dutch ? "nl-NL" : "en-US").DateTimeFormat.GetDayName(d)));
+        return r.Repeat switch
+        {
+            "daily" => dutch ? $"elke dag om {at}" : $"every day at {at}",
+            "weekdays" => dutch ? $"elke werkdag om {at}" : $"every weekday at {at}",
+            "weekends" => dutch ? $"elk weekend om {at}" : $"every weekend day at {at}",
+            "weekly" => dutch ? $"elke {DayNames()} om {at}" : $"every {DayNames()} at {at}",
+            "monthly" => dutch ? $"elke maand op de {r.MonthDay}e om {at}" : $"every month on day {r.MonthDay} at {at}",
+            "every" => r.EveryMinutes % 60 == 0
+                ? (dutch ? $"elke {(r.EveryMinutes == 60 ? "" : r.EveryMinutes / 60 + " ")}uur" : $"every {(r.EveryMinutes == 60 ? "hour" : r.EveryMinutes / 60 + " hours")}")
+                : r.EveryMinutes == 1 ? (dutch ? "elke minuut" : "every minute")
+                : (dutch ? $"elke {r.EveryMinutes} minuten" : $"every {r.EveryMinutes} minutes"),
+            _ => dutch ? $"om {at}" : $"at {at}",
+        };
     }
 
     /// <summary>For the AI: each reminder with its exact time and how long until then, so it doesn't have to work it out.</summary>
@@ -253,7 +378,7 @@ public static class Reminders
         if (s.Reminders.Count == 0) return null;
         var now = DateTimeOffset.Now;
         return string.Join("; ", s.Reminders.OrderBy(r => r.At).Select(r =>
-            $"'{r.Message}' at {r.At:HH:mm:ss}, which is {Duration(r.At - now, dutch: false)} from now"));
+            $"'{r.Message}'{(r.Repeat.Length > 0 ? $" ({DescribeRepeat(r, false)})" : "")} next at {r.At:ddd HH:mm:ss}, which is {Duration(r.At - now, dutch: false)} from now"));
     }
 
     /// <summary>A length of time as you'd say it: "2 minutes and 30 seconds", "1 uur en 5 minuten".</summary>

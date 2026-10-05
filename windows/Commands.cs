@@ -37,7 +37,7 @@ public static class Commands
                 "remember" => Remember(s, Str(args, "fact")),
                 "forget" => Forget(s, Str(args, "fact")),
                 "set_reminder" => SetReminder(s, args),
-                "cancel_reminders" => CancelReminders(s),
+                "cancel_reminders" => CancelReminders(s, Str(args, "which")),
                 "open_app" => OpenApp(s, Str(args, "name")),
                 "open_website" => OpenWebsite(s, args),
                 "lock_pc" => LockPc(),
@@ -214,8 +214,23 @@ public static class Commands
         var message = Str(args, "message");
         if (message.Length == 0) message = s.Say("your reminder", "je herinnering");
         var minutes = args["minutes"] is JsonValue v && v.TryGetValue<double>(out var m) ? m : (double?)null;
-        var at = Reminders.Schedule(s, minutes, Str(args, "time"), message);
-        if (at == null) return new Outcome(s.Say("I didn't get when to remind you.", "Ik snapte niet wanneer ik je moet herinneren."), true);
+        var repeat = Str(args, "repeat") is "none" ? "" : Str(args, "repeat");
+        if (repeat.Length == 0 && Int(args, "every_minutes") is > 0) repeat = "every"; // "every 2 hours" sometimes comes without the repeat
+        var reminder = Reminders.Schedule(s, minutes, Str(args, "time"), message, repeat, Str(args, "days"), Int(args, "every_minutes") ?? 0, Int(args, "month_day") ?? 0);
+        if (reminder == null) return new Outcome(s.Say("I didn't get when to remind you.", "Ik snapte niet wanneer ik je moet herinneren."), true);
+        var at = reminder.At;
+        if (reminder.Repeat.Length > 0)
+        {
+            string Start(bool dutch)
+            {
+                if (at.Date == DateTime.Today) return dutch ? "vandaag" : "today";
+                if (at.Date == DateTime.Today.AddDays(1)) return dutch ? "morgen" : "tomorrow";
+                var culture = CultureInfo.GetCultureInfo(dutch ? "nl-NL" : "en-GB");
+                return at.ToString(at.Date < DateTime.Today.AddDays(7) ? "dddd" : "d MMMM", culture); // a weekday this week, otherwise the date
+            }
+            return new Outcome(s.Say($"Okay, I'll remind you {Reminders.DescribeRepeat(reminder, false)}, starting {Start(false)}.",
+                $"Oké, ik herinner je {Reminders.DescribeRepeat(reminder, true)}, vanaf {Start(true)}."), true);
+        }
         if (minutes is > 0 and < 60)
         {
             // A timer: say how long, that's what you asked for (and it's exact, down to the second).
@@ -262,10 +277,15 @@ public static class Commands
         return new Outcome("📋 " + (text.Length > 80 ? text[..80] + "…" : text));
     }
 
-    private static Outcome CancelReminders(Settings s)
+    private static Outcome CancelReminders(Settings s, string which)
     {
-        var count = Reminders.CancelAll(s);
-        return new Outcome(s.Say($"Okay, I cancelled {count} reminders.", $"Oké, ik heb {count} herinneringen geannuleerd."), true);
+        var count = Reminders.Cancel(s, which);
+        return new Outcome(count switch
+        {
+            0 => which.Length > 0 ? s.Say($"I don't have a reminder about {which}.", $"Ik heb geen herinnering over {which}.") : s.Say("There were no reminders.", "Er waren geen herinneringen."),
+            1 => s.Say("Okay, I cancelled that reminder.", "Oké, die herinnering heb ik geannuleerd."),
+            _ => s.Say($"Okay, I cancelled {count} reminders.", $"Oké, ik heb {count} herinneringen geannuleerd."),
+        }, true);
     }
 
     private static Outcome OpenApp(Settings s, string name)

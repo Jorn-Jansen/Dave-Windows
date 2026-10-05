@@ -99,14 +99,23 @@ public static class Assistant
             }, "description"),
         Tool("remember", "Remember a fact about the user.", new JsonObject { ["fact"] = Str("Short English sentence") }, "fact"),
         Tool("forget", "Forget a remembered fact.", new JsonObject { ["fact"] = Str("Which, or 'everything'") }, "fact"),
-        Tool("set_reminder", "Timer or reminder, said out loud when due.",
+        Tool("set_reminder", "Timer or reminder, said out loud when due; once or repeating ('every day at 10', 'every Monday', 'every 2 hours').",
             new JsonObject
             {
                 ["minutes"] = new JsonObject { ["type"] = "number", ["description"] = "From now; fractions allowed (2.5, 0.5 = 30 s)" },
-                ["time"] = Str("Clock time HH:mm (24h)"),
+                ["time"] = Str("Clock time HH:mm (24h); needed for daily/weekdays/weekends/weekly/monthly"),
                 ["message"] = Str("In the user's language"),
+                ["repeat"] = new JsonObject
+                {
+                    ["type"] = "string", ["enum"] = new JsonArray("none", "daily", "weekdays", "weekends", "weekly", "monthly", "every"),
+                    ["description"] = "weekdays = Monday to Friday (werkdagen); weekly = on the given days; every = every N minutes/hours",
+                },
+                ["days"] = Str("weekly: the days, e.g. 'monday, thursday'"),
+                ["month_day"] = Int("monthly: day of the month, 1-31"),
+                ["every_minutes"] = Int("every: how often in minutes (120 for every 2 hours)"),
             }, "message"),
-        Tool("cancel_reminders", "Cancel all timers and reminders."),
+        Tool("cancel_reminders", "Cancel reminders: one ('stop the water reminder') or all.",
+            new JsonObject { ["which"] = Str("Words from the reminder to cancel; empty for all") }),
         Tool("open_app", "Open a program.", new JsonObject { ["name"] = Str("e.g. 'Roblox Studio'") }, "name"),
         Tool("open_website", "Open a website or web search.",
             new JsonObject { ["url"] = Str("Address of a specific site"), ["search"] = Str("Search words"), ["browser"] = Str("Only if the user named one") }),
