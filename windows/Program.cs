@@ -82,7 +82,11 @@ public class DaveApp : ApplicationContext
     {
         Ducker.RestoreAfterCrash(); // in case Dave was closed while other sound was turned down
         Watchers.Triggered += message => bubble.BeginInvoke(() => headsUps.Enqueue(message)); // said at the next tick, when Dave is free
-        if (testQuestion == null) MusicWatcher.Start(settings); // song history, and skipping songs you don't like
+        if (testQuestion == null)
+        {
+            MusicWatcher.Start(settings); // song history, and skipping songs you don't like
+            ScreenTime.Start();
+        }
         if (testQuestion != null)
         {
             _ = bubble.Handle;
@@ -252,6 +256,7 @@ public class DaveApp : ApplicationContext
     private void Quit()
     {
         Cancel();
+        ScreenTime.Flush();
         wakeWord?.Dispose();
         hotkey.Dispose();
         tray.Visible = false;
@@ -348,6 +353,20 @@ public class DaveApp : ApplicationContext
                     (text, language) = heard.Value;
                 }
 
+                // Leaving quiet mode never depends on the AI understanding it: these phrases always work.
+                if (settings.IsQuiet && System.Text.RegularExpressions.Regex.IsMatch(text.ToLowerInvariant(),
+                        @"(talk|speak) again|you can (talk|speak)|stop being quiet|quiet mode off|unmute|(weer|terug) (praten|spreken)|mag weer|stille modus uit|niet meer stil"))
+                {
+                    settings.QuietUntil = DateTime.MinValue;
+                    settings.Save();
+                    var back = T("Okay, I'll talk again.", "Oké, ik praat weer.");
+                    Log.Write("Quiet mode off");
+                    ConversationLog.Add(text, back);
+                    bubble.ShowText(back);
+                    await Speaker.SpeakAsync(settings, back, language, cancel);
+                    return;
+                }
+
                 bubble.ShowText($"“{text}”\n" + T("Thinking…", "Even denken…"));
                 Watchdog.Step = "asking the AI";
                 var result = await Assistant.AskAsync(settings, text, language, await locationTask);
@@ -383,9 +402,10 @@ public class DaveApp : ApplicationContext
                     await Speaker.SpeakAsync(settings, seen, language, cancel);
                     return;
                 }
-                if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation"
+                if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation" or "screen_time" or "internet_speed"
                     || (command.Name == "calendar" && command.Args["action"]?.ToString() != "add" && CalendarFeed.Links(settings).Count > 0))
                 {
+                    Log.Write($"Command {command.Name} {command.Args.ToJsonString()}");
                     string answer;
                     if (command.Name == "use_clipboard")
                     {
@@ -411,6 +431,23 @@ public class DaveApp : ApplicationContext
                         var earlier = ConversationLog.Search(command.Args["about"]?.ToString() ?? "", Days("from_days_ago"), Days("to_days_ago"));
                         answer = await Assistant.WorkOnAsync(settings, text, earlier,
                             "what the user and you (the assistant) said in earlier conversations, with dates and times", language, spoken: true);
+                    }
+                    else if (command.Name == "screen_time")
+                    {
+                        Watchdog.Step = "checking screen time";
+                        DateTime Date(string key) => DateTime.TryParse(command.Args[key]?.ToString(), System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.None, out var d) ? d.Date : DateTime.Today;
+                        var report = ScreenTime.Report(Date("from_date"), Date("to_date"));
+                        Log.Write("Screen time:\n" + report.TrimEnd());
+                        answer = await Assistant.WorkOnAsync(settings, command.Args["question"]?.ToString() ?? text, report,
+                            "the user's screen time per app (time the app was in front while they were at the PC)", language, spoken: true);
+                    }
+                    else if (command.Name == "internet_speed")
+                    {
+                        Watchdog.Step = "testing the internet";
+                        var what = command.Args["what"]?.ToString() ?? "speed";
+                        bubble.ShowText("📶 " + (what == "ping" ? T("Checking your ping…", "Ik check je ping…") : T("Testing your internet, about 15 seconds…", "Ik test je internet, zo'n 15 seconden…")));
+                        answer = await SpeedTest.RunAsync(settings, what);
                     }
                     else if (command.Name == "calendar")
                     {

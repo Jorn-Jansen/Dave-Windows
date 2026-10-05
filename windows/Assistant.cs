@@ -150,7 +150,7 @@ public static class Assistant
         Tool("pc_stats", "How the PC is doing: CPU/GPU use and temperature, RAM and what uses it, disk space, battery, uptime.",
             new JsonObject { ["question"] = Str("The user's question") }, "question"),
         Tool("update_dave", "Check for and install a new version of Dave."),
-        Tool("recall_conversation", "Look up earlier conversations (last 30 days), e.g. 'what did I ask you yesterday'.",
+        Tool("recall_conversation", "Look up what the user said to you earlier (last 30 days), e.g. 'what did I ask you yesterday'. Not for app use: that's screen_time.",
             new JsonObject
             {
                 ["about"] = Str("Topic keywords; empty for everything"),
@@ -166,6 +166,22 @@ public static class Assistant
                 ["message"] = Str("What to say then, short, in the user's language"),
             }, "what", "message"),
         Tool("stop_watching", "Stop watching for things."),
+        Tool("screen_time", "Which apps the user used and for how long (measured): 'how long did I play Roblox today', " +
+            "'what did I use my PC for today', 'my screen time this week'.",
+            new JsonObject
+            {
+                ["question"] = Str("The user's question"),
+                ["from_date"] = Str("First day, yyyy-MM-dd"),
+                ["to_date"] = Str("Last day, yyyy-MM-dd"),
+            }, "question", "from_date", "to_date"),
+        Tool("internet_speed", "Test the internet: 'how fast is my internet' (speed) or 'what's my ping' (ping, quick).",
+            new JsonObject { ["what"] = Enum("speed", "ping") }, "what"),
+        Tool("quiet_mode", "Quiet mode: only show answers instead of saying them ('be quiet for a bit', 'I'm in a call'), or talk again.",
+            new JsonObject
+            {
+                ["on"] = new JsonObject { ["type"] = "boolean" },
+                ["minutes"] = Int("How long, if they said; 0 = until they say you can talk again"),
+            }, "on"),
         Tool("window_control", "Arrange windows: other screen, left/right half, two side by side, maximise, minimise, centre, front, minimise all.",
             new JsonObject
             {
@@ -249,6 +265,9 @@ public static class Assistant
         var reminders = Reminders.Describe(settings);
         if (reminders != null) system += "\nUpcoming timers and reminders (the time left is exact, use it as is): " + reminders;
         if (Watchers.DescribeAll() is { } watching) system += "\nThings you're keeping an eye on for the user: " + watching;
+        if (settings.IsQuiet)
+            system += $"\nQuiet mode is on{(settings.QuietUntil < DateTime.MaxValue ? $" until {settings.QuietUntil:HH:mm}" : "")}: your answers are only shown, not spoken. " +
+                      "When the user says you can talk again ('je mag weer praten'), use quiet_mode with on=false.";
         if (History.Count == 0 && ConversationLog.RecentTopics() is { } recent)
             system += "\nThe last things the user asked you before this conversation (use recall_conversation for details): " + recent;
 

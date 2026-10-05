@@ -108,6 +108,12 @@ public static class Speaker
     public static async Task SpeakAsync(Settings settings, string text, string languageTag, CancellationToken cancel = default)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+        if (settings.IsQuiet)
+        {
+            // Quiet mode: the answer only shows in the bubble; wait about as long as reading it takes, so it stays up.
+            await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(text.Length / 15.0, 2.5, 15)), cancel);
+            return;
+        }
         if (settings.VoiceEngine == "azure" && Azure.IsConfigured(settings))
         {
             byte[]? azureWav = null;

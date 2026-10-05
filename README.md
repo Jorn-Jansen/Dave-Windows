@@ -21,7 +21,9 @@ Dave updates himself when a new version is released. To remove him: Settings →
 - **PC control:** volume, open and close programs, websites, lock the PC, find files, do things inside apps
 - **Your screen:** "what's this error?", "read this out"
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
-- **PC stats:** "how hot is my GPU?", "what's using my memory?"
+- **PC stats:** "how hot is my GPU?", "what's using my memory?", "how fast is my internet?", "what's my ping?"
+- **Screen time:** "how long did I play Roblox today?", "my screen time this week" (kept only on your PC)
+- **Quiet mode:** "be quiet for a bit, I'm in a call" shows answers instead of saying them
 - **Reminders and timers**, also repeating ("every weekday at 8", "every 2 hours"), and **heads-ups:** "tell me when Roblox closes", "let me know when my download is done"
 - **Windows:** "put this on my other screen", "Chrome and Discord side by side", "minimise everything"
 - **Screenshots:** "screenshot this and copy it", "save a screenshot on my desktop"
