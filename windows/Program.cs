@@ -121,7 +121,7 @@ public class DaveApp : ApplicationContext
         _ = Task.Delay(TimeSpan.FromMinutes(1)).ContinueWith(_ => CheckForUpdatesAsync(manual: false),
             TaskScheduler.FromCurrentSynchronizationContext()); // first look a minute after starting, when the PC has settled
 
-        if (settings.GroqKey.Length == 0) OpenSettings();
+        if (!settings.HasAiKey) OpenSettings();
         else tray.ShowBalloonTip(3000, $"{settings.Name} is ready", T($"Press {settings.Hotkey} to talk to me.", $"Druk op {settings.Hotkey} om met me te praten."), ToolTipIcon.None);
     }
 
@@ -285,7 +285,7 @@ public class DaveApp : ApplicationContext
 
     private async Task RunSessionAsync(string? typed, string? announcement = null, bool isReminder = true)
     {
-        if (settings.GroqKey.Length == 0) { OpenSettings(); return; }
+        if (!settings.HasAiKey) { OpenSettings(); return; }
         session = new CancellationTokenSource();
         var cancel = session.Token;
         if (wakeWord != null) wakeWord.Paused = true;
@@ -382,7 +382,8 @@ public class DaveApp : ApplicationContext
                     await Speaker.SpeakAsync(settings, seen, language, cancel);
                     return;
                 }
-                if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation")
+                if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation"
+                    || (command.Name == "calendar" && command.Args["action"]?.ToString() != "add" && CalendarFeed.Links(settings).Count > 0))
                 {
                     string answer;
                     if (command.Name == "use_clipboard")
@@ -409,6 +410,18 @@ public class DaveApp : ApplicationContext
                         var earlier = ConversationLog.Search(command.Args["about"]?.ToString() ?? "", Days("from_days_ago"), Days("to_days_ago"));
                         answer = await Assistant.WorkOnAsync(settings, text, earlier,
                             "what the user and you (the assistant) said in earlier conversations, with dates and times", language, spoken: true);
+                    }
+                    else if (command.Name == "calendar")
+                    {
+                        Watchdog.Step = "reading the calendar";
+                        bubble.ShowText("📅 " + T("Checking your calendar…", "Ik kijk in je agenda…"));
+                        DateTime? Date(string key) => DateTime.TryParse(command.Args[key]?.ToString(), System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.None, out var d) ? d.Date : null;
+                        var first = Date("from_date") ?? DateTime.Today;
+                        var last = Date("to_date") ?? first;
+                        var events = await CalendarFeed.DescribeAsync(settings, (first - DateTime.Today).Days, (last - DateTime.Today).Days);
+                        Log.Write("Calendar:\n" + events.TrimEnd());
+                        answer = await Assistant.WorkOnAsync(settings, text, events, "the user's calendar for the period they asked about", language, spoken: true);
                     }
                     else answer = await UpdateOnRequestAsync();
                     Log.Write($"Says: {answer}");

@@ -40,6 +40,9 @@ public static class ClipboardTasks
 
     public static void Copy(string text) => OnSta(() => { Clipboard.SetText(text); return true; });
 
+    /// <summary>Put an image on the clipboard, ready to paste in Discord, a chat or a document.</summary>
+    public static void Copy(Image image) => OnSta(() => { Clipboard.SetImage(image); return true; });
+
     private static bool IsImageFile(string? path) =>
         path != null && new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif" }.Contains(Path.GetExtension(path).ToLowerInvariant());
 

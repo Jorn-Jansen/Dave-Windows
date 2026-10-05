@@ -67,17 +67,23 @@ public static class Vision
     /// <summary>Screenshot of the main monitor as a JPEG (base64), without Dave's own overlays.</summary>
     public static string CaptureMainScreen()
     {
+        using var full = Capture(Screen.PrimaryScreen!.Bounds);
+        var jpeg = ToJpeg(full);
+        Log.Write($"Screenshot taken ({jpeg.Length / 1024} KB)");
+        // Keep the last one, so you can check what Dave saw.
+        try { File.WriteAllBytes(Path.Combine(Settings.Folder, "last-screenshot.jpg"), jpeg); } catch { }
+        return Convert.ToBase64String(jpeg);
+    }
+
+    /// <summary>What's on the screen in [bounds] (any monitor, or several), full size, without Dave's own overlays.</summary>
+    public static Bitmap Capture(Rectangle bounds)
+    {
         foreach (var form in HiddenFromScreenshots) SetWindowDisplayAffinity(form.Handle, ExcludeFromCapture);
         try
         {
-            var bounds = Screen.PrimaryScreen!.Bounds;
-            using var full = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
-            using (var g = Graphics.FromImage(full)) g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
-            var jpeg = ToJpeg(full);
-            Log.Write($"Screenshot taken ({jpeg.Length / 1024} KB)");
-            // Keep the last one, so you can check what Dave saw.
-            try { File.WriteAllBytes(Path.Combine(Settings.Folder, "last-screenshot.jpg"), jpeg); } catch { }
-            return Convert.ToBase64String(jpeg);
+            var image = new Bitmap(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height), PixelFormat.Format24bppRgb);
+            using (var g = Graphics.FromImage(image)) g.CopyFromScreen(bounds.Location, Point.Empty, image.Size);
+            return image;
         }
         finally
         {
