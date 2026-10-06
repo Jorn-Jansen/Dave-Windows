@@ -213,8 +213,12 @@ public class DaveApp : ApplicationContext
         window?.Push();
     }
 
-    /// <summary>While Dave's window is open (and not minimised), the bubble and glow stay away: the window shows it all.</summary>
-    private bool WindowOpen() => window is { Visible: true } w && w.WindowState != FormWindowState.Minimized;
+    /// <summary>
+    /// While you're looking at Dave's window (it's the window in front), the bubble and glow stay away: the window shows it all.
+    /// Minimised, behind other windows (a game) or under "Show desktop", the bubble shows as usual.
+    /// </summary>
+    private bool WindowOpen() => window is { Visible: true, IsHandleCreated: true } w && w.WindowState != FormWindowState.Minimized
+        && WindowList.Foreground() == w.Handle;
 
     // --- Updates ---
 

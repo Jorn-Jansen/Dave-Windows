@@ -90,7 +90,7 @@ public class Bubble : LayeredWindow
 
     public event Action? Clicked;
 
-    /// <summary>When this says true (Dave's window is open), the bubble and glow stay hidden: the window shows everything.</summary>
+    /// <summary>When this says true (Dave's window is in front), the bubble and glow stay hidden: the window shows everything.</summary>
     public Func<bool>? Suppressed;
 
     private bool IsSuppressed => Suppressed?.Invoke() == true;
@@ -159,7 +159,7 @@ public class Bubble : LayeredWindow
     private void Appear()
     {
         hideTimer.Stop();
-        if (IsSuppressed) return; // the window is open: it shows this instead
+        if (IsSuppressed) { Log.Write("Bubble kept away: Dave's window is in front"); return; } // the window shows this instead
         if (!Visible)
         {
             // Start from a small circle so the first shape grows in.

@@ -51,7 +51,25 @@ public sealed class WakeWord : IDisposable
     private readonly string phrase;
     private readonly List<string> phrases;
     private readonly object sync = new();
+    private readonly bool careful;
     private bool disposed;
+
+    /// <summary>
+    /// Careful mode: common words (and ones that sound like typical wake words) the listener can pick instead of the
+    /// wake word, so near-misses ("day", "they", "save") land on those. Unknown words and the phrase's own are left out.
+    /// </summary>
+    private static readonly string[] Decoys =
+    {
+        "day", "they", "say", "save", "gave", "gay", "date", "made", "make", "may", "way", "stay", "play", "pay", "wave",
+        "brave", "cave", "grave", "dav", "david", "dead", "dad", "did", "the", "a", "and", "it", "is", "i", "you", "yeah",
+        "yes", "no", "okay", "oh", "what", "that", "this", "then", "there", "hey", "hi", "hay", "hello", "go", "get", "got",
+        "do", "done", "one", "two", "we", "me", "he", "she", "him", "her", "they're", "i'm", "don't", "now", "know", "come",
+        "game", "name", "same", "came", "take", "late", "eight", "hate", "great", "face", "place", "base", "case", "race",
+        "jarvis", "harvest", "service", "nervous", "friday", "computer", "buddy", "bro", "man", "guys", "dude", "damn",
+    };
+
+    /// <summary>Careful mode: how sure the listener must be of every word of the phrase.</summary>
+    private const double MinConfidence = 0.7;
     private DateTime lastTrigger = DateTime.MinValue;
 
     /// <summary>While true (Dave is listening to you or talking), wake words are ignored.</summary>
@@ -79,9 +97,13 @@ public sealed class WakeWord : IDisposable
             foreach (var alt in new[] { "hay ", "hi " }) phrases.Add(alt + phrase[4..]);
 
         // The phrase(s), plus single words and [unk]: near-misses land there instead of triggering Dave.
-        var words = phrases.SelectMany(p => p.Split(' '));
-        var grammar = phrases.Concat(words).Append("[unk]").Distinct().ToList();
+        // Careful mode adds look-alike words too, and checks how sure the listener is once you've finished speaking.
+        careful = settings.CarefulWakeWord;
+        var words = phrases.SelectMany(p => p.Split(' ')).ToHashSet();
+        var decoys = careful ? Decoys.Where(w => !words.Contains(w) && SharedModel.FindWord(w) >= 0) : Enumerable.Empty<string>();
+        var grammar = phrases.Concat(words).Concat(decoys).Append("[unk]").Distinct().ToList();
         recognizer = new VoskRecognizer(SharedModel, 16000f, JsonSerializer.Serialize(grammar));
+        if (careful) recognizer.SetWords(true); // gives how sure it is of each word
 
         // Created off the UI thread on purpose: NAudio then delivers audio on its own thread
         // instead of queueing every chunk (and the recognition work) onto Dave's screen thread.
@@ -100,12 +122,21 @@ public sealed class WakeWord : IDisposable
             // Never while you're talking to Dave, or while Dave is talking (or just stopped): his own voice can't wake him.
             if (Paused || Speaker.IsBusy) { wasDeaf = true; return; }
             if (wasDeaf) { wasDeaf = false; recognizer.Reset(); } // forget half-heard sound from before
-            string json, key;
-            if (recognizer.AcceptWaveform(e.Buffer, e.BytesRecorded)) { json = recognizer.Result(); key = "text"; }
-            else { json = recognizer.PartialResult(); key = "partial"; }
-            heard = (JsonNode.Parse(json)?[key]?.GetValue<string>() ?? "").Trim();
+            bool final = recognizer.AcceptWaveform(e.Buffer, e.BytesRecorded);
+            if (careful && !final) return; // wait until you've finished speaking, then check how sure it is
+            var result = JsonNode.Parse(final ? recognizer.Result() : recognizer.PartialResult());
+            heard = (result?[final ? "text" : "partial"]?.GetValue<string>() ?? "").Trim();
             // Only the wake phrase on its own, at the start of what you say: not somewhere in the middle of talking.
             if (!phrases.Contains(heard)) return;
+            if (careful)
+            {
+                // "hey", "hay" and "hi" all count, so the listener splits its certainty between them (a clear "hey" is 50%):
+                // only the other words of the phrase are checked.
+                var spoken = result?["result"]?.AsArray().Select(w => (word: w?["word"]?.GetValue<string>() ?? "", conf: w?["conf"]?.GetValue<double>() ?? 0)).ToList() ?? new();
+                var checkedWords = spoken.Where(w => w.word is not ("hey" or "hay" or "hi")).ToList();
+                var sure = (checkedWords.Count > 0 ? checkedWords : spoken).Select(w => w.conf).DefaultIfEmpty(0).Min();
+                if (sure < MinConfidence) { Log.Write($"Wake word ignored (only {sure:P0} sure): {heard}"); return; }
+            }
             if (DateTime.Now - lastTrigger < TimeSpan.FromSeconds(3)) return;
             lastTrigger = DateTime.Now;
             recognizer.Reset();
