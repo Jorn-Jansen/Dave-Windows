@@ -104,7 +104,9 @@ public sealed partial class DaveWindow
             ["Hotkey"] = settings.Hotkey, ["WindowHotkey"] = settings.WindowHotkey,
             ["WakeWord"] = settings.WakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
             ["CalendarLinks"] = settings.CalendarLinks, ["SpotifyClientId"] = settings.SpotifyClientId,
+            ["Theme"] = settings.Theme,
         },
+        ["themes"] = new JsonArray(Themes.All.Select(t => (JsonNode)ThemeJson(t)).ToArray()),
         ["voices"] = new JsonObject
         {
             ["main"] = new JsonArray(Speaker.VoicesFor(settings.Language).Select(v => (JsonNode)v.DisplayName).ToArray()),
@@ -113,6 +115,14 @@ public sealed partial class DaveWindow
         ["spotify"] = Spotify.IsConnected(settings) ? "✅ connected" : "not connected",
         ["redirect"] = Spotify.RedirectUri,
         ["version"] = Updater.Current.ToString(3),
+    };
+
+    /// <summary>A theme for the page: its colours (the page uses them for everything) and whether it's the old look.</summary>
+    public static JsonObject ThemeJson(Themes.Theme t) => new()
+    {
+        ["id"] = t.Id, ["name"] = t.Name, ["description"] = t.Description, ["legacy"] = t.Legacy,
+        ["main"] = Themes.Hex(t.Main), ["middle"] = Themes.Hex(t.Middle), ["accent"] = Themes.Hex(t.Accent),
+        ["bright"] = Themes.Hex(t.Bright), ["deep"] = Themes.Hex(t.Deep),
     };
 
     /// <summary>A copy of the settings with the panel's (unsaved) values, for previews and loading voices.</summary>
@@ -155,6 +165,7 @@ public sealed partial class DaveWindow
         s.StartWithWindows = Bool("StartWithWindows");
         s.AutoUpdate = Bool("AutoUpdate");
         s.CalendarLinks = Str("CalendarLinks");
+        if (Str("Theme") is { Length: > 0 } theme) s.Theme = Themes.Get(theme).Id;
         if (Str("SpotifyClientId") != s.SpotifyClientId)
         {
             s.SpotifyClientId = Str("SpotifyClientId");

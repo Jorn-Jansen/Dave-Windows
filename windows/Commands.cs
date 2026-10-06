@@ -28,6 +28,8 @@ public static class Commands
                 "undislike_song" => new Outcome(MusicWatcher.Undislike(s, Str(args, "song")) > 0
                     ? s.Say("Okay, I'll play that one again.", "Oké, die mag weer.")
                     : s.Say("That song wasn't on your skip list.", "Dat nummer stond niet op je overslaan-lijst."), true),
+                // "next song" sometimes comes in as music settings (smaller AI models): it's still just next
+                "music_settings" when Str(args, "action") is "next" or "previous" or "play" or "pause" => await MediaControlAsync(s, Str(args, "action"), spotify),
                 "music_settings" => spotify ? await MusicSettingsAsync(s, args) : NeedSpotify(s),
                 "now_playing" => await NowPlayingAsync(s),
                 "like_song" => !spotify ? NeedSpotify(s) : !await MediaSession.IsSpotifyOrNothingAsync() ? OnlySpotify(s)
@@ -95,8 +97,21 @@ public static class Commands
     };
 
     /// <summary>Control whatever is playing (YouTube Music, Spotify, a video…); media keys if Windows doesn't know.</summary>
+    /// <remarks>
+    /// Spotify (when connected and it's what's playing) is controlled directly through its own service: that never
+    /// touches Windows' media controls, which can get stuck (and then even the media keys freeze the taskbar).
+    /// </remarks>
     private static async Task<Outcome> MediaControlAsync(Settings s, string action, bool spotify)
     {
+        if (spotify && await MediaSession.IsSpotifyOrNothingAsync())
+        {
+            try
+            {
+                await Spotify.ControlAsync(s, action);
+                return new Outcome(Label(s, action));
+            }
+            catch (Spotify.SpotifyException e) { Log.Write($"Spotify {action} failed ({e.Message}); trying Windows' media controls"); }
+        }
         if (!await MediaSession.ControlAsync(action)) SystemAudio.MediaKey(action);
         return new Outcome(Label(s, action));
     }
@@ -138,7 +153,7 @@ public static class Commands
     private static async Task<Outcome> NowPlayingAsync(Settings s)
     {
         // Windows knows what any app is playing (YouTube Music too); Spotify's own info is the fallback.
-        if (await MediaSession.NowPlayingAsync() is { } playing)
+        if (await MediaSession.NowPlayingAsync(s) is { } playing)
             return new Outcome(playing.Artist.Length > 0
                 ? s.Say($"This is {playing.Title} by {playing.Artist}.", $"Dit is {playing.Title} van {playing.Artist}.")
                 : s.Say($"This is {playing.Title}.", $"Dit is {playing.Title}."), true);

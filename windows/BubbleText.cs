@@ -10,7 +10,8 @@ namespace DaveWindows;
 /// </summary>
 public static class BubbleText
 {
-    public record Piece(string Text, Font Font, PointF At);
+    /// <summary>A bit of text in one font at one spot; [Word] is which word it belongs to (for showing the words one by one).</summary>
+    public record Piece(string Text, Font Font, PointF At, int Word);
 
     private static readonly StringFormat Exact = CreateFormat();
 
@@ -26,6 +27,7 @@ public static class BubbleText
     {
         var pieces = new List<Piece>();
         float lineHeight = font.GetHeight(g), x = 0, y = 0, widest = 0;
+        int wordIndex = 0;
         var space = g.MeasureString(" ", font, PointF.Empty, Exact).Width;
 
         foreach (var paragraph in text.Replace("\r", "").Split('\n'))
@@ -40,9 +42,10 @@ public static class BubbleText
                 {
                     // Emoji are a bit taller in their font; nudge them so they sit on the same line as the text
                     var lift = runFont == emojiFont ? (emojiFont.GetHeight(g) - lineHeight) / 2 : 0;
-                    pieces.Add(new Piece(run, runFont, new PointF(x, y - lift)));
+                    pieces.Add(new Piece(run, runFont, new PointF(x, y - lift), wordIndex));
                     x += width;
                 }
+                wordIndex++;
                 widest = Math.Max(widest, x);
             }
             x = 0;
@@ -54,6 +57,21 @@ public static class BubbleText
     public static void Draw(Graphics g, List<Piece> pieces, Brush brush, PointF origin)
     {
         foreach (var p in pieces) g.DrawString(p.Text, p.Font, brush, origin.X + p.At.X, origin.Y + p.At.Y, Exact);
+    }
+
+    /// <summary>
+    /// Only the first [words] words (a fraction: the next word fades in), each rising up a little as it appears,
+    /// in [color] at [alpha]. Used while Dave says them.
+    /// </summary>
+    public static void DrawRevealed(Graphics g, List<Piece> pieces, Color color, int alpha, PointF origin, float words)
+    {
+        foreach (var p in pieces)
+        {
+            var shown = Math.Clamp(words - p.Word, 0f, 1f);
+            if (shown <= 0) continue;
+            using var brush = new SolidBrush(Color.FromArgb((int)(alpha * shown), color));
+            g.DrawString(p.Text, p.Font, brush, origin.X + p.At.X, origin.Y + p.At.Y + (1 - shown) * 6, Exact);
+        }
     }
 
     /// <summary>A word split into pieces of normal text and emoji (an emoji with its variation selectors and joiners stays together).</summary>

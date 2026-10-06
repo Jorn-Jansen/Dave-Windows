@@ -3,27 +3,58 @@
 <head>
 <meta charset="utf-8">
 <style>
+  /* The theme's colours are set from Dave (Settings → Theme); the dark colours get a hint of the theme */
   :root {
-    --bg: #0f0f17; --panel: #171724; --panel2: #1e1e2e; --line: #2a2a3d; --text: #ececf4; --dim: #8d8da6;
-    --purple: #9646ff; --violet: #6e5aff; --cyan: #00d2ff; --pink: #dc50e6;
+    --purple: #9646ff; --violet: #6e5aff; --cyan: #00d2ff; --pink: #dc50e6; --deep: #100a26;
+    --bg: color-mix(in srgb, var(--deep) 40%, #0b0b11); --panel: color-mix(in srgb, var(--deep) 30%, #16161f);
+    --panel2: color-mix(in srgb, var(--deep) 30%, #1d1d29); --line: color-mix(in srgb, var(--deep) 25%, #2a2a38);
+    --glass: color-mix(in srgb, var(--deep) 55%, rgba(30, 30, 44, .82)); --text: #ececf4; --dim: #8d8da6;
     --grad: linear-gradient(135deg, var(--purple), var(--violet) 50%, var(--cyan));
   }
+  /* Legacy theme: the original window, plain dark without the moving light and glass */
+  body.legacy .aurora, body.legacy::after { display: none; }
+  body.legacy nav { background: var(--panel); backdrop-filter: none; border-right-color: var(--line); }
+  body.legacy .card { background: var(--panel); backdrop-filter: none; border-color: var(--line); }
+  body.legacy .msg.dave { background: var(--panel2); border: 1px solid var(--line); backdrop-filter: none; }
+  body.legacy .logo { background: var(--grad); }
+  body.legacy .logo::before, body.legacy .logo::after { display: none; }
+  body.legacy header h1 { background: none; color: var(--text); }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  html, body { margin: 0; height: 100%; color: var(--text);
     font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", sans-serif; overflow: hidden; user-select: none; }
+  html { background: var(--bg); } /* only here: a background on body would cover the light layer below */
+
+  /* Slowly drifting coloured light behind everything; the panels on top are frosted glass */
+  .aurora { position: fixed; inset: -20%; z-index: -1; filter: blur(80px); opacity: .9; pointer-events: none; }
+  .aurora i { position: absolute; width: 46vmax; height: 46vmax; border-radius: 50%; mix-blend-mode: screen; }
+  .aurora i:nth-child(1) { background: var(--purple); top: 0; left: 5%; animation: drift1 26s ease-in-out infinite alternate; }
+  .aurora i:nth-child(2) { background: var(--cyan); bottom: 0; right: 0; animation: drift2 31s ease-in-out infinite alternate; }
+  .aurora i:nth-child(3) { background: var(--pink); top: 35%; left: 40%; width: 30vmax; height: 30vmax; opacity: .7; animation: drift3 22s ease-in-out infinite alternate; }
+  @keyframes drift1 { to { transform: translate(30vw, 25vh) scale(1.2); } }
+  @keyframes drift2 { to { transform: translate(-35vw, -20vh) scale(.85); } }
+  @keyframes drift3 { to { transform: translate(-25vw, 20vh) scale(1.3); } }
+  body::after { content: ""; position: fixed; inset: 0; z-index: -1; background: rgba(10, 10, 18, .6); pointer-events: none; }
   /* minmax(0, …) and min-height: 0 let every part shrink with the window, so the typing bar never falls off the bottom */
   .app { display: grid; grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; }
 
   /* Sidebar */
-  nav { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 18px 12px; gap: 4px;
+  nav { background: rgba(23, 23, 36, .55); backdrop-filter: blur(24px) saturate(150%); border-right: 1px solid rgba(255, 255, 255, .07); display: flex; flex-direction: column; padding: 18px 12px; gap: 4px;
     min-height: 0; overflow-y: auto; overflow-x: hidden; }
   nav::-webkit-scrollbar { width: 0; }
   .brand { display: flex; align-items: center; gap: 12px; padding: 4px 8px 20px; }
-  .logo { width: 40px; height: 40px; border-radius: 50%; background: var(--grad); display: grid; place-items: center;
-    box-shadow: 0 0 24px rgba(150, 70, 255, .45); flex: none; }
-  .logo svg { width: 20px; height: 20px; }
+  /* Dave's orb: swirling light in dark glass, like the bubble. Spins faster and pulses while he's busy. */
+  .logo { width: 42px; height: 42px; border-radius: 50%; flex: none; position: relative; overflow: hidden; background: var(--deep);
+    box-shadow: 0 0 22px color-mix(in srgb, var(--purple) 55%, transparent), 0 0 44px color-mix(in srgb, var(--cyan) 18%, transparent), inset 0 0 0 1px rgba(255, 255, 255, .35); }
+  .logo::before { content: ""; position: absolute; inset: -30%; filter: blur(7px);
+    background: radial-gradient(circle at 30% 35%, var(--purple) 0 22%, transparent 42%), radial-gradient(circle at 70% 30%, var(--cyan) 0 18%, transparent 40%),
+                radial-gradient(circle at 60% 72%, var(--pink) 0 20%, transparent 42%), radial-gradient(circle at 35% 70%, var(--violet) 0 16%, transparent 38%);
+    animation: swirl 7s linear infinite; }
+  .logo::after { content: ""; position: absolute; left: 22%; top: 8%; width: 55%; height: 32%; border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(255, 255, 255, .5), transparent 70%); }
+  .logo.busy::before { animation-duration: 1.4s; }
   .logo.busy { animation: pulse 1.2s ease-in-out infinite; }
-  @keyframes pulse { 50% { box-shadow: 0 0 36px rgba(0, 210, 255, .8); transform: scale(1.06); } }
+  @keyframes swirl { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { box-shadow: 0 0 34px color-mix(in srgb, var(--cyan) 85%, transparent), 0 0 60px color-mix(in srgb, var(--purple) 40%, transparent), inset 0 0 0 1px rgba(255, 255, 255, .5); transform: scale(1.07); } }
   .brand b { font-size: 18px; display: block; }
   .brand small { color: var(--dim); font-size: 12px; }
   .tab { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; color: var(--dim); cursor: pointer; transition: .15s; }
@@ -42,7 +73,8 @@
   /* Main */
   main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
   header { padding: 22px 28px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 12px; flex: none; min-width: 0; }
-  header h1 { margin: 0; font-size: 22px; font-weight: 600; white-space: nowrap; }
+  header h1 { margin: 0; font-size: 22px; font-weight: 700; white-space: nowrap; background: linear-gradient(90deg, #fff 30%, color-mix(in srgb, var(--purple) 45%, #fff) 70%, color-mix(in srgb, var(--cyan) 55%, #fff));
+    -webkit-background-clip: text; color: transparent; }
   header span { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .view { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 20px 28px; display: none; }
   .view.active { display: block; }
@@ -55,8 +87,14 @@
   #chat.view.active { display: flex; flex-direction: column; gap: 6px; }
   .day { align-self: center; color: var(--dim); font-size: 12px; margin: 10px 0 4px; }
   .msg { max-width: 72%; padding: 10px 14px; border-radius: 16px; white-space: pre-wrap; word-wrap: break-word; user-select: text; }
-  .msg.you { align-self: flex-end; background: var(--grad); border-bottom-right-radius: 4px; }
-  .msg.dave { align-self: flex-start; background: var(--panel2); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .msg.you { align-self: flex-end; background: var(--grad); border-bottom-right-radius: 4px; box-shadow: 0 6px 22px color-mix(in srgb, var(--violet) 30%, transparent); }
+  /* Dave's messages: frosted glass with a fine gradient edge */
+  .msg.dave { align-self: flex-start; border: 1px solid transparent; border-bottom-left-radius: 4px; backdrop-filter: blur(14px);
+    background: linear-gradient(var(--glass), var(--glass)) padding-box,
+                linear-gradient(135deg, color-mix(in srgb, var(--purple) 65%, transparent), rgba(255, 255, 255, .08) 40%, color-mix(in srgb, var(--cyan) 55%, transparent)) border-box; }
+  .msg.new { animation: arrive .35s cubic-bezier(.2, .9, .3, 1.2); }
+  .msg.you.new { transform-origin: right bottom; } .msg.dave.new { transform-origin: left bottom; }
+  @keyframes arrive { from { opacity: 0; transform: translateY(12px) scale(.96); } }
   .msg .time { display: block; font-size: 11px; opacity: .6; margin-top: 4px; }
   .msg.pending { opacity: .6; }
   .typing { align-self: flex-start; background: var(--panel2); border: 1px solid var(--line); border-radius: 16px; padding: 12px 16px; display: none; gap: 5px; }
@@ -71,13 +109,16 @@
   .round { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--grad); color: #fff; font-size: 17px; cursor: pointer; flex: none; transition: .15s; }
   .round:hover { filter: brightness(1.15); transform: scale(1.05); }
   .round.alt { background: var(--panel2); border: 1px solid var(--line); }
+  /* Listening: the microphone glows and pulses (instead of the bubble, which stays away while this window is open) */
+  .round.alt.listening { background: var(--grad); border-color: transparent; animation: listen 1.1s ease-in-out infinite; }
+  @keyframes listen { 50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--cyan) 25%, transparent), 0 0 28px var(--purple); transform: scale(1.08); } }
 
   /* Lists and cards */
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 14px; }
+  .card { background: rgba(23, 23, 36, .62); backdrop-filter: blur(18px); border: 1px solid rgba(255, 255, 255, .07); border-radius: 14px; transition: .15s; padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 14px; }
   .card .main { flex: 1; min-width: 0; }
   .card .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
   .card .sub { color: var(--dim); font-size: 13px; }
-  .pill { font-size: 12px; padding: 3px 10px; border-radius: 10px; background: rgba(110, 90, 255, .18); color: #b9adff; white-space: nowrap; }
+  .pill { font-size: 12px; padding: 3px 10px; border-radius: 10px; background: color-mix(in srgb, var(--violet) 18%, transparent); color: color-mix(in srgb, var(--violet) 55%, #fff); white-space: nowrap; }
   .x { width: 30px; height: 30px; border-radius: 8px; border: 0; background: transparent; color: var(--dim); font-size: 16px; cursor: pointer; flex: none; }
   .x:hover { background: rgba(255, 80, 120, .15); color: #ff6b8b; }
   .btn { border: 1px solid var(--line); background: var(--panel2); color: var(--text); border-radius: 10px; padding: 8px 14px; font: inherit; cursor: pointer; }
@@ -104,7 +145,7 @@
   .week span { color: var(--dim); font-size: 12px; }
 
   /* Music */
-  .now { background: linear-gradient(135deg, rgba(150,70,255,.25), rgba(0,210,255,.15)); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; display: flex; gap: 16px; align-items: center; margin-bottom: 8px; }
+  .now { background: linear-gradient(135deg, color-mix(in srgb, var(--purple) 25%, transparent), color-mix(in srgb, var(--cyan) 15%, transparent)); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; display: flex; gap: 16px; align-items: center; margin-bottom: 8px; }
   .disc { width: 54px; height: 54px; border-radius: 50%; background: conic-gradient(var(--purple), var(--cyan), var(--pink), var(--purple)); animation: spin 6s linear infinite; position: relative; flex: none; }
   .disc::after { content: ""; position: absolute; inset: 20px; border-radius: 50%; background: var(--bg); }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -148,7 +189,37 @@
   .overlay.show { display: flex; animation: rise .18s ease-out; }
   @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
   .ov-head { display: flex; align-items: center; gap: 14px; padding: 18px 24px; border-bottom: 1px solid var(--line); flex: none; }
-  .ov-head h1 { margin: 0; font-size: 22px; font-weight: 600; flex: 1; }
+  .ov-head h1 { margin: 0; font-size: 22px; font-weight: 600; flex: 1; white-space: nowrap; }
+  .hint-top { color: var(--dim); max-width: 980px; margin: 0 auto 16px; }
+  .stabs { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 3px; }
+  .stabs button { border: 0; background: transparent; color: var(--dim); padding: 7px 16px; border-radius: 8px; font: inherit; cursor: pointer; }
+  .stabs button.on { background: var(--grad); color: #fff; }
+
+  /* Theme cards: a little preview of the bubble and orb in each theme's colours */
+  .themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; max-width: 980px; margin: 0 auto; }
+  .tcard { border-radius: 16px; border: 2px solid var(--line); background: var(--panel); cursor: pointer; overflow: hidden; transition: .15s; }
+  .tcard:hover { transform: translateY(-2px); border-color: var(--dim); }
+  .tcard.on { border-color: var(--t-bright); box-shadow: 0 0 0 1px var(--t-bright), 0 8px 30px color-mix(in srgb, var(--t-main) 45%, transparent); }
+  .tprev { height: 118px; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 12px;
+    background: radial-gradient(circle at 20% 30%, color-mix(in srgb, var(--t-main) 55%, transparent), transparent 55%),
+                radial-gradient(circle at 85% 80%, color-mix(in srgb, var(--t-bright) 40%, transparent), transparent 55%), var(--t-deep); }
+  .torb { width: 46px; height: 46px; border-radius: 50%; position: relative; overflow: hidden; background: var(--t-deep); flex: none;
+    box-shadow: 0 0 20px var(--t-main), inset 0 0 0 1px rgba(255, 255, 255, .4); }
+  .torb::before { content: ""; position: absolute; inset: -30%; filter: blur(6px); animation: swirl 6s linear infinite;
+    background: radial-gradient(circle at 30% 35%, var(--t-main) 0 22%, transparent 42%), radial-gradient(circle at 70% 30%, var(--t-bright) 0 18%, transparent 40%),
+                radial-gradient(circle at 60% 72%, var(--t-accent) 0 20%, transparent 42%); }
+  .torb::after { content: ""; position: absolute; left: 22%; top: 8%; width: 55%; height: 32%; border-radius: 50%; background: radial-gradient(ellipse, rgba(255,255,255,.5), transparent 70%); }
+  .tpill { height: 34px; width: 108px; border-radius: 17px; border: 1.5px solid transparent;
+    background: linear-gradient(color-mix(in srgb, var(--t-deep) 85%, #000), color-mix(in srgb, var(--t-deep) 85%, #000)) padding-box,
+                linear-gradient(90deg, var(--t-main), var(--t-accent), var(--t-bright)) border-box; }
+  .tpill i { display: block; margin: 12px 14px; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .55); width: 60%; }
+  .tcard.legacy .torb { background: linear-gradient(135deg, var(--t-main), var(--t-middle), var(--t-bright)); }
+  .tcard.legacy .torb::before, .tcard.legacy .torb::after { display: none; }
+  .tcard.legacy .tpill { background: linear-gradient(135deg, var(--t-main), var(--t-middle), var(--t-bright)); border-color: rgba(255,255,255,.5); }
+  .tinfo { padding: 12px 14px 14px; }
+  .tinfo b { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+  .tinfo b .badge { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 8px; background: var(--t-main); color: #fff; }
+  .tinfo span { color: var(--dim); font-size: 13px; }
   .close { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 17px; cursor: pointer; }
   .close:hover { border-color: #ff6b8b; color: #ff6b8b; }
   .ov-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px 24px 30px; }
@@ -175,6 +246,7 @@
     .field { grid-template-columns: minmax(0, 1fr); }
     .field .hint { grid-column: 1; }
     .ov-head, .ov-body, .ov-foot { padding-left: 14px; padding-right: 14px; }
+    .ov-head h1 span { display: none; } /* room for the tabs: just the gear */
   }
 
   .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--panel2); border: 1px solid var(--line);
@@ -183,10 +255,11 @@
 </style>
 </head>
 <body>
+<div class="aurora"><i></i><i></i><i></i></div>
 <div class="app">
   <nav>
     <div class="brand">
-      <div class="logo" id="logo"><svg viewBox="0 0 24 24" fill="#fff"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 18v3M8.5 21h7" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></div>
+      <div class="logo" id="logo"></div>
       <div><b id="name">Dave</b><small id="version"></small></div>
     </div>
     <div class="tab active" data-view="chat"><span class="ico">💬</span><span data-t="chat"></span></div>
@@ -218,8 +291,13 @@
   </main>
 </div>
 <div class="overlay" id="settingsPanel">
-  <div class="ov-head"><h1>⚙️ <span data-t="settings"></span></h1><button class="close" id="settingsClose" title="Close without saving">✕</button></div>
+  <div class="ov-head">
+    <h1>⚙️ <span data-t="settings"></span></h1>
+    <div class="stabs"><button class="on" data-stab="settingsBody" data-t="general"></button><button data-stab="themeBody" data-t="theme"></button></div>
+    <button class="close" id="settingsClose" title="Close without saving">✕</button>
+  </div>
   <div class="ov-body" id="settingsBody"></div>
+  <div class="ov-body hidden" id="themeBody"></div>
   <div class="ov-foot"><button class="btn" id="settingsCancel" data-t="cancel"></button><button class="save" id="settingsSave" data-t="save"></button></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -239,7 +317,8 @@ const T = {
     nowPlaying: "Now playing", nothingPlaying: "Nothing is playing", recent: "Recently played", disliked: "Songs you don't like",
     allow: "Allow again", noHistory: "No songs yet", noWatching: "Dave isn't watching anything",
     noWatchingHint: "Say “tell me when Discord closes”.", stopAll: "Stop watching all", next: "next",
-    save: "Save", cancel: "Cancel",
+    save: "Save", cancel: "Cancel", general: "General", theme: "Theme", current: "current",
+    themeHint: "Changes the bubble, the orb, the glow around your screen and this window. Click one to try it; Save to keep it.",
   },
   nl: {
     chat: "Chat", reminders: "Herinneringen", memories: "Onthouden", screen: "Schermtijd", music: "Muziek", watching: "Opletten",
@@ -254,10 +333,18 @@ const T = {
     nowPlaying: "Speelt nu", nothingPlaying: "Er speelt niets", recent: "Net gespeeld", disliked: "Nummers die je niet leuk vindt",
     allow: "Weer toestaan", noHistory: "Nog geen nummers", noWatching: "Dave let nergens op",
     noWatchingHint: "Zeg “laat het me weten als Discord sluit”.", stopAll: "Overal mee stoppen", next: "volgende",
-    save: "Opslaan", cancel: "Annuleren",
+    save: "Opslaan", cancel: "Annuleren", general: "Algemeen", theme: "Thema", current: "huidig",
+    themeHint: "Verandert de bubbel, de bol, de gloed rond je scherm en dit venster. Klik er een om te proberen; Opslaan om te houden.",
   },
 };
-let lang = "en", state = null, view = "chat", period = "today", pending = [], rendered = {};
+/* Errors in this page go to Dave's log (dave.log), so they can be found and fixed */
+function report(err, where) {
+  try { window.chrome.webview.postMessage({ type: "jsError", text: `${where || "page"}: ${err && err.message ? err.message : err} ${err && err.stack ? err.stack.split("\n").slice(0, 3).join(" | ") : ""}` }); } catch { }
+}
+window.addEventListener("error", e => report(e.error || e.message, `line ${e.lineno}:${e.colno}`));
+window.addEventListener("unhandledrejection", e => report(e.reason, "promise"));
+
+let lang = "en", state = null, view = "chat", period = "today", pending = [], rendered = {}, lastChatCount = -1;
 const t = k => T[lang][k] || k;
 const $ = id => document.getElementById(id);
 const send = m => window.chrome.webview.postMessage(m);
@@ -279,12 +366,55 @@ const SPEEDS = [["0.85", "Slow"], ["1", "Normal"], ["1.15", "A bit faster"], ["1
 const MODELS = { openai: "gpt-4.1-mini", openrouter: "openai/gpt-oss-120b", custom: "model name" };
 let sdata = null, form = {};
 
-function openSettings() { $("settingsPanel").classList.add("show"); $("settingsBody").textContent = ""; send({ type: "getSettings" }); }
-function closeSettings() { $("settingsPanel").classList.remove("show"); sdata = null; } // ✕ / Cancel: nothing is saved
+function openSettings() { $("settingsPanel").classList.add("show"); $("settingsBody").textContent = ""; $("themeBody").textContent = ""; settingsTab("settingsBody"); send({ type: "getSettings" }); }
+function closeSettings() { // ✕ / Cancel: nothing is saved, and a theme you were trying goes back to the saved one
+  $("settingsPanel").classList.remove("show"); sdata = null;
+  if (state) applyTheme(state.theme);
+}
+function settingsTab(id) {
+  document.querySelectorAll("[data-stab]").forEach(b => b.classList.toggle("on", b.dataset.stab === id));
+  for (const body of ["settingsBody", "themeBody"]) $(body).classList.toggle("hidden", body !== id);
+}
+document.querySelectorAll("[data-stab]").forEach(b => b.onclick = () => settingsTab(b.dataset.stab));
+
+/* A theme: its colours for the whole page, and the plain original look for Legacy */
+function applyTheme(th) {
+  if (!th) return;
+  const r = document.documentElement.style;
+  r.setProperty("--purple", th.main); r.setProperty("--violet", th.middle); r.setProperty("--pink", th.accent);
+  r.setProperty("--cyan", th.bright); r.setProperty("--deep", th.deep);
+  document.body.classList.toggle("legacy", !!th.legacy);
+}
+
+function renderThemes(d) {
+  const body = $("themeBody"); body.textContent = "";
+  body.append(el("div", "hint-top", t("themeHint")));
+  const grid = el("div", "themes");
+  const hidden = el("input"); hidden.type = "hidden"; hidden.value = d.values.Theme; form.Theme = hidden;
+  for (const th of d.themes) {
+    const card = el("div", "tcard" + (th.legacy ? " legacy" : "") + (th.id === hidden.value ? " on" : ""));
+    for (const [k, v] of [["main", th.main], ["middle", th.middle], ["accent", th.accent], ["bright", th.bright], ["deep", th.deep]]) card.style.setProperty(`--t-${k}`, v);
+    const prev = el("div", "tprev"), pill = el("div", "tpill");
+    pill.append(el("i"));
+    prev.append(el("div", "torb"), pill);
+    const info = el("div", "tinfo"), name = el("b", null, th.name);
+    if (th.id === d.values.Theme) name.append(el("span", "badge", t("current")));
+    info.append(name, el("span", null, th.description));
+    card.append(prev, info);
+    card.onclick = () => {
+      hidden.value = th.id;
+      grid.querySelectorAll(".tcard").forEach(c => c.classList.remove("on"));
+      card.classList.add("on");
+      applyTheme(th); // try it right away; Save keeps it, ✕ puts the old one back
+    };
+    grid.append(card);
+  }
+  body.append(grid);
+}
 
 function readSettings() {
   const v = {};
-  for (const [k, input] of Object.entries(form)) v[k] = input.type === "switch" ? input.classList.contains("on") : input.value;
+  for (const [k, input] of Object.entries(form)) v[k] = input.type === "switch" ? input.classList.contains("on") : input.value; // also the hidden Theme
   return v;
 }
 
@@ -372,6 +502,7 @@ function renderSettings(d) {
   form.SecondLanguage.onchange = () => send({ type: "voices", field: "SecondVoice", lang: form.SecondLanguage.value });
   form.AiProvider.onchange = form.VoiceEngine.onchange = updateSettingsVisibility;
   updateSettingsVisibility();
+  renderThemes(d);
 }
 
 /* Show only what matters for the chosen provider and voice engine */
@@ -394,7 +525,7 @@ function ask() {
   const text = $("input").value.trim();
   if (!text) return;
   $("input").value = "";
-  pending.push(text);
+  pending.push({ text, chatLength: state ? state.chat.length : 0 });
   send({ type: "ask", text });
   rendered.chat = null; renderChat();
 }
@@ -424,10 +555,15 @@ function scrollChat(force) {
   if (force || c.scrollHeight - c.scrollTop - c.clientHeight < 160) c.scrollTop = c.scrollHeight;
 }
 
+/* "what's  this?" and "What's this" count as the same: the log merges spaces, so an exact match never came */
+const same = (a, b) => a.replace(/\s+/g, " ").trim().toLowerCase() === b.replace(/\s+/g, " ").trim().toLowerCase();
+
 function renderChat() {
   const chat = state ? state.chat : [];
-  pending = pending.filter(p => !chat.slice(-6).some(e => e.you === p));
-  if (!changed("chat", [chat, pending, state && state.busy])) return;
+  // A sent message shows until it's in the chat; also gone once anything new arrived after sending it
+  pending = pending.filter(p => !chat.slice(-6).some(e => same(e.you, p.text)) && chat.length <= p.chatLength);
+  const thinking = state && state.status === "thinking";
+  if (!changed("chat", [chat, pending.map(p => p.text), thinking])) return;
   const c = $("chat"); c.textContent = "";
   if (!chat.length && !pending.length) { c.append(empty("💬", t("noChat"), t("noChatHint").replace("{hotkey}", state ? state.hotkey : ""))); return; }
   let lastDay = null;
@@ -439,8 +575,14 @@ function renderChat() {
     dave.append(el("span", "time", e.at.split(" ").pop()));
     c.append(dave);
   }
-  for (const p of pending) c.append(el("div", "msg you pending", p));
-  const typing = el("div", "typing" + ((state && state.busy) || pending.length ? " show" : ""));
+  // Only what's new slides in (not the whole history every time it's redrawn)
+  const msgs = c.querySelectorAll(".msg");
+  const fresh = lastChatCount >= 0 ? (chat.length - lastChatCount) * 2 : 0;
+  for (let i = Math.max(0, msgs.length - fresh); i < msgs.length; i++) msgs[i].classList.add("new");
+  lastChatCount = chat.length;
+  for (const p of pending) c.append(el("div", "msg you pending new", p.text));
+  // The three dots only while Dave is working out the answer, not once it's there
+  const typing = el("div", "typing" + (thinking || pending.length ? " show" : ""));
   typing.append(el("i"), el("i"), el("i"));
   c.append(typing);
   scrollChat(pending.length > 0);
@@ -568,12 +710,17 @@ window.chrome.webview.addEventListener("message", e => {
   state = m;
   const newLang = m.dutch ? "nl" : "en";
   if (newLang !== lang || first) { lang = newLang; rendered = {}; labels(); }
+  if (!$("settingsPanel").classList.contains("show")) applyTheme(m.theme); // not while you're trying themes in the settings
   $("name").textContent = m.name;
   $("version").textContent = "v" + m.version;
   $("logo").classList.toggle("busy", m.busy);
+  $("mic").classList.toggle("listening", m.status === "listening"); // the bubble stays away while this window is open
   $("quietSwitch").classList.toggle("on", m.quiet);
   count("c-reminders", m.reminders.length); count("c-memories", m.memories.length); count("c-watching", m.watching.length);
-  renderChat(); renderReminders(); renderMemories(); renderScreen(); renderMusic(); renderWatching();
+  // Each tab on its own: a problem in one never leaves the others empty
+  for (const render of [renderChat, renderReminders, renderMemories, renderScreen, renderMusic, renderWatching]) {
+    try { render(); } catch (err) { report(err, render.name); }
+  }
   if (first) { show("chat"); }
 });
 labels();

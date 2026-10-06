@@ -16,6 +16,7 @@ public sealed partial class DaveWindow : Form
     private readonly Func<string, bool> ask;
     private readonly Action listen, applySettings;
     private readonly Func<bool> busy;
+    private readonly Func<string> status;
     private bool openSettingsWhenReady;
 
     /// <summary>True when the window can't work (no WebView2): then the old settings window is used instead.</summary>
@@ -26,8 +27,10 @@ public sealed partial class DaveWindow : Form
 
     /// <param name="ask">Ask a typed question; false when Dave is busy.</param>
     /// <param name="applySettings">Called after the settings were saved (shortcuts, wake word, autostart).</param>
-    public DaveWindow(Settings settings, Func<string, bool> ask, Action listen, Action applySettings, Func<bool> busy)
+    /// <param name="status">"listening", "thinking", "busy" (e.g. talking) or "" (idle).</param>
+    public DaveWindow(Settings settings, Func<string, bool> ask, Action listen, Action applySettings, Func<bool> busy, Func<string> status)
     {
+        this.status = status;
         this.settings = settings;
         this.ask = ask;
         this.listen = listen;
@@ -109,10 +112,10 @@ public sealed partial class DaveWindow : Form
         refresh.Enabled = Visible;
     }
 
-    /// <summary>Closing only hides it, so it opens instantly next time.</summary>
+    /// <summary>Closing only hides it (whichever way it's closed), so it opens instantly next time. Only Windows shutting down really closes it.</summary>
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); }
+        if (e.CloseReason is not (CloseReason.WindowsShutDown or CloseReason.ApplicationExitCall)) { e.Cancel = true; Hide(); }
         base.OnFormClosing(e);
     }
 
@@ -134,6 +137,7 @@ public sealed partial class DaveWindow : Form
             switch (Str("type"))
             {
                 case "ready": ready = true; break;
+                case "jsError": Log.Write($"Window page error: {Str("text")}"); return;
                 case "ask":
                     if (Str("text").Trim().Length > 0 && !ask(Str("text").Trim()))
                         Send(new JsonObject { ["type"] = "toast", ["text"] = settings.Say("I'm still busy, one moment.", "Ik ben nog bezig, momentje.") });
@@ -179,7 +183,7 @@ public sealed partial class DaveWindow : Form
     {
         if (!ready || !Visible) return;
         try { Send(await StateAsync()); }
-        catch (Exception e) { Log.Write($"Window update failed: {e.Message}"); }
+        catch (Exception e) { Log.Write($"Window update failed: {e}"); }
     }
 
     private async Task<JsonObject> StateAsync()
@@ -191,7 +195,7 @@ public sealed partial class DaveWindow : Form
             : at.ToString("ddd d MMM HH:mm", culture);
         JsonArray Array<T>(IEnumerable<T> items, Func<T, JsonNode> map) => new(items.Select(map).ToArray());
 
-        var playing = await MediaSession.NowPlayingAsync();
+        var playing = await MediaSession.NowPlayingAsync(settings);
         var weekStart = DateTime.Today.AddDays(-6);
         return new JsonObject
         {
@@ -200,8 +204,10 @@ public sealed partial class DaveWindow : Form
             ["version"] = Updater.Current.ToString(3),
             ["dutch"] = settings.IsDutch,
             ["busy"] = busy(),
+            ["status"] = status(),
             ["quiet"] = settings.IsQuiet,
             ["hotkey"] = settings.Hotkey,
+            ["theme"] = ThemeJson(Themes.Get(settings.Theme)),
             ["chat"] = Array(ConversationLog.Recent(150), e => new JsonObject
             {
                 ["at"] = e.At.ToString(e.At.Date == DateTime.Today ? "HH:mm" : "ddd d MMM HH:mm", culture),

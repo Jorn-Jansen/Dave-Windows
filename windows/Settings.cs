@@ -41,6 +41,8 @@ public class Settings
     public string Browser { get; set; } = "";
     public bool StartWithWindows { get; set; } = false;
     public bool AutoUpdate { get; set; } = true;
+    /// <summary>How Dave looks: "aurora" (default), "legacy" (the original), "ember", "toxic", "ocean", "sakura", "midnight".</summary>
+    public string Theme { get; set; } = "aurora";
     /// <summary>Quiet mode: until when Dave only shows his answers instead of saying them (MinValue = off).</summary>
     public DateTime QuietUntil { get; set; } = DateTime.MinValue;
     [JsonIgnore] public bool IsQuiet => DateTime.Now < QuietUntil;
