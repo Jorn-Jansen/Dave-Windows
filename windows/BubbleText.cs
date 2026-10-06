@@ -1,4 +1,3 @@
-using System.Drawing.Text;
 using System.Globalization;
 
 namespace DaveWindows;
