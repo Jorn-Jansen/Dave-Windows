@@ -23,6 +23,7 @@ Dave updates himself when a new version is released. To remove him: Settings →
 - **PC control:** volume of the PC or one app ("make Discord quieter", "mute Chrome"), open and close programs, websites, lock the PC, find files, do things inside apps
 - **Your screen:** "what's this error?", "read this out"
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
+- **Files:** "look at C:\…\report.docx and rate it", "summarise this PDF", "what's in my Downloads folder?"
 - **PC stats:** "how hot is my GPU?", "what's using my memory?", "how fast is my internet?", "what's my ping?"
 - **Screen time:** "how long did I play Roblox today?", "my screen time this week" (kept only on your PC)
 - **Quiet mode:** "be quiet for a bit, I'm in a call" shows answers instead of saying them

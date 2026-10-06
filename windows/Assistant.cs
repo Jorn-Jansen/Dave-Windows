@@ -123,6 +123,14 @@ public static class Assistant
         Tool("open_website", "Open a website or web search.",
             new JsonObject { ["url"] = Str("Address of a specific site"), ["search"] = Str("Search words"), ["browser"] = Str("Only if the user named one") }),
         Tool("lock_pc", "Lock the PC."),
+        Tool("read_file", "Read a file or folder yourself and answer about its contents: rate, review, summarise, explain, find mistakes, " +
+            "'what's in this folder'. Text, code, Word, PDF and images. Use this, not opening it, when they want YOUR opinion or answer.",
+            new JsonObject
+            {
+                ["path"] = Str("The full path if the user gave one, exactly as given"),
+                ["name"] = Str("Otherwise: (part of) the file name to look for, e.g. 'TDD.md'"),
+                ["question"] = Str("What the user wants to know about it, in their own words"),
+            }, "question"),
         Tool("find_file", "Open a folder or file (by path, a known folder like Downloads, or by name/type), show it in its folder, or say where it is.",
             new JsonObject
             {

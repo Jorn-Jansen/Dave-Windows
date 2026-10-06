@@ -438,7 +438,7 @@ public class DaveApp : ApplicationContext
                     await Speaker.SpeakAsync(settings, seen, language, cancel);
                     return;
                 }
-                if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation" or "screen_time" or "internet_speed"
+                if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation" or "screen_time" or "internet_speed" or "read_file"
                     || (command.Name == "calendar" && command.Args["action"]?.ToString() != "add" && CalendarFeed.Links(settings).Count > 0))
                 {
                     Log.Write($"Command {command.Name} {command.Args.ToJsonString()}");
@@ -467,6 +467,12 @@ public class DaveApp : ApplicationContext
                         var earlier = ConversationLog.Search(command.Args["about"]?.ToString() ?? "", Days("from_days_ago"), Days("to_days_ago"));
                         answer = await Assistant.WorkOnAsync(settings, text, earlier,
                             "what the user and you (the assistant) said in earlier conversations, with dates and times", language, spoken: true);
+                    }
+                    else if (command.Name == "read_file")
+                    {
+                        Watchdog.Step = "reading a file";
+                        answer = await ReadFileAsync(command.Args["path"]?.ToString() ?? "", command.Args["name"]?.ToString() ?? "",
+                            command.Args["question"]?.ToString() is { Length: > 0 } q ? q : text, language);
                     }
                     else if (command.Name == "screen_time")
                     {
@@ -532,6 +538,31 @@ public class DaveApp : ApplicationContext
                 return;
             }
         }
+    }
+
+    /// <summary>"Look at this file and rate it": find it (a path, a known folder, or by name), read it, and let the AI answer.</summary>
+    private async Task<string> ReadFileAsync(string path, string name, string question, string language)
+    {
+        var target = FileFinder.DirectPath(path.Length > 0 ? path : name, out _);
+        if (target == null || !(File.Exists(target) || Directory.Exists(target)))
+        {
+            if (path.Length > 0) return T($"I can't find {path} on this PC.", $"Ik kan {path} niet vinden op deze pc.");
+            var found = await FileFinder.FindAsync(name, "any", newest: false);
+            if (found.Count == 0) return T($"I couldn't find {name} on this PC.", $"Ik kon {name} niet vinden op deze pc.");
+            target = found[0].Path;
+        }
+        var fileName = Path.GetFileName(target.TrimEnd('\\')) is { Length: > 0 } n ? n : target;
+        bubble.ShowText("📄 " + T($"Reading {fileName}…", $"Ik lees {fileName}…"));
+        var content = await FileReader.ReadAsync(target);
+        Log.Write($"Read {target}: {(content.Problem ?? (content.Images != null ? $"{content.Images.Count} picture(s)" : $"{content.Text!.Length} characters"))}{(content.Cut ? ", cut short" : "")}");
+        if (content.Problem != null)
+            return T($"I can't read {fileName}: it's {content.Problem}.", $"Ik kan {fileName} niet lezen: {content.Problem}.");
+
+        var what = $"the file {target}" + (content.Cut ? " (only the first part: it's long)" : "");
+        if (content.Images != null)
+            return await Vision.AskAboutImagesAsync(settings, question, language, content.Images,
+                content.Images.Count > 1 ? $"the first {content.Images.Count} pages of {what}, one image per page" : what);
+        return await Assistant.WorkOnAsync(settings, question, content.Text!, what, language, spoken: true);
     }
 
     /// <summary>Beep, record, transcribe. Null if nothing was understood.</summary>
