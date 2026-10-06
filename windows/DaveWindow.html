@@ -482,6 +482,7 @@ function renderSettings(d) {
   field("Hotkey", "Talk shortcut", text("Hotkey", "Ctrl+Alt+D"));
   field("WindowHotkey", "Window shortcut", text("WindowHotkey", "Ctrl+Alt+W"), "Opens and closes this window.");
   field("WakeWord", "Listen for the wake phrase", toggle("WakeWord"), "Offline: nothing is sent anywhere until it hears it.");
+  field("CarefulWakeWord", "Careful wake word", toggle("CarefulWakeWord"), "Double-checks he really heard it: fewer accidental wake-ups, but he reacts a bit later.");
   field("StartWithWindows", "Start with Windows", toggle("StartWithWindows"));
   field("AutoUpdate", "Update automatically", toggle("AutoUpdate"), `Now version ${d.version}.`);
 

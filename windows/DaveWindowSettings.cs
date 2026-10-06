@@ -102,7 +102,7 @@ public sealed partial class DaveWindow
             ["AzureVoice"] = settings.AzureVoice, ["AzureSecondVoice"] = settings.AzureSecondVoice,
             ["SpeechRate"] = settings.SpeechRate.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["Hotkey"] = settings.Hotkey, ["WindowHotkey"] = settings.WindowHotkey,
-            ["WakeWord"] = settings.WakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
+            ["WakeWord"] = settings.WakeWord, ["CarefulWakeWord"] = settings.CarefulWakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
             ["CalendarLinks"] = settings.CalendarLinks, ["SpotifyClientId"] = settings.SpotifyClientId,
             ["Theme"] = settings.Theme,
         },
@@ -162,6 +162,7 @@ public sealed partial class DaveWindow
         s.Hotkey = Str("Hotkey") is { Length: > 0 } hotkey ? hotkey : "Ctrl+Alt+D";
         s.WindowHotkey = Str("WindowHotkey") is { Length: > 0 } windowHotkey ? windowHotkey : "Ctrl+Alt+W";
         s.WakeWord = Bool("WakeWord");
+        s.CarefulWakeWord = Bool("CarefulWakeWord");
         s.StartWithWindows = Bool("StartWithWindows");
         s.AutoUpdate = Bool("AutoUpdate");
         s.CalendarLinks = Str("CalendarLinks");

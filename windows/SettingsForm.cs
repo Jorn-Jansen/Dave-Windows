@@ -17,6 +17,7 @@ public class SettingsForm : Form
     private readonly TextBox windowHotkeyBox = new() { Width = 160 };
     private readonly TextBox browser = new() { Width = 160, PlaceholderText = "Windows default" };
     private readonly CheckBox wakeWord = new() { Text = "Listen for “Hey Dave” (offline)", AutoSize = true };
+    private readonly CheckBox carefulWakeWord = new() { Text = "Careful wake word (fewer accidental wake-ups, reacts a bit later)", AutoSize = true };
     private readonly CheckBox autostart = new() { Text = "Start Dave with Windows", AutoSize = true };
     private readonly CheckBox autoUpdate = new() { Text = $"Update Dave automatically (now version {Updater.Current.ToString(3)})", AutoSize = true };
     private readonly ComboBox provider = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
@@ -91,6 +92,7 @@ public class SettingsForm : Form
         windowHotkeyBox.Text = settings.WindowHotkey;
         browser.Text = settings.Browser;
         wakeWord.Checked = settings.WakeWord;
+        carefulWakeWord.Checked = settings.CarefulWakeWord;
         autostart.Checked = settings.StartWithWindows;
         autoUpdate.Checked = settings.AutoUpdate;
         spotifyId.Text = settings.SpotifyClientId;
@@ -145,6 +147,7 @@ public class SettingsForm : Form
         Row("Window shortcut", Flow(windowHotkeyBox, new Label { Text = "opens Dave's window (chat, reminders, screen time)", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(6, 8, 0, 0) }));
         Row("Browser for websites", Flow(browser, new Label { Text = "e.g. Brave (empty = Windows default)", AutoSize = true, Margin = new Padding(6, 8, 0, 0) }));
         Row("", wakeWord);
+        Row("", carefulWakeWord);
         Row("", autostart);
         Row("", autoUpdate);
         Row("Calendar link (iCal)", calendarLinks);
@@ -213,6 +216,7 @@ public class SettingsForm : Form
         settings.Hotkey = hotkeyBox.Text.Trim().Length > 0 ? hotkeyBox.Text.Trim() : "Ctrl+Alt+D";
         settings.WindowHotkey = windowHotkeyBox.Text.Trim().Length > 0 ? windowHotkeyBox.Text.Trim() : "Ctrl+Alt+W";
         settings.WakeWord = wakeWord.Checked;
+        settings.CarefulWakeWord = carefulWakeWord.Checked;
         settings.Browser = browser.Text.Trim();
         settings.StartWithWindows = autostart.Checked;
         settings.AutoUpdate = autoUpdate.Checked;
