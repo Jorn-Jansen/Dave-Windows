@@ -407,6 +407,19 @@ public class DaveApp : ApplicationContext
                 }
 
                 var command = (Assistant.Command)result;
+                // "I copied a picture, extract the text and copy it": the AI sometimes picks "copy this text" with a made-up
+                // placeholder ("<extracted text>") instead of looking at what was copied. Then do the clipboard task properly.
+                if (command.Name == "copy_to_clipboard")
+                {
+                    var toCopy = command.Args["text"]?.ToString()?.Trim() ?? "";
+                    var placeholder = toCopy.Length == 0 || System.Text.RegularExpressions.Regex.IsMatch(toCopy, @"^[<\[{(].*[>\]})]$");
+                    var aboutWhatTheyCopied = System.Text.RegularExpressions.Regex.IsMatch(text.ToLowerInvariant(), @"\b(i|what i|i've|ive) copied\b|gekopieerd");
+                    if (placeholder || aboutWhatTheyCopied)
+                    {
+                        Log.Write($"copy_to_clipboard \"{toCopy}\" is about what the user copied: doing use_clipboard instead");
+                        command = command with { Name = "use_clipboard", Args = new System.Text.Json.Nodes.JsonObject { ["task"] = text, ["output"] = "copy" } };
+                    }
+                }
                 duck.Dispose(); // give the sound back before touching music or volume
                 if (command.Name == "start_music_quiz")
                 {

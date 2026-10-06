@@ -23,16 +23,25 @@ public static class Vision
     public static Task<string> AskAboutScreenAsync(Settings settings, string question, string languageTag) =>
         AskAboutImageAsync(settings, question, languageTag, CaptureMainScreen(), "a screenshot of the user's main monitor, taken just now");
 
-    /// <summary>Answer [question] about a JPEG ([image], base64), described to the AI as [whatItIs].</summary>
-    public static async Task<string> AskAboutImageAsync(Settings settings, string question, string languageTag, string image, string whatItIs)
+    /// <summary>
+    /// Answer [question] about a JPEG ([image], base64), described to the AI as [whatItIs]. With [spoken] false, just the
+    /// resulting text, exactly as it should be pasted (e.g. the text read from a copied picture).
+    /// </summary>
+    public static async Task<string> AskAboutImageAsync(Settings settings, string question, string languageTag, string image, string whatItIs, bool spoken = true)
     {
         var language = CultureInfo.GetCultureInfo(languageTag).EnglishName.Split(' ')[0];
-        var system = $"""
-            You are {settings.Name}, a voice assistant. The image is {whatItIs}.
-            You CAN see it: it is attached to the message. Never say you can't see it; describe what is in the image.
-            Answer the user's question about it in {language}, in one to three short spoken sentences (more only if they ask to read or explain something longer).
-            Plain speech only: no markdown, lists, emojis or symbols. Don't describe the screen in general unless that's what they asked.
-            """;
+        var system = spoken
+            ? $"""
+              You are {settings.Name}, a voice assistant. The image is {whatItIs}.
+              You CAN see it: it is attached to the message. Never say you can't see it; describe what is in the image.
+              Answer the user's question about it in {language}, in one to three short spoken sentences (more only if they ask to read or explain something longer).
+              Plain speech only: no markdown, lists, emojis or symbols. Don't describe the screen in general unless that's what they asked.
+              """
+            : $"""
+              The image is {whatItIs}. You CAN see it: it is attached to the message.
+              Do what the user asks with it and reply with only the resulting text, exactly as it should be pasted:
+              no introduction, no quotes, no comments, no markdown. To extract text, copy it exactly as written in the image, keeping its line breaks.
+              """;
         var body = new JsonObject
         {
             ["model"] = Model,
@@ -61,7 +70,7 @@ public static class Vision
         if (status is < 200 or >= 300) throw Groq.Failure(settings, status, text);
         var answer = JsonNode.Parse(text)!["choices"]![0]!["message"]!["content"]?.ToString() ?? "";
         answer = Regex.Replace(answer, @"<think>[\s\S]*?</think>", "").Trim(); // in case thinking comes along anyway
-        return Assistant.Speakable(answer);
+        return spoken ? Assistant.Speakable(answer) : answer;
     }
 
     /// <summary>Screenshot of the main monitor as a JPEG (base64), without Dave's own overlays.</summary>

@@ -144,13 +144,15 @@ public static class Assistant
                 ["text"] = Str("Exactly what to type, properly written, in the language they spoke"),
                 ["press_enter"] = new JsonObject { ["type"] = "boolean", ["description"] = "To send/submit it" },
             }, "text"),
-        Tool("use_clipboard", "Work with what the user copied (text or image): read out, summarise, translate, explain, answer about it.",
+        Tool("use_clipboard", "Work with what the user copied (text or image): read out, summarise, translate, explain, extract the text from a copied picture. " +
+            "Also when the result should go back on the clipboard (output 'copy').",
             new JsonObject
             {
                 ["task"] = Str("What to do, in the user's words"),
                 ["output"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("say", "copy"), ["description"] = "'copy' to put the result on the clipboard" },
             }, "task", "output"),
-        Tool("copy_to_clipboard", "Copy text to the clipboard ('copy that' = your previous answer).", new JsonObject { ["text"] = Str("The text") }, "text"),
+        Tool("copy_to_clipboard", "Copy text you already have to the clipboard ('copy that' = your previous answer). " +
+            "Not for something the user copied: that's use_clipboard.", new JsonObject { ["text"] = Str("The actual text, never a placeholder") }, "text"),
         Tool("pc_stats", "How the PC is doing: CPU/GPU use and temperature, RAM and what uses it, disk space, battery, uptime.",
             new JsonObject { ["question"] = Str("The user's question") }, "question"),
         Tool("update_dave", "Check for and install a new version of Dave."),
