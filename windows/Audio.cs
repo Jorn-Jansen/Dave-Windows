@@ -169,23 +169,34 @@ public static class Speaker
         await PlayAsync(wav, cancel);
     }
 
+    /// <summary>How loud Dave's voice is right now (0..1), so the bubble and glow can move with it. 0 when he's quiet.</summary>
+    public static volatile float Level;
+
+    /// <summary>Raised when Dave starts saying something, with how long it takes (the bubble shows the words along with it).</summary>
+    public static event Action<TimeSpan>? Started;
+
     private static async Task PlayAsync(Stream wav, CancellationToken cancel)
     {
         using var reader = new WaveFileReader(wav);
         using var output = new WaveOutEvent();
         var finished = new TaskCompletionSource<bool>();
         output.PlaybackStopped += (_, _) => finished.TrySetResult(true);
-        output.Init(reader);
+        // A meter between the voice and the speakers: about 30 volume readings a second
+        var meter = new NAudio.Wave.SampleProviders.MeteringSampleProvider(reader.ToSampleProvider(), reader.WaveFormat.SampleRate / 30);
+        meter.StreamVolume += (_, e) => Level = Math.Min(1f, e.MaxSampleValues.DefaultIfEmpty(0).Max() * 1.6f);
+        output.Init(meter);
         current = output;
         Interlocked.Increment(ref playing);
         try
         {
             output.Play();
+            Started?.Invoke(reader.TotalTime);
             Ducker.OwnVolumeFull(); // Windows remembers per-app volume; make sure Dave himself isn't stuck low
             using (cancel.Register(() => output.Stop())) await finished.Task;
         }
         finally
         {
+            Level = 0;
             lastSound = DateTime.Now;
             Interlocked.Decrement(ref playing);
             current = null;
@@ -425,22 +436,49 @@ public static class MediaSession
 {
     public record Playing(string Title, string Artist, string App);
 
+    private static Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager? manager;
+
+    /// <summary>
+    /// The app that's playing. The connection to Windows' media controls is made once and kept: asking for a new one
+    /// every few seconds is when Windows sometimes stopped answering altogether.
+    /// </summary>
     private static async Task<Windows.Media.Control.GlobalSystemMediaTransportControlsSession?> CurrentAsync()
     {
         try
         {
-            var manager = await Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+            manager ??= await Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
             return manager.GetCurrentSession();
         }
         catch (Exception e)
         {
             Log.Write($"Media session unavailable: {e.Message}");
+            manager = null;
             return null;
         }
     }
 
-    /// <summary>play, pause, next or previous on the app that's playing. False if there's no such app.</summary>
-    public static async Task<bool> ControlAsync(string action)
+    /// <summary>After Windows' media controls stopped answering, leave them alone until then (asking again only piles up stuck requests).</summary>
+    private static DateTime restUntil = DateTime.MinValue;
+
+    /// <summary>True when the last question went unanswered: then "nothing playing" really means "don't know".</summary>
+    public static bool Unknown { get; private set; }
+
+    /// <summary>[work] on a background thread, but give up after [ms]: Windows' media controls can hang without ever answering.</summary>
+    private static async Task<T> WithinAsync<T>(Func<Task<T>> work, int ms, T fallback, string what)
+    {
+        if (DateTime.Now < restUntil) { Unknown = true; return fallback; } // they're stuck right now: don't add another request
+        var task = Task.Run(work);
+        if (manager == null) ms = Math.Max(ms, 5000); // making the connection the first time takes a few seconds
+        if (await Task.WhenAny(task, Task.Delay(ms)) == task) { Unknown = false; return task.Result; }
+        Log.Write($"Windows' media controls didn't answer ({what}); leaving them alone for a minute");
+        manager = null; // try a fresh connection next time
+        restUntil = DateTime.Now.AddMinutes(1);
+        Unknown = true;
+        return fallback;
+    }
+
+    /// <summary>play, pause, next or previous on the app that's playing. False if there's no such app (or Windows doesn't answer).</summary>
+    public static Task<bool> ControlAsync(string action) => WithinAsync(async () =>
     {
         var session = await CurrentAsync();
         if (session == null) return false;
@@ -456,9 +494,13 @@ public static class MediaSession
             };
         }
         catch { return false; }
-    }
+    }, 1500, false, action);
 
-    public static async Task<Playing?> NowPlayingAsync()
+    /// <summary>
+    /// What's playing, or null. Never waits more than a second: Windows sometimes doesn't answer at all (seen with a
+    /// game open), and that froze Dave's window and could hold up a question.
+    /// </summary>
+    public static Task<Playing?> NowPlayingAsync() => WithinAsync(async () =>
     {
         var session = await CurrentAsync();
         if (session == null) return null;
@@ -468,15 +510,32 @@ public static class MediaSession
             if (string.IsNullOrWhiteSpace(info?.Title)) return null;
             return new Playing(info.Title, info.Artist ?? "", session.SourceAppUserModelId ?? "");
         }
-        catch { return null; }
+        catch { return (Playing?)null; }
+    }, 1000, null, "what's playing");
+
+    /// <summary>
+    /// What's playing: Spotify first, from Spotify itself (fast, and it keeps working when Windows' media controls get
+    /// stuck), then any other app (YouTube, a video…) through Windows.
+    /// </summary>
+    public static async Task<Playing?> NowPlayingAsync(Settings s)
+    {
+        if (Spotify.IsConnected(s) && s.SpotifyScopes.Contains("user-read-currently-playing"))
+        {
+            try
+            {
+                if (await Spotify.NowPlayingAsync(s) is { } track) return new Playing(track.Name, track.Artist, "Spotify");
+            }
+            catch (Exception e) { Log.Write($"Spotify now playing: {e.Message}"); }
+        }
+        return await NowPlayingAsync();
     }
 
     /// <summary>True when Spotify is the app playing (or nothing is), so Spotify-only actions make sense.</summary>
-    public static async Task<bool> IsSpotifyOrNothingAsync()
+    public static Task<bool> IsSpotifyOrNothingAsync() => WithinAsync(async () =>
     {
         var session = await CurrentAsync();
         return session == null || (session.SourceAppUserModelId ?? "").Contains("spotify", StringComparison.OrdinalIgnoreCase);
-    }
+    }, 1000, true, "which app is playing");
 }
 
 /// <summary>Windows master volume and the media keys.</summary>

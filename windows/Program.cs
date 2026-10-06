@@ -83,7 +83,10 @@ public class DaveApp : ApplicationContext
     public DaveApp(string? testQuestion = null)
     {
         Ducker.RestoreAfterCrash(); // in case Dave was closed while other sound was turned down
+        Palette.Use(settings.Theme);
         Watchers.Triggered += message => bubble.BeginInvoke(() => headsUps.Enqueue(message)); // said at the next tick, when Dave is free
+        ConversationLog.Added += () => thinking = false; // the answer is there: no more "thinking" dots
+        bubble.Suppressed = WindowOpen;
         if (testQuestion == null)
         {
             MusicWatcher.Start(settings); // song history, and skipping songs you don't like
@@ -160,6 +163,7 @@ public class DaveApp : ApplicationContext
     /// <summary>(Re)apply shortcut, wake word and autostart after the settings change.</summary>
     private void ApplySettings()
     {
+        Palette.Use(settings.Theme);
         if (!hotkey.Register(settings.Hotkey))
             tray.ShowBalloonTip(4000, "Dave", $"Shortcut {settings.Hotkey} is already used by another program. Pick another in Settings.", ToolTipIcon.Warning);
         if (windowHotkey != null && settings.WindowHotkey.Trim().Length > 0 && !windowHotkey.Register(settings.WindowHotkey))
@@ -193,11 +197,24 @@ public class DaveApp : ApplicationContext
     /// <summary>Dave's window (chat history, reminders, screen time…): only opens with its shortcut or from the tray menu.</summary>
     private void ToggleWindow() => Window().Toggle();
 
-    private DaveWindow Window() => window ??= new DaveWindow(settings,
+    private DaveWindow Window() => window is { IsDisposed: false } ? window : window = new DaveWindow(settings, // a new one if it was closed for real
         ask: question => { if (session != null) return false; AskTyped(question); return true; },
         listen: () => { if (session == null) Trigger(); },
         applySettings: ApplySettings,
-        busy: () => session != null);
+        busy: () => session != null,
+        status: () => session == null ? "" : Watchdog.Step == "listening" ? "listening" : thinking ? "thinking" : "busy");
+
+    /// <summary>Dave is working out an answer (not listening, not talking yet): the window shows its three dots only then.</summary>
+    private bool thinking;
+
+    private void SetThinking(bool on)
+    {
+        thinking = on;
+        window?.Push();
+    }
+
+    /// <summary>While Dave's window is open (and not minimised), the bubble and glow stay away: the window shows it all.</summary>
+    private bool WindowOpen() => window is { Visible: true } w && w.WindowState != FormWindowState.Minimized;
 
     // --- Updates ---
 
@@ -326,7 +343,7 @@ public class DaveApp : ApplicationContext
                 {
                     Speaker.Beep();
                     var text = isReminder ? T("Reminder: ", "Herinnering: ") + announcement : announcement;
-                    bubble.ShowText((isReminder ? "⏰ " : "👀 ") + text);
+                    bubble.ShowText((isReminder ? "⏰ " : "👀 ") + text, spoken: true);
                     ConversationLog.Add(isReminder ? "(reminder went off)" : "(something you asked me to watch for happened)", text);
                     await Speaker.SpeakAsync(settings, text, settings.Language, cancel);
                 }
@@ -339,7 +356,7 @@ public class DaveApp : ApplicationContext
         {
             Log.Write($"Session failed: {e}");
             var message = e is Groq.GroqException or Spotify.SpotifyException ? e.Message : T("Something went wrong.", "Er ging iets mis.");
-            bubble.ShowText(message);
+            bubble.ShowText(message, spoken: true);
             try { await Speaker.SpeakAsync(settings, message, settings.Language); } catch { }
         }
         finally
@@ -347,6 +364,7 @@ public class DaveApp : ApplicationContext
             bubble.HideAfter(1500);
             session = null;
             Watchdog.Step = "idle";
+            SetThinking(false);
             if (wakeWord != null) wakeWord.Paused = false;
         }
     }
@@ -385,20 +403,21 @@ public class DaveApp : ApplicationContext
                     var back = T("Okay, I'll talk again.", "Oké, ik praat weer.");
                     Log.Write("Quiet mode off");
                     ConversationLog.Add(text, back);
-                    bubble.ShowText(back);
+                    bubble.ShowText(back, spoken: true);
                     await Speaker.SpeakAsync(settings, back, language, cancel);
                     return;
                 }
 
                 bubble.ShowText($"“{text}”\n" + T("Thinking…", "Even denken…"));
                 Watchdog.Step = "asking the AI";
+                SetThinking(true); // until the answer is in the chat (ConversationLog.Added)
                 var result = await Assistant.AskAsync(settings, text, language, await locationTask);
 
                 if (result is Assistant.Speak speak)
                 {
                     Log.Write($"Says ({language}): {speak.Text}");
                     ConversationLog.Add(text, speak.Text);
-                    bubble.ShowText(speak.Text);
+                    bubble.ShowText(speak.Text, spoken: true);
                     Watchdog.Step = "speaking";
                     await Speaker.SpeakAsync(settings, speak.Text, language, cancel);
                     if (!speak.Text.TrimEnd().EndsWith('?')) return;
@@ -433,7 +452,7 @@ public class DaveApp : ApplicationContext
                     var seen = await Vision.AskAboutScreenAsync(settings, command.Args["question"]?.ToString() ?? text, language);
                     Log.Write($"Says (screen): {seen}");
                     ConversationLog.Add(text, $"(looked at the screen) {seen}");
-                    bubble.ShowText(seen);
+                    bubble.ShowText(seen, spoken: true);
                     Watchdog.Step = "speaking";
                     await Speaker.SpeakAsync(settings, seen, language, cancel);
                     return;
@@ -506,7 +525,7 @@ public class DaveApp : ApplicationContext
                     else answer = await UpdateOnRequestAsync();
                     Log.Write($"Says: {answer}");
                     ConversationLog.Add(text, answer);
-                    bubble.ShowText(answer);
+                    bubble.ShowText(answer, spoken: true);
                     Watchdog.Step = "speaking";
                     await Speaker.SpeakAsync(settings, answer, language, cancel);
                     if (pendingInstall != null) { await InstallUpdateAsync(pendingInstall); pendingInstall = null; }
@@ -515,7 +534,7 @@ public class DaveApp : ApplicationContext
                 if (command.Name == "control_apps")
                 {
                     var summary = await AppAgent.RunAsync(settings, command.Args["task"]?.ToString() ?? text, language,
-                        progress: bubble.ShowText,
+                        progress: step => bubble.ShowText(step),
                         askUser: async question =>
                         {
                             await Speaker.SpeakAsync(settings, question, language, cancel);
@@ -524,7 +543,7 @@ public class DaveApp : ApplicationContext
                         cancel);
                     Log.Write($"Agent done: {summary}");
                     ConversationLog.Add(text, $"(did it in the apps) {summary}");
-                    bubble.ShowText("✅ " + summary);
+                    bubble.ShowText("✅ " + summary, spoken: true);
                     await Speaker.SpeakAsync(settings, summary, language, cancel);
                     return;
                 }
@@ -532,7 +551,7 @@ public class DaveApp : ApplicationContext
                 var outcome = await Commands.RunAsync(settings, command.Name, command.Args, text);
                 Log.Write($"Outcome: {outcome.Text}");
                 ConversationLog.Add(text, $"({command.Name}) {outcome.Text}");
-                bubble.ShowText(outcome.Text);
+                bubble.ShowText(outcome.Text, spoken: outcome.Speak);
                 if (outcome.Speak) await Speaker.SpeakAsync(settings, outcome.Text, settings.Language, cancel);
                 else Speaker.Beep(1320, 90);
                 return;
@@ -574,7 +593,10 @@ public class DaveApp : ApplicationContext
             Speaker.Beep();
             await Task.Delay(150, cancel);
             Watchdog.Step = "listening";
+            window?.Push(); // the window's microphone lights up
             var wav = await Recorder.RecordAsync(cancel);
+            Watchdog.Step = "transcribing";
+            window?.Push();
             if (wav == null)
             {
                 if (followUp) return null; // no answer to Dave's question: just close
@@ -622,7 +644,7 @@ public class DaveApp : ApplicationContext
         if (!Spotify.IsConnected(settings))
         {
             var need = T("The music quiz needs Spotify. Connect it in Dave's settings first.", "Voor de muziekquiz heb ik Spotify nodig. Koppel het eerst in de instellingen van Dave.");
-            bubble.ShowText(need);
+            bubble.ShowText(need, spoken: true);
             await Speaker.SpeakAsync(settings, need, settings.Language, cancel);
             return;
         }

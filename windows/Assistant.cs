@@ -265,8 +265,10 @@ public static class Assistant
         var languageName = CultureInfo.GetCultureInfo(answerLanguage).EnglishName.Split(' ')[0];
         var where = position != null ? $" {position}" : "";
         // What's playing, so "what's this song about", "who sings this" and "play something like this" just work
-        var playing = await MediaSession.NowPlayingAsync();
-        var music = playing != null ? $" Now playing: \"{playing.Title}\"{(playing.Artist.Length > 0 ? $" by {playing.Artist}" : "")}." : " No music or video is playing.";
+        var playing = await MediaSession.NowPlayingAsync(settings);
+        // "Nothing playing" only when Windows said so; when it didn't answer, say nothing (or "next song" gets refused)
+        var music = playing != null ? $" Now playing: \"{playing.Title}\"{(playing.Artist.Length > 0 ? $" by {playing.Artist}" : "")}."
+            : MediaSession.Unknown ? "" : " No music or video is playing.";
         if (MusicWatcher.EarlierSongs(playing) is { } earlier) music += $" Songs before that: {earlier}.";
         // The current state, right next to the question, also when there's nothing: otherwise the AI goes by what was said
         // earlier in the chat ("tell me when Discord closes") and thinks those are still running.

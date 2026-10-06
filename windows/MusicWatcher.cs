@@ -14,6 +14,7 @@ public static class MusicWatcher
 
     public static void Start(Settings s) => _ = Task.Run(async () =>
     {
+        await Task.Delay(TimeSpan.FromSeconds(5)); // not while Dave is still starting up: Windows' media controls don't answer then
         while (true)
         {
             try { await CheckAsync(s); }
@@ -24,7 +25,7 @@ public static class MusicWatcher
 
     private static async Task CheckAsync(Settings s)
     {
-        var playing = await MediaSession.NowPlayingAsync();
+        var playing = await MediaSession.NowPlayingAsync(s);
         if (playing == null) return;
         var key = Key(playing.Title, playing.Artist);
         if (key == lastKey) return;
@@ -33,7 +34,7 @@ public static class MusicWatcher
         if (playing.App.Contains("spotify", StringComparison.OrdinalIgnoreCase) && IsDisliked(s, playing.Title, playing.Artist))
         {
             Log.Write($"Skipping a song you don't like: {playing.Title} – {playing.Artist}");
-            await MediaSession.ControlAsync("next");
+            await SkipAsync(s, playing);
             return; // not counted as played
         }
         lock (Sync)
@@ -64,7 +65,7 @@ public static class MusicWatcher
     /// <summary>"I don't like this song": remember it and skip it. Returns the song, or null if nothing is playing.</summary>
     public static async Task<MediaSession.Playing?> DislikeCurrentAsync(Settings s)
     {
-        var playing = await MediaSession.NowPlayingAsync();
+        var playing = await MediaSession.NowPlayingAsync(s);
         if (playing == null) return null;
         if (!IsDisliked(s, playing.Title, playing.Artist))
         {
@@ -72,8 +73,19 @@ public static class MusicWatcher
             s.Save();
         }
         lastKey = Key(playing.Title, playing.Artist);
-        await MediaSession.ControlAsync("next");
+        await SkipAsync(s, playing);
         return playing;
+    }
+
+    /// <summary>Next song: through Spotify itself when it's Spotify (Windows' media controls can get stuck).</summary>
+    private static async Task SkipAsync(Settings s, MediaSession.Playing playing)
+    {
+        if (playing.App.Contains("spotify", StringComparison.OrdinalIgnoreCase) && Spotify.IsConnected(s))
+        {
+            try { await Spotify.ControlAsync(s, "next"); return; }
+            catch (Spotify.SpotifyException e) { Log.Write($"Spotify skip failed ({e.Message}); trying Windows' media controls"); }
+        }
+        await MediaSession.ControlAsync("next");
     }
 
     /// <summary>"Actually, that song is fine": take it off the list again. Returns how many were removed.</summary>
