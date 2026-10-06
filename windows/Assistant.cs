@@ -123,9 +123,10 @@ public static class Assistant
         Tool("open_website", "Open a website or web search.",
             new JsonObject { ["url"] = Str("Address of a specific site"), ["search"] = Str("Search words"), ["browser"] = Str("Only if the user named one") }),
         Tool("lock_pc", "Lock the PC."),
-        Tool("find_file", "Find a file or folder by name and/or type; open it, show it in its folder, or say where it is.",
+        Tool("find_file", "Open a folder or file (by path, a known folder like Downloads, or by name/type), show it in its folder, or say where it is.",
             new JsonObject
             {
+                ["path"] = Str("A full path if the user gave one, exactly as given, e.g. C:\\Users\\me\\Desktop\\Project"),
                 ["query"] = Str("Words from the name; e.g. 'latest screenshot' -> 'Screenshot'"),
                 ["kind"] = Enum("any", "image", "video", "audio", "document", "code", "folder"),
                 ["newest"] = new JsonObject { ["type"] = "boolean", ["description"] = "For latest/newest" },

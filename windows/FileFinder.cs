@@ -123,11 +123,63 @@ public static class FileFinder
 
     public static void ShowInFolder(string path) => Process.Start("explorer.exe", $"/select,\"{path}\"");
 
-    /// <summary>"on your Desktop", "in Downloads\Roblox", … for speaking.</summary>
+    /// <summary>"Desktop", "Downloads\Roblox", "your user folder", … for speaking.</summary>
     public static string Where(string path)
     {
-        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var folder = Path.GetDirectoryName(path) ?? "";
-        return folder.StartsWith(profile, StringComparison.OrdinalIgnoreCase) ? folder[(profile.Length + 1)..] : folder;
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('\\');
+        var folder = (Path.GetDirectoryName(path) ?? "").TrimEnd('\\');
+        if (folder.Equals(profile, StringComparison.OrdinalIgnoreCase)) return "your user folder"; // e.g. Downloads itself
+        return folder.StartsWith(profile + "\\", StringComparison.OrdinalIgnoreCase) ? folder[(profile.Length + 1)..] : folder;
     }
+
+    /// <summary>
+    /// A path the user gave ("C:\Users\me\Downloads", with quotes, %USERPROFILE% or ~), or a well-known folder by name
+    /// ("Downloads", "bureaublad"). Null when it's neither; then it's a name to search for.
+    /// </summary>
+    public static string? DirectPath(string text, out bool looksLikePath)
+    {
+        var t = text.Trim().Trim('"', '\'', '`', ' ').TrimEnd('.');
+        looksLikePath = t.Contains(":\\") || t.Contains(":/") || t.StartsWith("\\\\") || t.StartsWith('%') || t.StartsWith("~");
+        if (looksLikePath)
+        {
+            var path = Environment.ExpandEnvironmentVariables(t).Replace('/', '\\');
+            if (path.StartsWith("~")) path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + path[1..];
+            return path;
+        }
+        var key = new string(t.ToLowerInvariant().Where(char.IsLetter).ToArray());
+        if (key.StartsWith("my")) key = key[2..];
+        if (key.StartsWith("mijn")) key = key[4..];
+        if (key.EndsWith("folder")) key = key[..^6];
+        if (key.EndsWith("map")) key = key[..^3];
+        return key switch
+        {
+            "downloads" or "download" or "gedownload" => KnownFolder(new Guid("374DE290-123F-4565-9164-39C4925E467B")),
+            "desktop" or "bureaublad" => Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            "documents" or "document" or "documenten" or "mydocuments" => Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            "pictures" or "photos" or "afbeeldingen" or "fotos" => Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+            "videos" or "video" or "videos" or "videoss" => Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+            "music" or "muziek" => Environment.GetFolderPath(Environment.SpecialFolder.MyMusic),
+            "screenshots" => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots"),
+            "user" or "home" or "gebruiker" or "profile" => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "appdata" => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "programfiles" => Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "startup" or "opstarten" => Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+            _ => null,
+        };
+    }
+
+    /// <summary>Where Windows keeps a known folder, also when you moved it (Downloads on another drive…).</summary>
+    private static string KnownFolder(Guid id)
+    {
+        try
+        {
+            if (SHGetKnownFolderPath(id, 0, IntPtr.Zero, out var path) == 0) return path;
+        }
+        catch { /* fall back below */ }
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+    }
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int SHGetKnownFolderPath([System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.LPStruct)] Guid id,
+        uint flags, IntPtr token, out string path);
 }
