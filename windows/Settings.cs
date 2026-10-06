@@ -94,6 +94,8 @@ public class Settings
         public long Id { get; set; }
         public DateTimeOffset At { get; set; }
         public string Message { get; set; } = "";
+        /// <summary>Something to do instead of say ("lock the PC"): asked as if you said it when it's due. "" for a normal reminder.</summary>
+        public string Action { get; set; } = "";
         /// <summary>"" (once), "daily", "weekdays", "weekends", "weekly" (on <see cref="Days"/>), "monthly" or "every" (<see cref="EveryMinutes"/>).</summary>
         public string Repeat { get; set; } = "";
         public List<DayOfWeek> Days { get; set; } = new();

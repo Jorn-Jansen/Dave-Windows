@@ -73,6 +73,7 @@ public class DaveApp : ApplicationContext
     private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 6 * 60 * 60 * 1000 }; // look for a new version every 6 hours
     private Updater.Release? pendingInstall; // asked for by voice: installed once Dave has finished talking
     private readonly Queue<string> headsUps = new(); // things Dave was watching for that happened; said once he's free
+    private readonly Queue<string> dueActions = new(); // "lock my PC in 10 minutes" when it's time; done once he's free
 
     private CancellationTokenSource? session;          // the conversation or quiz that's running
     private CancellationTokenSource? snippetCut;       // quiz: shortcut during a snippet stops it early
@@ -90,6 +91,7 @@ public class DaveApp : ApplicationContext
         if (testQuestion == null)
         {
             MusicWatcher.Start(settings); // song history, and skipping songs you don't like
+            Notifications.Start(); // "what did I miss?" also covers notifications you already dismissed
             ScreenTime.Start();
         }
         if (testQuestion != null)
@@ -443,6 +445,35 @@ public class DaveApp : ApplicationContext
                         command = command with { Name = "use_clipboard", Args = new System.Text.Json.Nodes.JsonObject { ["task"] = text, ["output"] = "copy" } };
                     }
                 }
+                // "Pause the music at 00:23": smaller AI models sometimes do it right away. A time for later in what you
+                // said turns it into something Dave does then (the AI is asked again at that time, without the time).
+                if (command.Name is "media_control" or "set_volume" or "play_music" or "music_settings" or "play_mix" or "lock_pc" or "open_app"
+                        or "close_app" or "close_all_apps" or "open_website" or "quiet_mode" or "window_control" or "screenshot"
+                    && Reminders.TryFindLater(text, out var laterMinutes, out var laterTime, out var request))
+                {
+                    Log.Write($"{command.Name} was asked for later: scheduling \"{request}\" ({(laterTime ?? $"in {laterMinutes} min")})");
+                    var later = new System.Text.Json.Nodes.JsonObject { ["action"] = request, ["message"] = request };
+                    if (laterMinutes != null) later["minutes"] = laterMinutes; else later["time"] = laterTime;
+                    command = command with { Name = "set_reminder", Args = later };
+                }
+                // The AI can also get the time itself wrong ("0025" became 12:25): a clear time in what you said wins.
+                else if (command.Name == "set_reminder" && Reminders.TryFindLater(text, out laterMinutes, out laterTime, out _))
+                {
+                    var args = command.Args;
+                    if (laterTime != null && args["time"]?.ToString() != laterTime)
+                    {
+                        Log.Write($"set_reminder: the AI made {args["time"]?.ToString() ?? $"{args["minutes"]} min"} of it, you said {laterTime}");
+                        args["time"] = laterTime;
+                        if ((args["repeat"]?.ToString() ?? "none") is "none" or "") args.Remove("minutes");
+                    }
+                    else if (laterMinutes != null && (args["repeat"]?.ToString() ?? "none") is "none" or ""
+                             && !(args["minutes"] is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<double>(out var aiMinutes) && Math.Abs(aiMinutes - laterMinutes.Value) < 0.01))
+                    {
+                        Log.Write($"set_reminder: the AI made {args["minutes"]?.ToString() ?? args["time"]?.ToString()} of it, you said in {laterMinutes} min");
+                        args.Remove("time");
+                        args["minutes"] = laterMinutes;
+                    }
+                }
                 duck.Dispose(); // give the sound back before touching music or volume
                 if (command.Name == "start_music_quiz")
                 {
@@ -463,7 +494,8 @@ public class DaveApp : ApplicationContext
                     return;
                 }
                 if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation" or "screen_time" or "internet_speed" or "read_file"
-                    || (command.Name == "calendar" && command.Args["action"]?.ToString() != "add" && CalendarFeed.Links(settings).Count > 0))
+                        or "read_page" or "read_notifications"
+                    ||(command.Name == "calendar" && command.Args["action"]?.ToString() != "add" && CalendarFeed.Links(settings).Count > 0))
                 {
                     Log.Write($"Command {command.Name} {command.Args.ToJsonString()}");
                     string answer;
@@ -497,6 +529,23 @@ public class DaveApp : ApplicationContext
                         Watchdog.Step = "reading a file";
                         answer = await ReadFileAsync(command.Args["path"]?.ToString() ?? "", command.Args["name"]?.ToString() ?? "",
                             command.Args["question"]?.ToString() is { Length: > 0 } q ? q : text, language);
+                    }
+                    else if (command.Name == "read_page")
+                    {
+                        Watchdog.Step = "reading the page";
+                        answer = await ReadPageAsync(command.Args["question"]?.ToString() is { Length: > 0 } q ? q : text, language);
+                    }
+                    else if (command.Name == "read_notifications")
+                    {
+                        Watchdog.Step = "reading notifications";
+                        bubble.ShowText("🔔 " + T("Checking your notifications…", "Ik kijk naar je meldingen…"));
+                        var hours = command.Args["hours"] is System.Text.Json.Nodes.JsonValue h && h.TryGetValue<int>(out var n) && n > 0 ? n : 24;
+                        var list = await Notifications.DescribeAsync(hours);
+                        answer = list == null
+                            ? T("Windows doesn't let me read your notifications. Turn on notification access for apps in Windows' privacy settings.",
+                                "Windows laat me je meldingen niet lezen. Zet meldingstoegang voor apps aan in de privacy-instellingen van Windows.")
+                            : await Assistant.WorkOnAsync(settings, command.Args["question"]?.ToString() is { Length: > 0 } nq ? nq : text, list,
+                                "the user's recent Windows notifications (only ones Windows still showed, or that Dave saw come in while running)", language, spoken: true);
                     }
                     else if (command.Name == "screen_time")
                     {
@@ -562,6 +611,25 @@ public class DaveApp : ApplicationContext
                 return;
             }
         }
+    }
+
+    /// <summary>
+    /// "Summarise this page": the page in the browser you were just in. Pages that can't be downloaded readably (you need
+    /// to be logged in, or scripts build them) are looked at on screen instead, when the browser is in front.
+    /// </summary>
+    private async Task<string> ReadPageAsync(string question, string language)
+    {
+        bubble.ShowText("🌐 " + T("Reading the page…", "Ik lees de pagina…"));
+        var page = await WebPage.ReadAsync();
+        if (page == null) return T("I don't see a browser open.", "Ik zie geen browser openstaan.");
+        if (page.Text != null)
+            return await Assistant.WorkOnAsync(settings, question, page.Text,
+                $"the web page \"{page.Title}\" ({page.Url}) the user has open" + (page.Cut ? " (only the first part: it's long)" : ""), language, spoken: true);
+        if (WindowList.Foreground() != page.Window)
+            return T("I can't read that page by myself. Put it in front and ask again, then I'll look at your screen.",
+                "Die pagina kan ik zelf niet lezen. Zet hem vooraan en vraag het opnieuw, dan kijk ik op je scherm.");
+        bubble.ShowText("👁 " + T("Looking at the page…", "Ik kijk naar de pagina…"));
+        return await Vision.AskAboutScreenAsync(settings, $"{question} (about the web page \"{page.Title}\" on the screen)", language);
     }
 
     /// <summary>"Look at this file and rate it": find it (a path, a known folder, or by name), read it, and let the AI answer.</summary>
@@ -739,7 +807,17 @@ public class DaveApp : ApplicationContext
     {
         if (session != null) return; // try again at the next tick
         var due = Reminders.TakeDue(settings);
+        foreach (var r in due.Where(r => r.Action.Length > 0)) dueActions.Enqueue(r.Action);
+        due.RemoveAll(r => r.Action.Length > 0);
         if (due.Count > 0) { _ = RunSessionAsync(null, string.Join(". ", due.Select(r => r.Message))); return; }
+        if (dueActions.Count > 0)
+        {
+            // "Lock my PC in 10 minutes": now it's time, so it's asked as if you said it just now (one per tick)
+            var action = dueActions.Dequeue();
+            Log.Write($"Doing what was asked for now: {action}");
+            _ = RunSessionAsync(action);
+            return;
+        }
         if (headsUps.Count > 0)
         {
             var messages = new List<string>();

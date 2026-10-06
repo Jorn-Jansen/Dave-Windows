@@ -229,10 +229,12 @@ public static class Reminders
     /// <param name="repeat">"" (once), daily, weekdays, weekends, weekly, monthly or every.</param>
     /// <param name="days">For weekly: e.g. "monday, thursday" (also Dutch day names).</param>
     /// <param name="monthDay">For monthly: the day of the month (0 = today's).</param>
-    public static Settings.Reminder? Schedule(Settings s, double? minutes, string? time, string message, string repeat = "", string days = "", int everyMinutes = 0, int monthDay = 0)
+    /// <param name="action">Something to do instead of say, e.g. "lock the PC".</param>
+    public static Settings.Reminder? Schedule(Settings s, double? minutes, string? time, string message, string repeat = "", string days = "", int everyMinutes = 0,
+        int monthDay = 0, string action = "")
     {
         var now = DateTimeOffset.Now;
-        var reminder = new Settings.Reminder { Id = DateTime.Now.Ticks, Message = message, Repeat = repeat };
+        var reminder = new Settings.Reminder { Id = DateTime.Now.Ticks, Message = message, Repeat = repeat, Action = action };
         TimeSpan? clock = !string.IsNullOrWhiteSpace(time) && TimeSpan.TryParse(time.Trim(), out var c) ? c : null;
 
         switch (repeat)
@@ -273,6 +275,43 @@ public static class Reminders
         return reminder;
     }
 
+    /// <summary>
+    /// A time for later in what was said ("at 00:23", "at 2300", "at 11 pm", "om 8 uur", "in 10 minutes", "over half uur"), and the
+    /// request without it ("pause the music"). For when the AI does something right away that was meant for later.
+    /// </summary>
+    public static bool TryFindLater(string text, out double? minutes, out string? time, out string rest)
+    {
+        minutes = null; time = null; rest = text;
+        var t = text.ToLowerInvariant();
+        Match m;
+        if ((m = Regex.Match(t, @"\b(?:at|om|@)\s*(\d{1,2})[:.h]?(\d{2})\b\s*(o'?clock|uur|am|pm|a\.m\.|p\.m\.)?")).Success
+            || (m = Regex.Match(t, @"\b(?:at|om)\s*(\d{1,2})()\s*(o'?clock|uur|am|pm|a\.m\.|p\.m\.)")).Success) // a bare "at 20" could be a volume
+        {
+            var hour = int.Parse(m.Groups[1].Value);
+            var minute = m.Groups[2].Value.Length > 0 ? int.Parse(m.Groups[2].Value) : 0;
+            var suffix = m.Groups[3].Value;
+            if (suffix.StartsWith('p') && hour < 12) hour += 12;
+            if (suffix.StartsWith('a') && hour == 12) hour = 0;
+            if (hour > 23 || minute > 59) return false;
+            time = $"{hour:00}:{minute:00}";
+        }
+        else if ((m = Regex.Match(t, @"\b(?:in|over)\s+(\d+(?:[.,]\d+)?|an?|one|een|half an?|een half|half)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?|seconden|minuten|minuut|min|uur|uren)\b")).Success)
+        {
+            var amount = m.Groups[1].Value switch
+            {
+                "a" or "an" or "one" or "een" => 1,
+                "half" or "half a" or "half an" or "een half" => 0.5,
+                var n => double.Parse(n.Replace(',', '.'), CultureInfo.InvariantCulture),
+            };
+            var unit = m.Groups[2].Value;
+            minutes = unit.StartsWith("sec") ? amount / 60 : unit.StartsWith("h") || unit.StartsWith("uur") ? amount * 60 : amount;
+            if (minutes <= 0) return false;
+        }
+        else return false;
+        rest = Regex.Replace(text.Remove(m.Index, m.Length), @"\s{2,}", " ").Trim(' ', ',', '.');
+        return rest.Length > 0;
+    }
+
     private static DateTimeOffset NextClock(TimeSpan clock)
     {
         var today = new DateTimeOffset(DateTime.Today.Add(clock));
@@ -301,7 +340,7 @@ public static class Reminders
         var due = s.Reminders.Where(r => r.At <= now).ToList();
         if (due.Count == 0) return due;
         var announce = due.Where(r => now - r.At < TimeSpan.FromHours(1))
-            .Select(r => new Settings.Reminder { Id = r.Id, At = r.At, Message = r.Message, Repeat = r.Repeat }).ToList();
+            .Select(r => new Settings.Reminder { Id = r.Id, At = r.At, Message = r.Message, Repeat = r.Repeat, Action = r.Action }).ToList();
         foreach (var r in due)
         {
             if (r.Repeat.Length == 0) s.Reminders.Remove(r);

@@ -18,7 +18,8 @@ public static class Assistant
         When the user asks to control the music or volume, open or close a program or website, find a file, lock the PC, wants a music quiz, a mix,
         a reminder or timer, asks what song is playing, asks about something on their screen, wants something typed or copied, asks about what they copied,
         asks how their PC is doing, asks to update you, asks about an earlier conversation, wants you to tell them when something happens,
-        wants windows arranged or a screenshot, asks about or adds to their calendar,
+        wants windows arranged or a screenshot, asks about or adds to their calendar, asks about the page open in their browser,
+        asks about their notifications or messages, wants something done later ("lock my PC in 10 minutes"),
         or tells you something to remember ("onthoud dat…", "remember that…"),
         use the matching command instead of answering.
         Use what you remember about the user naturally when it's relevant.
@@ -102,9 +103,12 @@ public static class Assistant
             }, "description"),
         Tool("remember", "Remember a fact about the user.", new JsonObject { ["fact"] = Str("Short English sentence") }, "fact"),
         Tool("forget", "Forget a remembered fact.", new JsonObject { ["fact"] = Str("Which, or 'everything'") }, "fact"),
-        Tool("set_reminder", "Timer or reminder, said out loud when due; once or repeating ('every day at 10', 'every Monday', 'every 2 hours').",
+        Tool("set_reminder", "Timer or reminder, said out loud when due; once or repeating ('every day at 10', 'every Monday', 'every 2 hours'). " +
+            "Also to DO something later: 'lock my PC in 10 minutes', 'pause the music at 23:00', 'every night at 1 close Roblox' (then fill in action).",
             new JsonObject
             {
+                ["action"] = Str("Only to do something instead of saying something: the request as the user would say it now, " +
+                    "e.g. 'lock the PC', 'pause the music', 'set the volume to 20 percent', 'close Roblox'"),
                 ["minutes"] = new JsonObject { ["type"] = "number", ["description"] = "From now; fractions allowed (2.5, 0.5 = 30 s)" },
                 ["time"] = Str("Clock time HH:mm (24h); needed for daily/weekdays/weekends/weekly/monthly"),
                 ["message"] = Str("In the user's language"),
@@ -142,8 +146,18 @@ public static class Assistant
             }, "query", "kind", "action"),
         Tool("close_app", "Close a program.", new JsonObject { ["name"] = Str("e.g. 'Chrome'") }, "name"),
         Tool("close_all_apps", "Close all programs except some.", new JsonObject { ["keep"] = Str("Comma-separated, e.g. 'Roblox, Discord'") }),
-        Tool("look_at_screen", "Look at the screen to answer about what's on it (an error, a game, a page, 'this', 'here').",
+        Tool("look_at_screen", "Look at the screen to answer about what's on it (an error, a game, 'this', 'here').",
             new JsonObject { ["question"] = Str("The user's question") }, "question"),
+        Tool("read_page", "Read the web page open in the user's browser and answer about it: 'summarise this page', 'what does this article say about…', " +
+            "'key points of this', 'is this recipe vegetarian'.",
+            new JsonObject { ["question"] = Str("What the user wants to know about the page, in their own words") }, "question"),
+        Tool("read_notifications", "The user's Windows notifications (Discord, mail, WhatsApp, Teams…): 'what did I miss', 'any new messages', " +
+            "'what did Sam say on Discord', 'read my notifications'.",
+            new JsonObject
+            {
+                ["question"] = Str("What the user wants to know, in their own words"),
+                ["hours"] = Int("How far back; 24 if not said"),
+            }, "question"),
         Tool("control_apps", "Do things inside apps: click, type, menus, e.g. 'open Notepad and write a list', 'pause the YouTube video'.",
             new JsonObject { ["task"] = Str("The full task with all details") }, "task"),
         Tool("type_text", "Dictation: type text into the window the user is in ('type: see you soon', 'and send it').",
