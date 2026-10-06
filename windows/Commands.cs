@@ -103,6 +103,7 @@ public static class Commands
 
     private static Outcome SetVolume(Settings s, JsonObject args)
     {
+        if (Str(args, "app") is { Length: > 0 } app) return SetAppVolume(s, app, args);
         if (args["mute"] is JsonValue m && m.TryGetValue<bool>(out var mute))
         {
             SystemAudio.SetMute(mute);
@@ -116,6 +117,22 @@ public static class Commands
             _ => current,
         };
         return new Outcome($"🔊 {SystemAudio.SetVolume(target)}%");
+    }
+
+    /// <summary>One app's volume ("make Discord quieter", "mute Chrome", "Roblox to 30 percent").</summary>
+    private static Outcome SetAppVolume(Settings s, string app, JsonObject args)
+    {
+        bool? mute = args["mute"] is JsonValue m && m.TryGetValue<bool>(out var x) ? x : null;
+        var result = AppVolume.Set(app, Int(args, "level"), Str(args, "change"), mute);
+        if (result == null)
+        {
+            var playing = AppVolume.List().Select(a => a.App.Split(" (")[0]).Distinct().Take(6).ToList();
+            return new Outcome(s.Say(
+                $"{app} isn't making any sound right now." + (playing.Count > 0 ? $" Apps with sound: {string.Join(", ", playing)}." : ""),
+                $"{app} maakt nu geen geluid." + (playing.Count > 0 ? $" Apps met geluid: {string.Join(", ", playing)}." : "")), true);
+        }
+        var name = result.App.Split(" (")[0];
+        return new Outcome(result.Muted ? $"🔇 {name}" : $"🔊 {name} {result.Level}%");
     }
 
     private static async Task<Outcome> NowPlayingAsync(Settings s)
