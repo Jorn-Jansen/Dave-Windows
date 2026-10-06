@@ -19,7 +19,10 @@ public static class Recorder
     {
         var buffer = new MemoryStream();
         var writer = new WaveFileWriter(new IgnoreDisposeStream(buffer), new WaveFormat(SampleRate, 16, 1));
+        var writeLock = new object();
+        var finished = false; // after this, nothing is written anymore: the file is being closed
         var done = new TaskCompletionSource<bool>();
+        var stopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var started = Stopwatch.StartNew();
         double noise = 0;
         int calibrationChunks = 0;
@@ -29,7 +32,13 @@ public static class Recorder
         using var input = new WaveInEvent { WaveFormat = new WaveFormat(SampleRate, 16, 1), BufferMilliseconds = 50 };
         input.DataAvailable += (_, e) =>
         {
-            writer.Write(e.Buffer, 0, e.BytesRecorded);
+            // The microphone can still deliver a last bit of sound while the recording is being finished.
+            // Writing that into the file while it's being closed broke the file now and then ("invalid media file").
+            lock (writeLock)
+            {
+                if (finished) return;
+                writer.Write(e.Buffer, 0, e.BytesRecorded);
+            }
             double level = Rms(e.Buffer, e.BytesRecorded);
             Level = (float)Math.Min(1, level / 5000);
 
@@ -50,16 +59,29 @@ public static class Recorder
             else if (speaking && (elapsed - lastLoud).TotalMilliseconds > 1100) done.TrySetResult(true);
             else if (elapsed.TotalMilliseconds > maxMs) done.TrySetResult(speaking);
         };
-        input.RecordingStopped += (_, e) => { if (e.Exception != null) done.TrySetException(e.Exception); };
+        input.RecordingStopped += (_, e) =>
+        {
+            if (e.Exception != null) done.TrySetException(e.Exception);
+            stopped.TrySetResult(true);
+        };
 
         using var registration = cancel.Register(() => done.TrySetCanceled());
         input.StartRecording();
         bool heard;
         try { heard = await done.Task; }
-        finally { input.StopRecording(); Level = 0; }
+        finally
+        {
+            lock (writeLock) finished = true;
+            input.StopRecording();
+            await Task.WhenAny(stopped.Task, Task.Delay(1000)); // let the microphone really stop first
+            Level = 0;
+        }
 
-        writer.Dispose(); // finishes the WAV header
-        return heard ? buffer.ToArray() : null;
+        lock (writeLock) writer.Dispose(); // finishes the WAV header
+        var wav = buffer.ToArray();
+        // A quarter of a second or less isn't a question (and Whisper may refuse it)
+        if (heard && wav.Length < 44 + SampleRate * 2 / 4) heard = false;
+        return heard ? wav : null;
     }
 
     private static double Rms(byte[] data, int count)
@@ -284,6 +306,114 @@ public sealed class Ducker : IDisposable
     private static string? AppName(uint pid)
     {
         try { return Process.GetProcessById((int)pid).ProcessName; } catch { return null; }
+    }
+}
+
+/// <summary>
+/// The volume of one app ("make Discord quieter", "mute Chrome"), like the Volume mixer in Windows.
+/// Looks on every audio output, since apps can play on different ones (Voicemeeter, headphones…).
+/// </summary>
+public static class AppVolume
+{
+    public record Result(string App, int Level, bool Muted);
+
+    /// <summary>
+    /// Change [name]'s volume: to [level] %, [change] up/down (a quarter of the range each time), or (un)[mute].
+    /// Null when that app isn't making sound right now.
+    /// </summary>
+    public static Result? Set(string name, int? level, string change, bool? mute)
+    {
+        var sessions = Find(name);
+        if (sessions.Count == 0) return null;
+        var current = sessions.Max(s => s.volume.Volume);
+        float target = level is { } l ? l / 100f
+            : change == "up" ? Math.Min(1f, current + 0.25f)
+            : change == "down" ? Math.Max(0.05f, current - 0.25f) // "quieter" never quite mutes it
+            : current;
+        foreach (var (_, volume) in sessions)
+        {
+            try
+            {
+                if (mute is { } m) volume.Mute = m;
+                else
+                {
+                    volume.Volume = Math.Clamp(target, 0f, 1f);
+                    if (volume.Mute && target > 0) volume.Mute = false; // "turn it up" when it's muted: unmute too
+                }
+            }
+            catch (Exception e) { Log.Write($"App volume: {e.Message}"); }
+        }
+        var first = sessions[0];
+        return new Result(first.app, (int)Math.Round(first.volume.Volume * 100), first.volume.Mute);
+    }
+
+    /// <summary>The apps playing sound right now, with their volume (for "which apps are playing sound").</summary>
+    public static List<Result> List() =>
+        All(playingOnly: true).GroupBy(s => s.app).Select(g => new Result(g.Key, (int)Math.Round(g.Max(s => s.volume.Volume) * 100), g.All(s => s.volume.Mute))).ToList();
+
+    private static List<(string app, SimpleAudioVolume volume)> Find(string name)
+    {
+        static string Simple(string x) => new(x.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+        var wanted = Simple(name);
+        if (wanted.Length == 0) return new();
+        return All().Where(s =>
+        {
+            var app = Simple(s.app);
+            return app.Contains(wanted) || (app.Length > 3 && wanted.Contains(app));
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Every app's sound on every active output, except Windows' own sounds and Dave. With [playingOnly], just the ones
+    /// making sound right now (many apps keep a sound channel open without playing anything).
+    /// </summary>
+    private static List<(string app, SimpleAudioVolume volume)> All(bool playingOnly = false)
+    {
+        var result = new List<(string, SimpleAudioVolume)>();
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+            {
+                var sessions = device.AudioSessionManager.Sessions;
+                for (int i = 0; i < sessions.Count; i++)
+                {
+                    var session = sessions[i];
+                    if (session.IsSystemSoundsSession || session.GetProcessID == Environment.ProcessId) continue;
+                    if (playingOnly && session.State != NAudio.CoreAudioApi.Interfaces.AudioSessionState.AudioSessionStateActive) continue;
+                    if (FriendlyName(session.GetProcessID) is { } app && !app.StartsWith("audiodg")) result.Add((app, session.SimpleAudioVolume));
+                }
+            }
+        }
+        catch (Exception e) { Log.Write($"Reading app volumes failed: {e.Message}"); }
+        return result;
+    }
+
+    private static readonly Dictionary<uint, string?> Names = new();
+
+    /// <summary>"Roblox" for RobloxPlayerBeta, "Google Chrome" for chrome…: the name you'd say.</summary>
+    private static string? FriendlyName(uint pid)
+    {
+        if (Names.TryGetValue(pid, out var cached)) return cached;
+        string? name = null;
+        try
+        {
+            using var p = Process.GetProcessById((int)pid);
+            name = p.ProcessName;
+            if (name.StartsWith("RobloxPlayer", StringComparison.OrdinalIgnoreCase)) name = "Roblox";
+            else
+            {
+                try
+                {
+                    var described = p.MainModule?.FileVersionInfo.FileDescription;
+                    if (!string.IsNullOrWhiteSpace(described) && described.Length < 40) name = $"{described} ({p.ProcessName})";
+                }
+                catch { /* some processes can't be read: the process name will do */ }
+            }
+        }
+        catch { /* gone */ }
+        if (Names.Count > 300) Names.Clear();
+        return Names[pid] = name;
     }
 }
 

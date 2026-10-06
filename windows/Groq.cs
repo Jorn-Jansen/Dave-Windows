@@ -158,6 +158,13 @@ public static class Groq
         var (status, text) = openAi
             ? await PostAsync(settings, OpenAiApi, settings.AiKey, "/audio/transcriptions", form)
             : await PostAsync(settings, Api, settings.GroqKey, "/audio/transcriptions", form);
+        if (status == 400 && text.Contains("media file"))
+        {
+            // The recording itself was refused: treat it as "didn't catch that", and keep it to look at what was wrong
+            Log.Write($"Recording refused by speech-to-text ({wav.Length} bytes); saved as last-refused-recording.wav: {text}");
+            try { File.WriteAllBytes(Path.Combine(Settings.Folder, "last-refused-recording.wav"), wav); } catch { }
+            return ("", "");
+        }
         if (status is < 200 or >= 300) throw Failure(settings, status, text, openAi ? "OpenAI" : "Groq");
         var json = JsonNode.Parse(text)!;
         var heard = json["text"]?.GetValue<string>().Trim() ?? "";

@@ -65,8 +65,13 @@ public static class Assistant
     {
         Tool("media_control", "Play, pause, next or previous song.",
             new JsonObject { ["action"] = Enum("play", "pause", "next", "previous") }, "action"),
-        Tool("set_volume", "PC volume: change for louder/quieter, level for an exact percentage, mute to (un)mute.",
-            new JsonObject { ["change"] = Enum("up", "down"), ["level"] = Int("0-100"), ["mute"] = new JsonObject { ["type"] = "boolean" } }),
+        Tool("set_volume", "Volume of the PC, or of one app ('make Discord quieter', 'mute Chrome'). 'louder'/'quieter' = change (a step), " +
+            "only a number they say = level, mute to (un)mute.",
+            new JsonObject
+            {
+                ["app"] = Str("Only for one app, e.g. 'Discord', 'Roblox', 'Spotify', 'Chrome'; empty for the whole PC"),
+                ["change"] = Enum("up", "down"), ["level"] = Int("0-100"), ["mute"] = new JsonObject { ["type"] = "boolean" },
+            }),
         Tool("play_music", "Play (or queue) a song, artist, album, playlist (the user's own first) or genre on Spotify, or their liked songs.",
             new JsonObject
             {

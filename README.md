@@ -20,7 +20,7 @@ Dave updates himself when a new version is released. To remove him: Settings →
 - **Questions:** anything, with live web search; remembers your conversations for 30 days
 - **Music (Spotify Premium):** play songs, artists, your playlists or liked songs, random songs, DJ mixes, a music quiz;
   "what's this song about?", "play something like this", "play X next", "I don't like this song" (never plays it again), shuffle, repeat, skip ahead
-- **PC control:** volume, open and close programs, websites, lock the PC, find files, do things inside apps
+- **PC control:** volume of the PC or one app ("make Discord quieter", "mute Chrome"), open and close programs, websites, lock the PC, find files, do things inside apps
 - **Your screen:** "what's this error?", "read this out"
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
 - **PC stats:** "how hot is my GPU?", "what's using my memory?", "how fast is my internet?", "what's my ping?"
