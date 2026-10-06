@@ -22,12 +22,15 @@ Dave updates himself when a new version is released. To remove him: Settings →
   "what's this song about?", "play something like this", "play X next", "I don't like this song" (never plays it again), shuffle, repeat, skip ahead
 - **PC control:** volume of the PC or one app ("make Discord quieter", "mute Chrome"), open and close programs, websites, lock the PC, find files, do things inside apps
 - **Your screen:** "what's this error?", "read this out"
+- **Web pages:** "summarise this page", "what does this article say about…" (the page open in your browser)
+- **Notifications:** "what did I miss?", "what did Sam say on Discord?"
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
 - **Files:** "look at C:\…\report.docx and rate it", "summarise this PDF", "what's in my Downloads folder?"
 - **PC stats:** "how hot is my GPU?", "what's using my memory?", "how fast is my internet?", "what's my ping?"
 - **Screen time:** "how long did I play Roblox today?", "my screen time this week" (kept only on your PC)
 - **Quiet mode:** "be quiet for a bit, I'm in a call" shows answers instead of saying them
-- **Reminders and timers**, also repeating ("every weekday at 8", "every 2 hours"), and **heads-ups:** "tell me when Roblox closes", "let me know when my download is done"
+- **Reminders and timers**, also repeating ("every weekday at 8", "every 2 hours"), **later actions** ("lock my PC in 10 minutes",
+  "pause the music at 23:00"), and **heads-ups:** "tell me when Roblox closes", "let me know when my download is done"
 - **Windows:** "put this on my other screen", "Chrome and Discord side by side", "minimise everything"
 - **Screenshots:** "screenshot this and copy it", "save a screenshot on my desktop"
 - **Calendar:** "what do I have tomorrow?", "put football on Saturday at 2 in my calendar" (paste your calendar's iCal link in Settings)

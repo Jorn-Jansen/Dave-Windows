@@ -217,7 +217,7 @@ public sealed partial class DaveWindow : Form
             ["reminders"] = Array(settings.Reminders.OrderBy(r => r.At), r => new JsonObject
             {
                 ["id"] = r.Id.ToString(),
-                ["message"] = r.Message,
+                ["message"] = (r.Action.Length > 0 ? "⚡ " : "") + r.Message, // ⚡ = something Dave will do, not say
                 ["repeat"] = r.Repeat.Length > 0 ? Reminders.DescribeRepeat(r, settings.IsDutch) : settings.Say("once", "eenmalig"),
                 ["next"] = When(r.At),
             }),

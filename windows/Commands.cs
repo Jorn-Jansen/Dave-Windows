@@ -258,9 +258,24 @@ public static class Commands
         var minutes = args["minutes"] is JsonValue v && v.TryGetValue<double>(out var m) ? m : (double?)null;
         var repeat = Str(args, "repeat") is "none" ? "" : Str(args, "repeat");
         if (repeat.Length == 0 && Int(args, "every_minutes") is > 0) repeat = "every"; // "every 2 hours" sometimes comes without the repeat
-        var reminder = Reminders.Schedule(s, minutes, Str(args, "time"), message, repeat, Str(args, "days"), Int(args, "every_minutes") ?? 0, Int(args, "month_day") ?? 0);
-        if (reminder == null) return new Outcome(s.Say("I didn't get when to remind you.", "Ik snapte niet wanneer ik je moet herinneren."), true);
+        var action = Str(args, "action");
+        if (action.Length > 0) message = action; // the AI's message tends to repeat the time ("Locking PC in 10 minutes")
+        var reminder = Reminders.Schedule(s, minutes, Str(args, "time"), message, repeat, Str(args, "days"), Int(args, "every_minutes") ?? 0, Int(args, "month_day") ?? 0, action);
+        if (reminder == null)
+            return new Outcome(action.Length > 0 ? s.Say("I didn't get when to do that.", "Ik snapte niet wanneer ik dat moet doen.")
+                : s.Say("I didn't get when to remind you.", "Ik snapte niet wanneer ik je moet herinneren."), true);
         var at = reminder.At;
+        if (action.Length > 0)
+        {
+            // Something to do later: say when, and what
+            var when = reminder.Repeat.Length > 0 ? s.Say(Reminders.DescribeRepeat(reminder, false), Reminders.DescribeRepeat(reminder, true))
+                : minutes is > 0 and < 60 ? s.Say($"in {Reminders.Duration(TimeSpan.FromSeconds(Math.Round(minutes.Value * 60)), false)}",
+                    $"over {Reminders.Duration(TimeSpan.FromSeconds(Math.Round(minutes.Value * 60)), true)}")
+                : at.Date == DateTime.Today ? s.Say($"at {at:HH:mm}", $"om {at:HH:mm}")
+                : at.Date == DateTime.Today.AddDays(1) ? s.Say($"tomorrow at {at:HH:mm}", $"morgen om {at:HH:mm}")
+                : s.Say($"on {at.ToString("d MMMM 'at' HH:mm", CultureInfo.GetCultureInfo("en-GB"))}", $"op {at.ToString("d MMMM 'om' HH:mm", CultureInfo.GetCultureInfo("nl-NL"))}");
+            return new Outcome(s.Say($"Okay, {when}: {message}.", $"Oké, {when}: {message}."), true);
+        }
         if (reminder.Repeat.Length > 0)
         {
             string Start(bool dutch)
