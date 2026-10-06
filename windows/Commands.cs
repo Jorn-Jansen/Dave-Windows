@@ -348,6 +348,22 @@ public static class Commands
         var newest = args["newest"] is JsonValue v && v.TryGetValue<bool>(out var n) && n;
         var action = Str(args, "action") is { Length: > 0 } a ? a : "open";
 
+        // A path ("C:\Users\me\Downloads") or a known folder ("Downloads", "bureaublad"): open it directly, no searching
+        var asked = Str(args, "path") is { Length: > 0 } p ? p : query;
+        if (FileFinder.DirectPath(asked, out var isPath) is { } direct)
+        {
+            var exists = Directory.Exists(direct) || File.Exists(direct);
+            if (!exists && isPath) return new Outcome(s.Say($"I can't find {direct} on this PC.", $"Ik kan {direct} niet vinden op deze pc."), true);
+            if (exists)
+            {
+                Log.Write($"Opening {direct} directly");
+                if (action == "tell") return new Outcome(s.Say($"That's {direct}.", $"Dat is {direct}."), true);
+                if (action == "show_in_folder" && File.Exists(direct)) FileFinder.ShowInFolder(direct);
+                else FileFinder.Open(direct); // a folder opens in Explorer
+                return new Outcome("📁 " + direct);
+            }
+        }
+
         var found = await FileFinder.FindAsync(query, kind, newest);
         if (found.Count == 0)
         {
