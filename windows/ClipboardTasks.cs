@@ -20,8 +20,15 @@ public static class ClipboardTasks
 
         if (image != null)
         {
-            Log.Write($"Clipboard image ({image.Length / 1024} KB)");
-            return await Vision.AskAboutImageAsync(s, task, languageTag, Convert.ToBase64String(image), "an image the user copied to their clipboard");
+            Log.Write($"Clipboard image ({image.Length / 1024} KB){(copyResult ? ", result to the clipboard" : "")}");
+            const string copiedImage = "an image the user copied to their clipboard";
+            if (!copyResult) return await Vision.AskAboutImageAsync(s, task, languageTag, Convert.ToBase64String(image), copiedImage);
+            // "Extract the text and copy it": the result itself goes on the clipboard, ready to paste
+            var extracted = await Vision.AskAboutImageAsync(s, task, languageTag, Convert.ToBase64String(image), copiedImage, spoken: false);
+            if (extracted.Length == 0) return s.Say("I couldn't get anything out of that picture.", "Ik kon niets uit die afbeelding halen.");
+            Copy(extracted);
+            Assistant.RememberResult(extracted);
+            return s.Say("Done, it's on your clipboard.", "Klaar, het staat op je klembord.");
         }
         if (string.IsNullOrWhiteSpace(text))
             return s.Say("There's nothing on your clipboard. Copy something first.", "Er staat niets op je klembord. Kopieer eerst iets.");
