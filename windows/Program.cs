@@ -443,6 +443,7 @@ public class DaveApp : ApplicationContext
                 if (command.Name == "start_music_quiz")
                 {
                     ConversationLog.Add(text, $"(started a music quiz: {command.Args["theme"]})");
+                    await QuizAsync(command.Args["theme"]?.ToString() ?? "mixed hits", cancel);
                     return;
                 }
                 if (command.Name == "look_at_screen")

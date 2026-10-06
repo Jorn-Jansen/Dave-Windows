@@ -4,7 +4,6 @@ namespace DaveWindows;
 public class SettingsForm : Form
 {
     private readonly Settings settings;
-    private readonly Action<string>? askTyped;
     private readonly TextBox groqKey = new() { UseSystemPasswordChar = true, Width = 420 };
     private readonly TextBox country = new() { Width = 420 };
     private readonly TextBox assistantName = new() { Width = 200, PlaceholderText = "Dave" };
@@ -43,7 +42,6 @@ public class SettingsForm : Form
     public SettingsForm(Settings settings, Action<string>? askTyped = null)
     {
         this.settings = settings;
-        this.askTyped = askTyped;
         Text = "Dave settings";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
