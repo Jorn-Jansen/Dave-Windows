@@ -27,7 +27,11 @@ public static class Vision
     /// Answer [question] about a JPEG ([image], base64), described to the AI as [whatItIs]. With [spoken] false, just the
     /// resulting text, exactly as it should be pasted (e.g. the text read from a copied picture).
     /// </summary>
-    public static async Task<string> AskAboutImageAsync(Settings settings, string question, string languageTag, string image, string whatItIs, bool spoken = true)
+    public static Task<string> AskAboutImageAsync(Settings settings, string question, string languageTag, string image, string whatItIs, bool spoken = true) =>
+        AskAboutImagesAsync(settings, question, languageTag, new List<string> { image }, whatItIs, spoken);
+
+    /// <summary>The same with several images at once (e.g. the pages of a PDF).</summary>
+    public static async Task<string> AskAboutImagesAsync(Settings settings, string question, string languageTag, List<string> images, string whatItIs, bool spoken = true)
     {
         var language = CultureInfo.GetCultureInfo(languageTag).EnglishName.Split(' ')[0];
         var system = spoken
@@ -52,11 +56,11 @@ public static class Vision
                 new JsonObject
                 {
                     ["role"] = "user",
-                    ["content"] = new JsonArray
-                    {
-                        new JsonObject { ["type"] = "text", ["text"] = question },
-                        new JsonObject { ["type"] = "image_url", ["image_url"] = new JsonObject { ["url"] = "data:image/jpeg;base64," + image } },
-                    },
+                    ["content"] = new JsonArray(new JsonNode[] { new JsonObject { ["type"] = "text", ["text"] = question } }
+                        .Concat(images.Select(image => (JsonNode)new JsonObject
+                        {
+                            ["type"] = "image_url", ["image_url"] = new JsonObject { ["url"] = "data:image/jpeg;base64," + image },
+                        })).ToArray()),
                 },
             },
         };

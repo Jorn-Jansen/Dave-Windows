@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Windows.Devices.Geolocation;
 
 namespace DaveWindows;
@@ -113,6 +114,13 @@ public static class PcActions
     /// <summary>Open a site or search, in [browser] if given (e.g. "Brave"), otherwise Dave's or Windows' default browser.</summary>
     public static string OpenWebsite(string? url, string? search, string? browser)
     {
+        // A file or folder instead of a website (file:///E:/… or E:\…): open it as what it is, not as "https://file:///…"
+        if (!string.IsNullOrWhiteSpace(url) && (url.StartsWith("file:", StringComparison.OrdinalIgnoreCase) || Regex.IsMatch(url, @"^[a-zA-Z]:[\\/]")))
+        {
+            var local = url.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ? new Uri(url).LocalPath : url.Replace('/', '\\');
+            Process.Start(new ProcessStartInfo(local) { UseShellExecute = true });
+            return local;
+        }
         var target = !string.IsNullOrWhiteSpace(url)
             ? (url.StartsWith("http") ? url : "https://" + url)
             : "https://www.google.com/search?q=" + Uri.EscapeDataString(search ?? "");
