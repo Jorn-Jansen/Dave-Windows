@@ -72,6 +72,7 @@ public class DaveApp : ApplicationContext
     private WakeWord? wakeWord;
     private PhoneLink? phoneLink; // Dave on the iPhone talking to this Dave (when turned on)
     private bool remote; // answering the iPhone: no speaking, ducking or listening here
+    private bool firewallChecked;
     private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 6 * 60 * 60 * 1000 }; // look for a new version every 6 hours
     private Updater.Release? pendingInstall; // asked for by voice: installed once Dave has finished talking
     private readonly Queue<string> headsUps = new(); // things Dave was watching for that happened; said once he's free
@@ -186,6 +187,18 @@ public class DaveApp : ApplicationContext
         if (settings.PhoneEnabled)
         {
             PhoneLink.CodeFor(settings);
+            if (!firewallChecked)
+            {
+                firewallChecked = true; // once per start: not a Windows question every time the settings are saved
+                _ = Task.Run(() =>
+                {
+                    if (!PhoneLink.AllowThroughFirewall())
+                        bubble.BeginInvoke(() => tray.ShowBalloonTip(6000, "Dave", T(
+                            "Windows' firewall may block the iPhone app. Allow Dave in Windows Security → Firewall → Allow an app.",
+                            "De firewall van Windows blokkeert de iPhone-app misschien. Sta Dave toe in Windows-beveiliging → Firewall → App toestaan."),
+                            ToolTipIcon.Warning));
+                });
+            }
             try { phoneLink = new PhoneLink(settings, question => (Task<string>)bubble.Invoke(() => AskFromPhoneAsync(question))); }
             catch (Exception e)
             {

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -43,15 +44,63 @@ public sealed class PhoneLink : IDisposable
         return s.PhoneCode;
     }
 
-    /// <summary>This PC's addresses on the network (home Wi-Fi, and Tailscale's 100.x when it's installed).</summary>
-    public static List<string> Addresses() => NetworkInterface.GetAllNetworkInterfaces()
-        .Where(n => n.OperationalStatus == OperationalStatus.Up && n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-        .SelectMany(n => n.GetIPProperties().UnicastAddresses)
-        .Select(a => a.Address)
-        .Where(a => a.AddressFamily == AddressFamily.InterNetwork && !a.ToString().StartsWith("169.254."))
-        .Select(a => a.ToString())
-        .OrderBy(a => a.StartsWith("192.168.") ? 0 : a.StartsWith("10.") ? 1 : a.StartsWith("100.") ? 3 : 2)
-        .Distinct().ToList();
+    /// <summary>
+    /// This PC's addresses the phone can use: the real home network (the one with a router), and Tailscale's 100.x when
+    /// it's installed. Not the virtual networks of VirtualBox, VMware, WSL or Hyper-V: the phone can't reach those.
+    /// </summary>
+    public static List<string> Addresses()
+    {
+        var result = new List<(string address, int order)>();
+        foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (n.OperationalStatus != OperationalStatus.Up || n.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+            var properties = n.GetIPProperties();
+            var tailscale = n.Description.Contains("Tailscale", StringComparison.OrdinalIgnoreCase);
+            var hasRouter = properties.GatewayAddresses.Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any));
+            if (!hasRouter && !tailscale) continue;
+            foreach (var a in properties.UnicastAddresses.Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork))
+            {
+                var address = a.Address.ToString();
+                if (address.StartsWith("169.254.")) continue;
+                result.Add((address, tailscale ? 2 : n.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 ? 0 : 1));
+            }
+        }
+        return result.OrderBy(r => r.order).Select(r => r.address).Distinct().ToList();
+    }
+
+    private const string FirewallRule = "Dave iPhone link";
+
+    /// <summary>
+    /// Make sure Windows' firewall lets the phone in, on every kind of network: Windows often calls home Wi-Fi "public",
+    /// and its first question only allows private networks (or blocks Dave altogether after Cancel). Asks Windows once
+    /// (a Yes/No question) to replace Dave's own firewall rules with one that allows the link. False when that was refused.
+    /// </summary>
+    public static bool AllowThroughFirewall()
+    {
+        var exe = Application.ExecutablePath;
+        try
+        {
+            using var check = Process.Start(new ProcessStartInfo("netsh", $"advfirewall firewall show rule name=\"{FirewallRule}\" verbose")
+            { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true })!;
+            var rules = check.StandardOutput.ReadToEnd();
+            check.WaitForExit(5000);
+            if (rules.Contains(exe, StringComparison.OrdinalIgnoreCase)) return true; // done before (for this Dave.exe)
+        }
+        catch (Exception e) { Log.Write($"Couldn't read the firewall rules: {e.Message}"); }
+
+        Log.Write("Asking Windows to let the iPhone link through the firewall");
+        try
+        {
+            using var fix = Process.Start(new ProcessStartInfo("cmd.exe",
+                $"/c netsh advfirewall firewall delete rule name=all dir=in program=\"{exe}\" & " +
+                $"netsh advfirewall firewall add rule name=\"{FirewallRule}\" dir=in action=allow program=\"{exe}\" protocol=TCP localport={Port} profile=any")
+            { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden })!;
+            fix.WaitForExit(15000);
+            return fix.ExitCode == 0;
+        }
+        catch (System.ComponentModel.Win32Exception) { Log.Write("Firewall question was answered with No"); return false; }
+        catch (Exception e) { Log.Write($"Couldn't change the firewall: {e.Message}"); return false; }
+    }
 
     private async Task AcceptLoopAsync()
     {
