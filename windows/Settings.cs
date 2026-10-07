@@ -39,6 +39,9 @@ public class Settings
     public bool WakeWord { get; set; } = false;
     /// <summary>Double-check the wake phrase before reacting: fewer accidental wake-ups, but he reacts a bit later.</summary>
     public bool CarefulWakeWord { get; set; } = false;
+    /// <summary>Let Dave on the iPhone talk to this Dave (over the network, with <see cref="PhoneCode"/>).</summary>
+    public bool PhoneEnabled { get; set; } = false;
+    public string PhoneCode { get; set; } = "";
     /// <summary>Browser for websites when you don't name one, e.g. "Brave" ("" = Windows' default).</summary>
     public string Browser { get; set; } = "";
     public bool StartWithWindows { get; set; } = false;

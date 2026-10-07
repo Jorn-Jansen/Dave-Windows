@@ -28,6 +28,13 @@ public static class Updater
         }
     }
 
+    /// <summary>The full version as written in DaveWindows.csproj, e.g. "1.4.0" or "1.4.0-beta.1".</summary>
+    public static string Display =>
+        (Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? Current.ToString(3)).Split('+')[0];
+
+    /// <summary>A beta ("1.4.0-beta.1"): the final 1.4.0 counts as newer. Betas are pre-releases, so they never reach anyone by themselves.</summary>
+    public static bool IsBeta => Display.Contains('-');
+
     /// <summary>
     /// True when Dave was installed with DaveSetup.exe. A Dave built from the source (Build Dave.bat) doesn't
     /// update itself: the installer would put a second copy next to it.
@@ -49,7 +56,7 @@ public static class Updater
         var url = json?["assets"]?.AsArray()
             .FirstOrDefault(a => string.Equals(a?["name"]?.GetValue<string>(), AssetName, StringComparison.OrdinalIgnoreCase))
             ?["browser_download_url"]?.GetValue<string>();
-        return url != null && version > Current ? new Release(version, url) : null;
+        return url != null && (version > Current || (version == Current && IsBeta)) ? new Release(version, url) : null;
     }
 
     /// <summary>Download the installer and start it silently; it closes this Dave and starts the new one when done.</summary>

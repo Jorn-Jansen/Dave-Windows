@@ -427,7 +427,7 @@ public static class Assistant
             : " You're not keeping an eye on anything right now; earlier ones in the chat are finished or stopped.";
         var context = $"[{TimeContext()} User's country: {settings.Country}; use its units and currency.{where}{music}{reminderState}{watchState} Answer in {languageName}.]";
 
-        var system = System.Replace("Dave", settings.Name) + $"\nYour name is {settings.Name}. You are version {Updater.Current.ToString(3)}; " +
+        var system = System.Replace("Dave", settings.Name) + $"\nYour name is {settings.Name}. You are version {Updater.Display}; " +
                      "for questions about updating or newer versions, use update_dave.";
         if (settings.IsDutch)
             system += "\nThe user speaks Dutch or English. For very short commands that could be either, assume Dutch: 'harder' means louder and 'zachter' means quieter.";

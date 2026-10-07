@@ -12,7 +12,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Dave</AssemblyName>
     <!-- Raise this for every new installer you share, so Windows shows it as an update -->
-    <Version>1.3.3</Version>
+    <Version>1.4.0-beta.1</Version>
     <RootNamespace>DaveWindows</RootNamespace>
     <ApplicationIcon>Dave.ico</ApplicationIcon>
     <PlatformTarget>x64</PlatformTarget>

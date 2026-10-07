@@ -127,9 +127,12 @@ public static class Speaker
         SpeechSynthesizer.AllVoices.Where(v =>
             v.Language.Split('-')[0].Equals(languageTag.Split('-')[0], StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>True while answering the iPhone: the answer goes to the phone, so nothing is said (or beeped) here.</summary>
+    public static volatile bool Silent;
+
     public static async Task SpeakAsync(Settings settings, string text, string languageTag, CancellationToken cancel = default)
     {
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (string.IsNullOrWhiteSpace(text) || Silent) return;
         if (settings.IsQuiet)
         {
             // Quiet mode: the answer only shows in the bubble; wait about as long as reading it takes, so it stays up.
@@ -206,7 +209,7 @@ public static class Speaker
     public static void Stop() => current?.Stop();
 
     /// <summary>Short "I'm listening" beep.</summary>
-    public static void Beep(int frequency = 880, int ms = 120) => Task.Run(() => Console.Beep(frequency, ms));
+    public static void Beep(int frequency = 880, int ms = 120) { if (!Silent) Task.Run(() => Console.Beep(frequency, ms)); }
 }
 
 /// <summary>

@@ -70,6 +70,8 @@ public class DaveApp : ApplicationContext
     private DaveWindow? window; // made the first time you open it
     private readonly System.Windows.Forms.Timer reminderTimer = new() { Interval = 1_000 }; // every second, so timers go off on time
     private WakeWord? wakeWord;
+    private PhoneLink? phoneLink; // Dave on the iPhone talking to this Dave (when turned on)
+    private bool remote; // answering the iPhone: no speaking, ducking or listening here
     private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 6 * 60 * 60 * 1000 }; // look for a new version every 6 hours
     private Updater.Release? pendingInstall; // asked for by voice: installed once Dave has finished talking
     private readonly Queue<string> headsUps = new(); // things Dave was watching for that happened; said once he's free
@@ -179,6 +181,19 @@ public class DaveApp : ApplicationContext
             catch (Exception e) { Log.Write($"Wake word failed: {e}"); }
         }
 
+        phoneLink?.Dispose();
+        phoneLink = null;
+        if (settings.PhoneEnabled)
+        {
+            PhoneLink.CodeFor(settings);
+            try { phoneLink = new PhoneLink(settings, question => (Task<string>)bubble.Invoke(() => AskFromPhoneAsync(question))); }
+            catch (Exception e)
+            {
+                Log.Write($"iPhone link couldn't start: {e.Message}");
+                tray.ShowBalloonTip(4000, "Dave", T($"The iPhone link couldn't start: port {PhoneLink.Port} is in use.", $"De iPhone-koppeling kon niet starten: poort {PhoneLink.Port} is bezet."), ToolTipIcon.Warning);
+            }
+        }
+
         using var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
         if (settings.StartWithWindows) run?.SetValue("Dave", $"\"{Application.ExecutablePath}\"");
         else run?.DeleteValue("Dave", throwOnMissingValue: false);
@@ -247,13 +262,13 @@ public class DaveApp : ApplicationContext
         }
         if (release == null)
         {
-            if (manual) tray.ShowBalloonTip(3000, settings.Name, T($"You have the newest version ({Updater.Current.ToString(3)}).",
-                $"Je hebt de nieuwste versie ({Updater.Current.ToString(3)})."), ToolTipIcon.None);
+            if (manual) tray.ShowBalloonTip(3000, settings.Name, T($"You have the newest version ({Updater.Display}).",
+                $"Je hebt de nieuwste versie ({Updater.Display})."), ToolTipIcon.None);
             return;
         }
         Log.Write($"Update available: {release.Version}");
-        if (manual && MessageBox.Show(T($"Version {release.Version} is available (you have {Updater.Current.ToString(3)}). Update now?",
-                $"Versie {release.Version} is beschikbaar (je hebt {Updater.Current.ToString(3)}). Nu updaten?"),
+        if (manual && MessageBox.Show(T($"Version {release.Version} is available (you have {Updater.Display}). Update now?",
+                $"Versie {release.Version} is beschikbaar (je hebt {Updater.Display}). Nu updaten?"),
                 settings.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         while (session != null) await Task.Delay(TimeSpan.FromSeconds(20)); // never in the middle of a conversation
         await InstallUpdateAsync(release);
@@ -262,7 +277,7 @@ public class DaveApp : ApplicationContext
     /// <summary>"Update yourself": what to say. When there's a new version, it's installed after Dave has said so.</summary>
     private async Task<string> UpdateOnRequestAsync()
     {
-        var current = Updater.Current.ToString(3);
+        var current = Updater.Display;
         if (!Updater.IsInstalled)
             return T($"I'm version {current}, built from the source code. To update me, run Build Dave dot bat.",
                      $"Ik ben versie {current}, zelf gebouwd van de broncode. Update me met Build Dave punt bat.");
@@ -302,6 +317,7 @@ public class DaveApp : ApplicationContext
         Cancel();
         ScreenTime.Flush();
         wakeWord?.Dispose();
+        phoneLink?.Dispose();
         hotkey.Dispose();
         windowHotkey?.Dispose();
         window?.Dispose();
@@ -321,6 +337,30 @@ public class DaveApp : ApplicationContext
         }
         if (session != null) { Cancel(); return; }
         _ = RunSessionAsync(typed: null);
+    }
+
+    /// <summary>
+    /// A question from Dave on the iPhone ("pause the music", "lock my PC"): done here like a typed question, but nothing
+    /// is said here; the answer (what would have been said) goes back to the phone.
+    /// </summary>
+    private async Task<string> AskFromPhoneAsync(string question)
+    {
+        if (session != null) return T("I'm busy on the PC right now. Try again in a moment.", "Ik ben nu bezig op de pc. Probeer het zo nog eens.");
+        string? answer = null;
+        void Capture() => answer = ConversationLog.Recent(1).LastOrDefault()?.Dave;
+        ConversationLog.Added += Capture;
+        remote = true;
+        Speaker.Silent = true;
+        try { await RunSessionAsync(question); }
+        finally
+        {
+            remote = false;
+            Speaker.Silent = false;
+            ConversationLog.Added -= Capture;
+        }
+        // Commands are logged as "(media_control) ⏸ Paused": the phone gets just the outcome
+        answer = System.Text.RegularExpressions.Regex.Replace(answer ?? "", @"^\([a-z_ ]+\)\s*", "").Trim();
+        return answer.Length > 0 ? answer : T("Done.", "Klaar.");
     }
 
     /// <summary>Ask a typed question (from the settings window).</summary>
@@ -385,7 +425,7 @@ public class DaveApp : ApplicationContext
             var locationTask = PcLocation.DescribeAsync(); // look it up while you talk
             string text, language;
             Watchdog.Step = "turning other sound down";
-            using (var duck = new Ducker(settings.DuckTo))
+            using (var duck = new Ducker(remote ? 1 : settings.DuckTo)) // (from the iPhone: nothing to turn down for)
             {
                 if (typed != null)
                 {
@@ -426,7 +466,7 @@ public class DaveApp : ApplicationContext
                     bubble.ShowText(speak.Text, spoken: true);
                     Watchdog.Step = "speaking";
                     await Speaker.SpeakAsync(settings, speak.Text, language, cancel);
-                    if (!speak.Text.TrimEnd().EndsWith('?')) return;
+                    if (remote || !speak.Text.TrimEnd().EndsWith('?')) return; // (the iPhone asks its own follow-ups)
                     followUp = true; // Dave asked something back: keep listening
                     continue;
                 }

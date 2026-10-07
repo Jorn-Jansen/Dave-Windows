@@ -19,7 +19,7 @@ public class SettingsForm : Form
     private readonly CheckBox wakeWord = new() { Text = "Listen for “Hey Dave” (offline)", AutoSize = true };
     private readonly CheckBox carefulWakeWord = new() { Text = "Careful wake word (fewer accidental wake-ups, reacts a bit later)", AutoSize = true };
     private readonly CheckBox autostart = new() { Text = "Start Dave with Windows", AutoSize = true };
-    private readonly CheckBox autoUpdate = new() { Text = $"Update Dave automatically (now version {Updater.Current.ToString(3)})", AutoSize = true };
+    private readonly CheckBox autoUpdate = new() { Text = $"Update Dave automatically (now version {Updater.Display})", AutoSize = true };
     private readonly ComboBox provider = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
     private readonly TextBox aiKey = new() { UseSystemPasswordChar = true, Width = 260, PlaceholderText = "API key" };
     private readonly TextBox aiModel = new() { Width = 200 };
