@@ -408,8 +408,13 @@ public static class Spotify
         return chosen?["id"]?.GetValue<string>();
     }
 
+    /// <summary>After "too many requests": no more asking until Spotify says it's fine again (asking anyway only makes it longer).</summary>
+    private static DateTime restUntil = DateTime.MinValue;
+
     private static async Task<(int status, string text)> ApiAsync(Settings s, HttpMethod method, string path, JsonObject? body = null, bool allowNotFound = false)
     {
+        if (DateTime.Now < restUntil)
+            throw new SpotifyException(s.Say("Spotify is busy. Try again in a moment.", "Spotify heeft het druk. Probeer het zo nog eens."));
         using var request = new HttpRequestMessage(method, Api + path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await AccessTokenAsync(s));
         if (body != null || method == HttpMethod.Put || method == HttpMethod.Post)
@@ -421,6 +426,12 @@ public static class Spotify
         if (status is >= 200 and < 300 || (allowNotFound && status == 404)) return (status, text);
 
         Log.Write($"Spotify {method} {path} -> {status}: {text}");
+        if (status == 429)
+        {
+            var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
+            restUntil = DateTime.Now + TimeSpan.FromSeconds(Math.Clamp(wait.TotalSeconds, 5, 600));
+            Log.Write($"Spotify: too many requests; not asking until {restUntil:HH:mm:ss}");
+        }
         throw new SpotifyException(status switch
         {
             401 => s.Say("I'm not logged in to Spotify anymore. Connect it again in Dave's settings.", "Ik ben niet meer ingelogd bij Spotify. Koppel het opnieuw in de instellingen van Dave."),

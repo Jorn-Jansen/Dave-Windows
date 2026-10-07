@@ -199,7 +199,11 @@ public class DaveApp : ApplicationContext
                             ToolTipIcon.Warning));
                 });
             }
-            try { phoneLink = new PhoneLink(settings, question => (Task<string>)bubble.Invoke(() => AskFromPhoneAsync(question))); }
+            try
+            {
+                phoneLink = new PhoneLink(settings, question => (Task<string>)bubble.Invoke(() => AskFromPhoneAsync(question)),
+                    (name, args) => (Task<string>)bubble.Invoke(() => CommandFromPhoneAsync(name, args)));
+            }
             catch (Exception e)
             {
                 Log.Write($"iPhone link couldn't start: {e.Message}");
@@ -374,6 +378,28 @@ public class DaveApp : ApplicationContext
         // Commands are logged as "(media_control) ⏸ Paused": the phone gets just the outcome
         answer = System.Text.RegularExpressions.Regex.Replace(answer ?? "", @"^\([a-z_ ]+\)\s*", "").Trim();
         return answer.Length > 0 ? answer : T("Done.", "Klaar.");
+    }
+
+    /// <summary>
+    /// A command the iPhone's AI already chose ("media_control pause", "lock_pc"): carried out right away, without asking
+    /// the AI here too. Quietly: only the bubble shows it, for a moment.
+    /// </summary>
+    private async Task<string> CommandFromPhoneAsync(string name, System.Text.Json.Nodes.JsonObject args)
+    {
+        if (session != null && name != "media_control") return T("I'm busy on the PC right now. Try again in a moment.", "Ik ben nu bezig op de pc. Probeer het zo nog eens.");
+        try
+        {
+            var outcome = await Commands.RunAsync(settings, name, args);
+            ConversationLog.Add($"📱 ({name}) {args.ToJsonString()}", outcome.Text);
+            bubble.ShowText("📱 " + outcome.Text);
+            bubble.HideAfter(2500);
+            return outcome.Text;
+        }
+        catch (Exception e)
+        {
+            Log.Write($"iPhone command {name} failed: {e.Message}");
+            return e is Groq.GroqException or Spotify.SpotifyException ? e.Message : T("That didn't work on the PC.", "Dat lukte niet op de pc.");
+        }
     }
 
     /// <summary>Ask a typed question (from the settings window).</summary>
