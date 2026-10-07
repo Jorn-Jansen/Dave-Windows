@@ -20,6 +20,7 @@ public sealed class PhoneLink : IDisposable
     private readonly Settings settings;
     private readonly Func<string, Task<string>> ask;
     private readonly Func<string, JsonObject, Task<string>> command;
+    private readonly Func<JsonObject?, Task<JsonObject>> state;
 
     /// <summary>Commands the phone may give directly (its AI already chose them): carried out without asking the AI again.</summary>
     public static readonly HashSet<string> DirectCommands = new()
@@ -32,11 +33,14 @@ public sealed class PhoneLink : IDisposable
 
     /// <param name="ask">Ask this Dave something as if it was typed; returns his answer (without speaking it here).</param>
     /// <param name="command">Carry out one of <see cref="DirectCommands"/> with its arguments; returns the outcome.</param>
-    public PhoneLink(Settings settings, Func<string, Task<string>> ask, Func<string, JsonObject, Task<string>> command)
+    /// <param name="state">Apply a change from the app's tabs (if not null), then return what the tabs show.</param>
+    public PhoneLink(Settings settings, Func<string, Task<string>> ask, Func<string, JsonObject, Task<string>> command,
+        Func<JsonObject?, Task<JsonObject>> state)
     {
         this.settings = settings;
         this.ask = ask;
         this.command = command;
+        this.state = state;
         listener.Start();
         Log.Write($"iPhone link listening on {string.Join(", ", Addresses())} port {Port}");
         _ = Task.Run(AcceptLoopAsync);
@@ -178,6 +182,13 @@ public sealed class PhoneLink : IDisposable
                     Log.Write($"Command from the iPhone: {name} {args.ToJsonString()}");
                     (status, reply) = (200, new JsonObject { ["answer"] = await command(name, (JsonObject)args.DeepClone()) });
                 }
+            }
+            else if (path == "/state") (status, reply) = (200, await state(null)); // reminders, memories, music, screen time…
+            else if (method == "POST" && path == "/action")
+            {
+                var change = JsonNode.Parse(body)?.AsObject() ?? new JsonObject();
+                Log.Write($"Change from the iPhone: {change["type"]}");
+                (status, reply) = (200, await state(change));
             }
             else (status, reply) = (404, new JsonObject { ["error"] = "unknown" });
             await WriteResponseAsync(stream, status, reply.ToJsonString());
