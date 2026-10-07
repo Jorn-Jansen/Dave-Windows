@@ -516,21 +516,27 @@ public static class MediaSession
         catch { return (Playing?)null; }
     }, 1000, null, "what's playing");
 
+    private static (DateTime at, Playing? playing) spotifyAnswer = (DateTime.MinValue, null);
+
     /// <summary>
-    /// What's playing: Spotify first, from Spotify itself (fast, and it keeps working when Windows' media controls get
-    /// stuck), then any other app (YouTube, a video…) through Windows.
+    /// What's playing: Windows' media controls first (local and free: any app, Spotify too). Only when they don't
+    /// answer (they can get stuck), Spotify itself, at most every 15 seconds: the music watcher asks every 3 seconds,
+    /// and Spotify limits how often one Spotify app may ask (the iPhone Dave uses the same one).
     /// </summary>
     public static async Task<Playing?> NowPlayingAsync(Settings s)
     {
-        if (Spotify.IsConnected(s) && s.SpotifyScopes.Contains("user-read-currently-playing"))
+        var local = await NowPlayingAsync();
+        if (local != null || !Unknown) return local;
+        if (!Spotify.IsConnected(s) || !s.SpotifyScopes.Contains("user-read-currently-playing")) return null;
+        if (DateTime.Now - spotifyAnswer.at < TimeSpan.FromSeconds(15)) return spotifyAnswer.playing;
+        Playing? playing = null;
+        try
         {
-            try
-            {
-                if (await Spotify.NowPlayingAsync(s) is { } track) return new Playing(track.Name, track.Artist, "Spotify");
-            }
-            catch (Exception e) { Log.Write($"Spotify now playing: {e.Message}"); }
+            if (await Spotify.NowPlayingAsync(s) is { } track) playing = new Playing(track.Name, track.Artist, "Spotify");
         }
-        return await NowPlayingAsync();
+        catch (Exception e) { Log.Write($"Spotify now playing: {e.Message}"); }
+        spotifyAnswer = (DateTime.Now, playing);
+        return playing;
     }
 
     /// <summary>True when Spotify is the app playing (or nothing is), so Spotify-only actions make sense.</summary>

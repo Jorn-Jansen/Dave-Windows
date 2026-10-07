@@ -9,9 +9,9 @@ A voice assistant for Windows. Talk to him with a shortcut or a wake word, in En
 
 Dave updates himself when a new version is released. To remove him: Settings → Apps → Dave.
 
-### On your iPhone (beta)
-**[Dave for iPhone](https://github.com/Jorn-Jansen/Dave-iPhone)**: talk to Dave on your phone, and let him do things on your PC
-("pause the music on my PC", "lock my PC"). Needs Dave 1.4.0 beta 1 or newer on the PC (Settings → iPhone app).
+### On your iPhone
+**[Dave for iPhone](https://github.com/Jorn-Jansen/Dave-iPhone)**: talk to Dave on your phone, control your Spotify, and let him do
+things on your PC ("pause the music on my PC", "lock my PC"). Needs Dave 1.4.0 or newer on the PC (Settings → iPhone app).
 
 ## Use
 - Press **Ctrl+Alt+D** (works in games too), say **"Hey Dave"** (if turned on), or click the tray icon.
@@ -29,7 +29,7 @@ Dave updates himself when a new version is released. To remove him: Settings →
 - **Web pages:** "summarise this page", "what does this article say about…" (the page open in your browser)
 - **Notifications:** "what did I miss?", "what did Sam say on Discord?"
 - **Game help:** "how do I beat this boss?", "where do I find…?" (looks at your game and searches guides)
-- **iPhone (beta):** [Dave for iPhone](https://github.com/Jorn-Jansen/Dave-iPhone) can do things on your PC: "pause the music on my PC", "lock my PC"
+- **iPhone:** [Dave for iPhone](https://github.com/Jorn-Jansen/Dave-iPhone) can do things on your PC: "pause the music on my PC", "lock my PC"
   (Settings → iPhone app)
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
 - **Files:** "look at C:\…\report.docx and rate it", "summarise this PDF", "what's in my Downloads folder?"

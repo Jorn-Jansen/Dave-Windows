@@ -19,15 +19,24 @@ public sealed class PhoneLink : IDisposable
 
     private readonly Settings settings;
     private readonly Func<string, Task<string>> ask;
+    private readonly Func<string, JsonObject, Task<string>> command;
+
+    /// <summary>Commands the phone may give directly (its AI already chose them): carried out without asking the AI again.</summary>
+    public static readonly HashSet<string> DirectCommands = new()
+    {
+        "media_control", "set_volume", "music_settings", "lock_pc", "open_app", "close_app", "open_website", "quiet_mode",
+    };
     private readonly TcpListener listener = new(IPAddress.Any, Port);
     private readonly CancellationTokenSource stop = new();
     private DateTime lastWrongCode = DateTime.MinValue;
 
     /// <param name="ask">Ask this Dave something as if it was typed; returns his answer (without speaking it here).</param>
-    public PhoneLink(Settings settings, Func<string, Task<string>> ask)
+    /// <param name="command">Carry out one of <see cref="DirectCommands"/> with its arguments; returns the outcome.</param>
+    public PhoneLink(Settings settings, Func<string, Task<string>> ask, Func<string, JsonObject, Task<string>> command)
     {
         this.settings = settings;
         this.ask = ask;
+        this.command = command;
         listener.Start();
         Log.Write($"iPhone link listening on {string.Join(", ", Addresses())} port {Port}");
         _ = Task.Run(AcceptLoopAsync);
@@ -144,6 +153,7 @@ public sealed class PhoneLink : IDisposable
                     ["secondLanguage"] = settings.SecondLanguage,
                     ["country"] = settings.Country,
                     ["groqKey"] = settings.GroqKey,
+                    ["spotifyClientId"] = settings.SpotifyClientId, // the phone logs in to Spotify itself, with the same Spotify app
                     ["memories"] = new JsonArray(settings.Memories.Select(m => (JsonNode)m).ToArray()),
                 });
             }
@@ -155,6 +165,18 @@ public sealed class PhoneLink : IDisposable
                 {
                     Log.Write($"From the iPhone: {question}");
                     (status, reply) = (200, new JsonObject { ["answer"] = await ask(question) });
+                }
+            }
+            else if (method == "POST" && path == "/command")
+            {
+                var request = JsonNode.Parse(body)?.AsObject();
+                var name = request?["name"]?.ToString() ?? "";
+                if (!DirectCommands.Contains(name)) (status, reply) = (400, new JsonObject { ["error"] = "not allowed" });
+                else
+                {
+                    var args = request?["args"] as JsonObject ?? new JsonObject();
+                    Log.Write($"Command from the iPhone: {name} {args.ToJsonString()}");
+                    (status, reply) = (200, new JsonObject { ["answer"] = await command(name, (JsonObject)args.DeepClone()) });
                 }
             }
             else (status, reply) = (404, new JsonObject { ["error"] = "unknown" });
