@@ -24,6 +24,7 @@ Dave updates himself when a new version is released. To remove him: Settings →
 - **Your screen:** "what's this error?", "read this out"
 - **Web pages:** "summarise this page", "what does this article say about…" (the page open in your browser)
 - **Notifications:** "what did I miss?", "what did Sam say on Discord?"
+- **Game help:** "how do I beat this boss?", "where do I find…?" (looks at your game and searches guides)
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
 - **Files:** "look at C:\…\report.docx and rate it", "summarise this PDF", "what's in my Downloads folder?"
 - **PC stats:** "how hot is my GPU?", "what's using my memory?", "how fast is my internet?", "what's my ping?"

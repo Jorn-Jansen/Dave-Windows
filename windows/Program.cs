@@ -494,7 +494,7 @@ public class DaveApp : ApplicationContext
                     return;
                 }
                 if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation" or "screen_time" or "internet_speed" or "read_file"
-                        or "read_page" or "read_notifications"
+                        or "read_page" or "read_notifications" or "game_help"
                     ||(command.Name == "calendar" && command.Args["action"]?.ToString() != "add" && CalendarFeed.Links(settings).Count > 0))
                 {
                     Log.Write($"Command {command.Name} {command.Args.ToJsonString()}");
@@ -534,6 +534,12 @@ public class DaveApp : ApplicationContext
                     {
                         Watchdog.Step = "reading the page";
                         answer = await ReadPageAsync(command.Args["question"]?.ToString() is { Length: > 0 } q ? q : text, language);
+                    }
+                    else if (command.Name == "game_help")
+                    {
+                        Watchdog.Step = "helping with the game";
+                        bubble.ShowText("🎮 " + T("Looking at your game…", "Ik kijk naar je game…"));
+                        answer = await Assistant.GameHelpAsync(settings, command.Args["question"]?.ToString() is { Length: > 0 } gq ? gq : text, language);
                     }
                     else if (command.Name == "read_notifications")
                     {

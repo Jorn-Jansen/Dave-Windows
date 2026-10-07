@@ -19,7 +19,7 @@ public static class Assistant
         a reminder or timer, asks what song is playing, asks about something on their screen, wants something typed or copied, asks about what they copied,
         asks how their PC is doing, asks to update you, asks about an earlier conversation, wants you to tell them when something happens,
         wants windows arranged or a screenshot, asks about or adds to their calendar, asks about the page open in their browser,
-        asks about their notifications or messages, wants something done later ("lock my PC in 10 minutes"),
+        asks about their notifications or messages, wants something done later ("lock my PC in 10 minutes"), wants help with the game they're playing,
         or tells you something to remember ("onthoud dat…", "remember that…"),
         use the matching command instead of answering.
         Use what you remember about the user naturally when it's relevant.
@@ -148,7 +148,10 @@ public static class Assistant
         Tool("close_all_apps", "Close all programs except some.", new JsonObject { ["keep"] = Str("Comma-separated, e.g. 'Roblox, Discord'") }),
         Tool("look_at_screen", "Look at the screen to answer about what's on it (an error, a game, 'this', 'here').",
             new JsonObject { ["question"] = Str("The user's question") }, "question"),
-        Tool("read_page", "Read the web page open in the user's browser and answer about it: 'summarise this page', 'what does this article say about…', " +
+        Tool("game_help", "Help with the game the user is playing right now: how to beat a boss or level, where to find something, what to do next, " +
+            "a good build or strategy, what an item does. Looks at their screen and searches the web.",
+            new JsonObject { ["question"] = Str("The user's question, in their own words") }, "question"),
+        Tool("read_page","Read the web page open in the user's browser and answer about it: 'summarise this page', 'what does this article say about…', " +
             "'key points of this', 'is this recipe vegetarian'.",
             new JsonObject { ["question"] = Str("What the user wants to know about the page, in their own words") }, "question"),
         Tool("read_notifications", "The user's Windows notifications (Discord, mail, WhatsApp, Teams…): 'what did I miss', 'any new messages', " +
@@ -241,6 +244,94 @@ public static class Assistant
     };
 
     /// <summary>
+    /// Which commands go with which words (English and Dutch, word starts). Only the groups that fit what was said are sent:
+    /// all 41 commands cost about 3000 tokens per question, a big part of the free 8000 per minute. When none fit but the user
+    /// wants something done after all, the AI asks for the rest with <see cref="MoreCommands"/>.
+    /// </summary>
+    private static readonly (Regex words, string[] tools)[] Groups =
+    {
+        (Words("song", "music", "muziek", "play", "speel", "paus", "pauz", "resume", "hervat", "verder", "next", "volgende", "previous", "vorige", "skip",
+               "shuffle", "repeat", "herhaal", "spotify", "playlist", "afspeellijst", "liked", "quiz", "mix", "dj", "artist", "artiest", "album",
+               "track", "nummer", "liedje", "lied", "queue", "wachtrij", "like", "dislike", "hate", "haat", "zingt", "sings", "stop"),
+            new[] { "media_control", "play_music", "dislike_song", "undislike_song", "music_settings", "start_music_quiz", "now_playing",
+                    "like_song", "add_to_playlist", "play_mix", "set_volume" }),
+        (Words("volume", "loud", "louder", "quiet", "harder", "zachter", "luider", "mute", "unmute", "dempen", "sound", "geluid", "turn it", "zet het"),
+            new[] { "set_volume", "media_control", "quiet_mode" }),
+        (Words("remember", "onthoud", "forget", "vergeet", "earlier", "eerder", "yesterday", "gisteren", "what did i", "wat vroeg", "wat zei",
+               "last time", "vorige keer", "asked you", "vroeg ik"),
+            new[] { "remember", "forget", "recall_conversation" }),
+        (Words("remind", "herinner", "timer", "alarm", "wekker", "reminder", "every", "elke", "iedere", "cancel", "annuleer", "later",
+               "tonight", "vanavond", "tomorrow", "morgen", "minute", "minuut", "minuten", "hour", "uur", "second", "seconde"),
+            new[] { "set_reminder", "cancel_reminders" }),
+        (Words("open", "start", "launch", "close", "sluit", "quit", "afsluit", "lock", "vergrendel", "op slot", "app", "program", "website", "site",
+               "google", "youtube", "browser", "chrome", "discord", "roblox", "steam", "search", "zoek"),
+            new[] { "open_app", "open_website", "lock_pc", "close_app", "close_all_apps" }),
+        (Words("file", "bestand", "folder", "map", "document", "pdf", "docx", "path", "pad", "download", "desktop", "bureaublad", "screenshot",
+               "picture", "foto", "afbeelding", "image", "where is", "waar is", "rate", "beoordeel", "review", @"[a-z]:\\", @"\.(txt|md|cs|py|json|lua)\b"),
+            new[] { "read_file", "find_file" }),
+        (Words("screen", "scherm", "this", "dit", "deze", "here", "hier", "error", "fout", "look", "kijk", "see", "zie", "what's on", "wat staat"),
+            new[] { "look_at_screen", "screenshot", "read_page" }),
+        (Words("page", "pagina", "article", "artikel", "summar", "samenvat", "recipe", "recept", "tab", "website", "site"),
+            new[] { "read_page" }),
+        (Words("notification", "melding", "message", "bericht", "miss", "gemist", "discord", "whatsapp", "mail", "teams", "dm", "said", "zei", "texted"),
+            new[] { "read_notifications" }),
+        (Words("game", "spel", "boss", "level", "quest", "how do i", "hoe kom ik", "hoe versla", "beat", "versla", "build", "strategy", "strategie",
+               "where do i find", "waar vind", "item", "weapon", "wapen", "stuck", "vast", "roblox", "minecraft", "fortnite"),
+            new[] { "game_help" }),
+        (Words("click", "klik", "type", "typ", "write", "schrijf", "menu", "button", "knop", "send", "stuur", "dictat", "notepad", "kladblok", "fill", "vul"),
+            new[] { "control_apps", "type_text" }),
+        (Words("copy", "kopieer", "copied", "gekopieerd", "clipboard", "klembord", "paste", "plak", "translate", "vertaal"),
+            new[] { "use_clipboard", "copy_to_clipboard" }),
+        (Words("cpu", "gpu", "ram", "memory", "geheugen", "temperat", "hot", "warm", "heet", "disk", "schijf", "storage", "opslag", "battery",
+               "accu", "batterij", "uptime", "internet", "speed", "snelheid", "ping", "wifi", "lag", "slow", "traag", "pc doing", "pc het"),
+            new[] { "pc_stats", "internet_speed" }),
+        (Words("update", "version", "versie", "nieuwe dave", "new dave"),
+            new[] { "update_dave" }),
+        (Words("tell me when", "let me know", "laat me weten", "laat weten", "zeg het als", "zeg wanneer", "seintje", "heads-up", "watch", "keep an eye",
+               "houd in de gaten", "when it's done", "als het klaar", "closes", "afsluit", "stop watching", "stop met"),
+            new[] { "watch_for", "stop_watching" }),
+        (Words("screen time", "schermtijd", "how long", "hoe lang", "played", "gespeeld", "used", "gebruikt", "spent", "besteed"),
+            new[] { "screen_time" }),
+        (Words("quiet", "stil", "shh", "call", "bellen", "talk again", "praat", "praten", "spreek", "speak"),
+            new[] { "quiet_mode" }),
+        (Words("window", "venster", "screen", "scherm", "side by side", "naast elkaar", "maximi", "maximali", "minimi", "minimali", "left", "right",
+               "links", "rechts", "half", "centre", "center", "midden", "front", "voorgrond", "move", "verplaats", "monitor"),
+            new[] { "window_control" }),
+        (Words("calendar", "agenda", "planned", "gepland", "free on", "vrij op", "appointment", "afspraak", "event", "schedule", "rooster",
+               "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "maandag", "dinsdag", "woensdag", "donderdag",
+               "vrijdag", "zaterdag", "zondag", "this week", "deze week", "next week", "volgende week", "tomorrow", "morgen"),
+            new[] { "calendar" }),
+    };
+
+    private static Regex Words(params string[] words) =>
+        new(@"(^|\W)(" + string.Join("|", words.Select(w => w.Contains('\\') ? w : Regex.Escape(w))) + ")", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>Not a real command: lets the AI ask for all commands when the ones it got don't fit.</summary>
+    private const string MoreCommands = "more_commands";
+
+    /// <summary>
+    /// The commands for [text]: the groups its words fit, the ones used earlier in this conversation (for follow-ups like
+    /// "a bit louder"), and a way to ask for the rest.
+    /// </summary>
+    private static JsonArray CommandsFor(string text, out bool all)
+    {
+        var everything = CommandTools();
+        var wanted = new HashSet<string>(Groups.Where(g => g.words.IsMatch(text)).SelectMany(g => g.tools));
+        if (Reminders.TryFindLater(text, out _, out _, out _)) wanted.Add("set_reminder"); // "… at 23:00": something for later
+        foreach (var turn in History) // (also: the AI may not accept earlier calls to commands it doesn't get now)
+            foreach (var m in turn)
+                if (m["tool_calls"] is JsonArray calls)
+                    foreach (var c in calls) if (c?["function"]?["name"]?.GetValue<string>() is { } used) wanted.Add(used);
+        var picked = new JsonArray(everything.Where(t => wanted.Contains(t!["function"]!["name"]!.GetValue<string>())).Select(t => t!.DeepClone()).ToArray());
+        all = picked.Count == everything.Count;
+        if (all) return picked;
+        picked.Add(Tool(MoreCommands, "Use when the user wants you to DO something on their PC that none of the other commands here can do " +
+            "(music, volume, apps, websites, files, reminders, screen, clipboard, windows, calendar, notifications, games, PC stats…): " +
+            "you then get all commands. Not for questions you can answer yourself."));
+        return picked;
+    }
+
+    /// <summary>
     /// Do [task] with [material] (clipboard text, PC stats...), as a short spoken answer, or as just the resulting text
     /// when [spoken] is false (to put on the clipboard). The result is remembered, so follow-up questions work.
     /// </summary>
@@ -261,6 +352,48 @@ public static class Assistant
         var answer = (await Groq.ChatAsync(settings, body))["content"]?.GetValue<string>()?.Trim() ?? "";
         RememberResult(answer);
         return spoken ? Speakable(answer) : answer;
+    }
+
+    /// <summary>
+    /// "How do I beat this boss?": which game (the window in front) and what's going on (a look at the screen), then an
+    /// answer with web search (guides, wikis), short enough to hear without leaving the game.
+    /// </summary>
+    public static async Task<string> GameHelpAsync(Settings settings, string question, string languageTag)
+    {
+        var game = WindowList.List().FirstOrDefault(); // the window in front (Dave's own are skipped)
+        var seen = await Vision.AskAboutImageAsync(settings,
+            $"Which game is this (the exact name; for Roblox, the experience's name if it's visible) and what is going on: where the player is, " +
+            $"which level, boss, quest or menu, and anything on screen that matters for this question: \"{question}\". One or two plain English sentences.",
+            "en-US", Vision.CaptureMainScreen(), "a screenshot of the game the user is playing right now", spoken: false);
+        Log.Write($"Game help: {game.title} ({game.process}); screen: {seen}");
+
+        var language = CultureInfo.GetCultureInfo(languageTag).EnglishName.Split(' ')[0];
+        var system = $"""
+            You are {settings.Name}, helping the user with the game they're playing right now, by voice, while they play.
+            The window in front: "{game.title}" (program: {game.process}). What their screen shows: {seen}
+            Search the web (guides, wikis, forums) unless you're sure, and give the answer that fits where they are now.
+            Answer in {language}: two to four short spoken sentences with concrete steps. Plain speech only: no markdown, lists, emojis or links.
+            """;
+        var body = new JsonObject
+        {
+            ["model"] = Groq.Model,
+            ["reasoning_effort"] = "low",
+            ["messages"] = new JsonArray { Message("system", system), Message("user", question) },
+        };
+        JsonObject? message = null;
+        if (searchAvailable)
+        {
+            var withSearch = (JsonObject)body.DeepClone();
+            withSearch["tools"] = new JsonArray(new JsonObject { ["type"] = "browser_search" });
+            var (status, raw) = await Groq.ChatRawAsync(settings, withSearch);
+            if (status is >= 200 and < 300) message = JsonNode.Parse(raw)!["choices"]![0]!["message"]!.AsObject();
+            else if (status is 400 or 403) searchAvailable = false;
+            else throw Groq.Failure(settings, status, raw);
+        }
+        message ??= await Groq.ChatAsync(settings, body);
+        var answer = message["content"]?.GetValue<string>()?.Trim() ?? "";
+        RememberResult(answer);
+        return Speakable(answer.Length > 0 ? answer : settings.Say("Sorry, I couldn't find an answer for that.", "Sorry, daar kon ik geen antwoord op vinden."));
     }
 
     /// <summary>What the last command came up with, so follow-ups ("copy that", "and in Dutch?") know about it.</summary>
@@ -312,22 +445,31 @@ public static class Assistant
 
         var body = new JsonObject { ["model"] = Groq.Model, ["reasoning_effort"] = "low", ["messages"] = messages };
 
-        JsonObject? message = null;
-        if (searchAvailable)
+        async Task<JsonObject> RequestAsync(JsonArray commands)
         {
-            var tools = CommandTools();
-            tools.Add(new JsonObject { ["type"] = "browser_search" });
-            var withSearch = (JsonObject)body.DeepClone();
-            withSearch["tools"] = tools;
-            var (status, raw) = await Groq.ChatRawAsync(settings, withSearch);
-            if (status is 400 or 403) searchAvailable = false; // web search not allowed on this account; carry on without it
-            else if (status is >= 200 and < 300) message = JsonNode.Parse(raw)!["choices"]![0]!["message"]!.AsObject();
-            else throw Groq.Failure(settings, status, raw);
+            if (searchAvailable)
+            {
+                var withSearch = (JsonObject)body.DeepClone();
+                var tools = (JsonArray)commands.DeepClone();
+                tools.Add(new JsonObject { ["type"] = "browser_search" });
+                withSearch["tools"] = tools;
+                var (status, raw) = await Groq.ChatRawAsync(settings, withSearch);
+                if (status is >= 200 and < 300) return JsonNode.Parse(raw)!["choices"]![0]!["message"]!.AsObject();
+                if (status is not (400 or 403)) throw Groq.Failure(settings, status, raw);
+                searchAvailable = false; // web search not allowed on this account; carry on without it
+            }
+            var plain = (JsonObject)body.DeepClone();
+            plain["tools"] = commands.DeepClone();
+            return await Groq.ChatAsync(settings, plain);
         }
-        if (message == null)
+
+        var commands = CommandsFor(text, out var all);
+        Log.Write($"Commands sent: {(all ? "all" : string.Join(", ", commands.Select(t => t!["function"]!["name"]!.GetValue<string>())))}");
+        var message = await RequestAsync(commands);
+        if (message["tool_calls"]?[0]?["function"]?["name"]?.GetValue<string>() == MoreCommands)
         {
-            body["tools"] = CommandTools();
-            message = await Groq.ChatAsync(settings, body);
+            Log.Write("The AI needed other commands: asking again with all of them");
+            message = await RequestAsync(CommandTools());
         }
 
         Result result;
