@@ -146,29 +146,43 @@ public sealed partial class DaveWindow : Form
                 case "getSettings" or "voices" or "azureVoices" or "preview" or "spotifyConnect" or "saveSettings":
                     _ = OnSettingsMessageAsync(Str("type"), m);
                     return;
-                case "deleteReminder":
-                    if (long.TryParse(Str("id"), out var id)) { settings.Reminders.RemoveAll(r => r.Id == id); settings.Save(); }
-                    break;
-                case "deleteMemory":
-                    settings.Memories.Remove(Str("text"));
-                    settings.Save();
-                    break;
-                case "addMemory":
-                    if (Str("text").Trim().Length > 0) { settings.Memories.Add(Str("text").Trim()); settings.Save(); }
-                    break;
-                case "undislike":
-                    settings.DislikedSongs.RemoveAll(d => d.Title == Str("title") && d.Artist == Str("artist"));
-                    settings.Save();
-                    break;
-                case "stopWatching": Watchers.CancelAll(); break;
-                case "quiet":
-                    settings.QuietUntil = m["on"]?.GetValue<bool>() == true ? DateTime.MaxValue : DateTime.MinValue;
-                    settings.Save();
-                    break;
+                default: ApplyAction(settings, m); break;
             }
             Push();
         }
         catch (Exception e) { Log.Write($"Window message failed: {e.Message}"); }
+    }
+
+    /// <summary>
+    /// Changes made from the window's tabs, or from the iPhone app's: delete a reminder or memory, add a memory, allow a
+    /// song again, stop watching, quiet mode. False when [m] isn't one of these.
+    /// </summary>
+    public static bool ApplyAction(Settings settings, JsonObject m)
+    {
+        string Str(string key) => m[key]?.ToString() ?? "";
+        switch (Str("type"))
+        {
+            case "deleteReminder":
+                if (long.TryParse(Str("id"), out var id)) { settings.Reminders.RemoveAll(r => r.Id == id); settings.Save(); }
+                return true;
+            case "deleteMemory":
+                settings.Memories.Remove(Str("text"));
+                settings.Save();
+                return true;
+            case "addMemory":
+                if (Str("text").Trim().Length > 0) { settings.Memories.Add(Str("text").Trim()); settings.Save(); }
+                return true;
+            case "undislike":
+                settings.DislikedSongs.RemoveAll(d => d.Title == Str("title") && d.Artist == Str("artist"));
+                settings.Save();
+                return true;
+            case "stopWatching": Watchers.CancelAll(); return true;
+            case "quiet":
+                settings.QuietUntil = m["on"]?.GetValue<bool>() == true ? DateTime.MaxValue : DateTime.MinValue;
+                settings.Save();
+                return true;
+            default: return false;
+        }
     }
 
     // --- Dave -> page ---
@@ -182,11 +196,12 @@ public sealed partial class DaveWindow : Form
     public async void Push()
     {
         if (!ready || !Visible) return;
-        try { Send(await StateAsync()); }
+        try { Send(await StateAsync(settings, busy(), status())); }
         catch (Exception e) { Log.Write($"Window update failed: {e}"); }
     }
 
-    private async Task<JsonObject> StateAsync()
+    /// <summary>Everything the window's tabs show (also what the iPhone app shows in its tabs).</summary>
+    public static async Task<JsonObject> StateAsync(Settings settings, bool busy, string status)
     {
         var culture = CultureInfo.GetCultureInfo(settings.IsDutch ? "nl-NL" : "en-GB");
         string When(DateTimeOffset at) =>
@@ -203,8 +218,8 @@ public sealed partial class DaveWindow : Form
             ["name"] = settings.Name,
             ["version"] = Updater.Display,
             ["dutch"] = settings.IsDutch,
-            ["busy"] = busy(),
-            ["status"] = status(),
+            ["busy"] = busy,
+            ["status"] = status,
             ["quiet"] = settings.IsQuiet,
             ["hotkey"] = settings.Hotkey,
             ["theme"] = ThemeJson(Themes.Get(settings.Theme)),

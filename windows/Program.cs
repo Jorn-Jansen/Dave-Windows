@@ -202,7 +202,8 @@ public class DaveApp : ApplicationContext
             try
             {
                 phoneLink = new PhoneLink(settings, question => (Task<string>)bubble.Invoke(() => AskFromPhoneAsync(question)),
-                    (name, args) => (Task<string>)bubble.Invoke(() => CommandFromPhoneAsync(name, args)));
+                    (name, args) => (Task<string>)bubble.Invoke(() => CommandFromPhoneAsync(name, args)),
+                    change => (Task<System.Text.Json.Nodes.JsonObject>)bubble.Invoke(() => StateForPhoneAsync(change)));
             }
             catch (Exception e)
             {
@@ -236,7 +237,10 @@ public class DaveApp : ApplicationContext
         listen: () => { if (session == null) Trigger(); },
         applySettings: ApplySettings,
         busy: () => session != null,
-        status: () => session == null ? "" : Watchdog.Step == "listening" ? "listening" : thinking ? "thinking" : "busy");
+        status: Status);
+
+    /// <summary>What Dave is doing, for his window and the iPhone app: "listening", "thinking", "busy" (e.g. talking) or "" (idle).</summary>
+    private string Status() => session == null ? "" : Watchdog.Step == "listening" ? "listening" : thinking ? "thinking" : "busy";
 
     /// <summary>Dave is working out an answer (not listening, not talking yet): the window shows its three dots only then.</summary>
     private bool thinking;
@@ -400,6 +404,13 @@ public class DaveApp : ApplicationContext
             Log.Write($"iPhone command {name} failed: {e.Message}");
             return e is Groq.GroqException or Spotify.SpotifyException ? e.Message : T("That didn't work on the PC.", "Dat lukte niet op de pc.");
         }
+    }
+
+    /// <summary>The iPhone app's tabs: apply its change (if any, e.g. delete a reminder), then what the tabs show, like Dave's window.</summary>
+    private async Task<System.Text.Json.Nodes.JsonObject> StateForPhoneAsync(System.Text.Json.Nodes.JsonObject? change)
+    {
+        if (change != null && DaveWindow.ApplyAction(settings, change)) window?.Push();
+        return await DaveWindow.StateAsync(settings, session != null, Status());
     }
 
     /// <summary>Ask a typed question (from the settings window).</summary>
