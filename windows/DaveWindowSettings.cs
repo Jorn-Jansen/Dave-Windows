@@ -104,7 +104,12 @@ public sealed partial class DaveWindow
             ["Hotkey"] = settings.Hotkey, ["WindowHotkey"] = settings.WindowHotkey,
             ["WakeWord"] = settings.WakeWord, ["CarefulWakeWord"] = settings.CarefulWakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
             ["CalendarLinks"] = settings.CalendarLinks, ["SpotifyClientId"] = settings.SpotifyClientId,
-            ["Theme"] = settings.Theme,
+            ["Theme"] = settings.Theme, ["PhoneEnabled"] = settings.PhoneEnabled,
+        },
+        ["phone"] = new JsonObject
+        {
+            ["code"] = settings.PhoneEnabled ? PhoneLink.CodeFor(settings) : "",
+            ["addresses"] = new JsonArray(PhoneLink.Addresses().Select(a => (JsonNode)a).ToArray()),
         },
         ["themes"] = new JsonArray(Themes.All.Select(t => (JsonNode)ThemeJson(t)).ToArray()),
         ["voices"] = new JsonObject
@@ -114,7 +119,7 @@ public sealed partial class DaveWindow
         },
         ["spotify"] = Spotify.IsConnected(settings) ? "✅ connected" : "not connected",
         ["redirect"] = Spotify.RedirectUri,
-        ["version"] = Updater.Current.ToString(3),
+        ["version"] = Updater.Display,
     };
 
     /// <summary>A theme for the page: its colours (the page uses them for everything) and whether it's the old look.</summary>
@@ -163,6 +168,7 @@ public sealed partial class DaveWindow
         s.WindowHotkey = Str("WindowHotkey") is { Length: > 0 } windowHotkey ? windowHotkey : "Ctrl+Alt+W";
         s.WakeWord = Bool("WakeWord");
         s.CarefulWakeWord = Bool("CarefulWakeWord");
+        s.PhoneEnabled = Bool("PhoneEnabled");
         s.StartWithWindows = Bool("StartWithWindows");
         s.AutoUpdate = Bool("AutoUpdate");
         s.CalendarLinks = Str("CalendarLinks");

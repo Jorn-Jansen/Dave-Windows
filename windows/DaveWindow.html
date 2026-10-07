@@ -486,6 +486,11 @@ function renderSettings(d) {
   field("StartWithWindows", "Start with Windows", toggle("StartWithWindows"));
   field("AutoUpdate", "Update automatically", toggle("AutoUpdate"), `Now version ${d.version}.`);
 
+  sec("iPhone app");
+  field("PhoneEnabled", "Let the iPhone app connect", toggle("PhoneEnabled"),
+    d.phone.code ? `In the app: PC address ${d.phone.addresses.join(" or ")}, code ${d.phone.code}. Windows may ask to allow Dave on your network the first time: allow it.`
+                 : "Turn on and save: the address and code for the app show up here. The phone and PC need to be on the same Wi-Fi (or both on Tailscale).");
+
   sec("Calendar");
   field("CalendarLinks", "Calendar link (iCal)", text("CalendarLinks", "https://calendar.google.com/calendar/ical/…/basic.ics"),
     "Google Calendar: Settings → your calendar → “Secret address in iCal format”. Outlook: Settings → Calendar → Shared calendars → Publish → ICS. Several: separate with spaces.");

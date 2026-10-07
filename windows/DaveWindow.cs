@@ -201,7 +201,7 @@ public sealed partial class DaveWindow : Form
         {
             ["type"] = "state",
             ["name"] = settings.Name,
-            ["version"] = Updater.Current.ToString(3),
+            ["version"] = Updater.Display,
             ["dutch"] = settings.IsDutch,
             ["busy"] = busy(),
             ["status"] = status(),
