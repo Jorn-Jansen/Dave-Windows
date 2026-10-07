@@ -9,6 +9,10 @@ A voice assistant for Windows. Talk to him with a shortcut or a wake word, in En
 
 Dave updates himself when a new version is released. To remove him: Settings → Apps → Dave.
 
+### On your iPhone (beta)
+**[Dave for iPhone](https://github.com/Jorn-Jansen/Dave-iPhone)**: talk to Dave on your phone, and let him do things on your PC
+("pause the music on my PC", "lock my PC"). Needs Dave 1.4.0 beta 1 or newer on the PC (Settings → iPhone app).
+
 ## Use
 - Press **Ctrl+Alt+D** (works in games too), say **"Hey Dave"** (if turned on), or click the tray icon.
 - Talk after the beep. Press the shortcut again or click the bubble to cancel.
