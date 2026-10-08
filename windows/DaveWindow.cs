@@ -222,6 +222,7 @@ public sealed partial class DaveWindow : Form
             ["status"] = status,
             ["quiet"] = settings.IsQuiet,
             ["hotkey"] = settings.Hotkey,
+            ["addresses"] = new JsonArray(PhoneLink.Addresses().Select(a => (JsonNode)a).ToArray()), // for the iPhone app (home and Tailscale)
             ["theme"] = ThemeJson(Themes.Get(settings.Theme)),
             ["chat"] = Array(ConversationLog.Recent(150), e => new JsonObject
             {
