@@ -19,11 +19,13 @@ internal static class Palette
     public static Color Deep { get; private set; } = Color.FromArgb(16, 10, 38);
     /// <summary>The old look (before 1.3): a bright gradient pill and a microphone, no orb.</summary>
     public static bool Legacy { get; private set; }
+    /// <summary>Which theme ("aurora", "ember"…): each has its own effects around the bubble.</summary>
+    public static string Id { get; private set; } = "aurora";
 
     public static void Use(string themeId)
     {
         var theme = Themes.Get(themeId);
-        (Purple, Violet, Pink, Cyan, Deep, Legacy) = (theme.Main, theme.Middle, theme.Accent, theme.Bright, theme.Deep, theme.Legacy);
+        (Purple, Violet, Pink, Cyan, Deep, Legacy, Id) = (theme.Main, theme.Middle, theme.Accent, theme.Bright, theme.Deep, theme.Legacy, theme.Id);
     }
 
     public static Color WithAlpha(Color c, int alpha) => Color.FromArgb(Math.Clamp(alpha, 0, 255), c.R, c.G, c.B);
@@ -60,9 +62,9 @@ public static class Themes
 /// with the answer. Comes with a soft purple/cyan glow around the edges of the main monitor, like Siri.
 /// Never takes focus away from your game or app.
 /// </summary>
-public class Bubble : LayeredWindow
+public partial class Bubble : LayeredWindow
 {
-    private const int HaloMargin = 34;           // room around the shape for its halo
+    private const int HaloMargin = 58;           // room around the shape for its halo, the sound ring, ripples and sparks
     private const float CircleSize = 92f;
     private const float OrbSize = 30f;           // Dave's little orb in front of the text
     private const float PillPadding = 18f, OrbGap = 14f;
@@ -79,6 +81,20 @@ public class Bubble : LayeredWindow
     private bool listening;
     private string text = "";
     private SizeF size = new(CircleSize, CircleSize), targetSize = new(CircleSize, CircleSize);
+    private SizeF velocity;       // the shape moves like a spring: it overshoots a little and settles, instead of sliding
+
+    // Effects: sparks, the sound ring around the listening orb, ripples when you talk loudly, the thinking comet
+    // A particle of the theme's effect (an ember, a drip, a petal, a shooting star): X/Y from the shape's centre
+    private sealed class Spark { public float X, Y, VX, VY, Life, Max, Size, Rot, Spin; public char Kind; }
+    private readonly List<Spark> sparks = new();
+    private readonly Random random = new();
+    private readonly float[] levels = new float[64]; // the last second of voice levels, for the sound ring
+    private int levelIndex;
+    private readonly List<float> ripples = new();     // when each ripple started
+    private float lastRipple = -10;
+
+    /// <summary>Dave is working out an answer: a comet races around the pill and a sheen sweeps across it.</summary>
+    public volatile bool Thinking;
     private float contentAlpha;   // text / microphone fade-in, 0..1
     private float opacity, targetOpacity;
 
@@ -162,8 +178,12 @@ public class Bubble : LayeredWindow
         if (IsSuppressed) { Log.Write("Bubble kept away: Dave's window is in front"); return; } // the window shows this instead
         if (!Visible)
         {
-            // Start from a small circle so the first shape grows in.
-            size = new SizeF(CircleSize * 0.6f, CircleSize * 0.6f);
+            // Start from a small circle so the first shape springs in, with a burst of sparks
+            size = new SizeF(CircleSize * 0.45f, CircleSize * 0.45f);
+            velocity = SizeF.Empty;
+            sparks.Clear();
+            ripples.Clear();
+            Burst();
             Show();
         }
         targetOpacity = 1;
@@ -200,11 +220,20 @@ public class Bubble : LayeredWindow
         }
         float t = (float)(DateTime.Now - started).TotalSeconds;
 
-        // Ease the shape towards its target (circle <-> pill), then fade the content in.
-        size = new SizeF(size.Width + (targetSize.Width - size.Width) * 0.2f, size.Height + (targetSize.Height - size.Height) * 0.2f);
-        bool settled = Math.Abs(size.Width - targetSize.Width) < 10 && Math.Abs(size.Height - targetSize.Height) < 6;
+        // Spring the shape towards its target (circle <-> pill), then fade the content in.
+        const float Stiffness = 0.15f, Damping = 0.74f;
+        velocity = new SizeF((velocity.Width + (targetSize.Width - size.Width) * Stiffness) * Damping,
+                             (velocity.Height + (targetSize.Height - size.Height) * Stiffness) * Damping);
+        size = new SizeF(Math.Max(20, size.Width + velocity.Width), Math.Max(20, size.Height + velocity.Height));
+        bool settled = Math.Abs(size.Width - targetSize.Width) < 12 && Math.Abs(size.Height - targetSize.Height) < 8;
         if (settled) contentAlpha = Math.Min(1, contentAlpha + 0.12f);
         opacity += (targetOpacity - opacity) * 0.2f;
+
+        float voice = listening ? Recorder.Level : Speaker.Level;
+        levels[levelIndex++ % levels.Length] = voice;
+        if (listening && voice > 0.38f && t - lastRipple > 0.42f) { ripples.Add(t); lastRipple = t; } // a ripple when you talk loudly
+        ripples.RemoveAll(start => t - start > 1.3f);
+        UpdateEffects(voice, t);
 
         if (targetOpacity == 0 && opacity < 0.02f)
         {
@@ -238,11 +267,26 @@ public class Bubble : LayeredWindow
         float radius = Math.Min(size.Height / 2f, 34f);
         float voice = listening ? Recorder.Level : Speaker.Level; // you while listening, Dave while he talks
 
+        if (!Palette.Legacy) DrawThemeBehind(g, shape, radius, voice, t); // northern lights, flames, the water surface
         if (Palette.Legacy) DrawLegacy(g, shape, voice, t);
         else if (listening && size.Width < CircleSize * 1.4f) DrawListening(g, shape, voice, t);
         else DrawPill(g, shape, radius, voice, t);
+        if (!Palette.Legacy) DrawThemeFront(g, shape, t); // embers, drips, petals, shooting stars
 
         Present(surface, BottomCenter(width, height), (byte)(opacity * 255));
+    }
+
+    private static Color Lighter(Color c) => Color.FromArgb((c.R + 255 * 2) / 3, (c.G + 255 * 2) / 3, (c.B + 255 * 2) / 3);
+
+    /// <summary>The colour at [u] (0..1) along Dave's gradient: purple → pink → cyan → purple.</summary>
+    private static Color Along(float u)
+    {
+        var stops = new[] { Palette.Purple, Palette.Pink, Palette.Cyan, Palette.Purple };
+        u = (u - MathF.Floor(u)) * (stops.Length - 1);
+        int i = (int)u;
+        float f = u - i;
+        Color a = stops[i], b = stops[Math.Min(i + 1, stops.Length - 1)];
+        return Color.FromArgb((int)(a.R + (b.R - a.R) * f), (int)(a.G + (b.G - a.G) * f), (int)(a.B + (b.B - a.B) * f));
     }
 
     /// <summary>The Legacy theme: the original look, a bright gradient circle with a microphone that becomes a gradient pill.</summary>
@@ -299,6 +343,34 @@ public class Bubble : LayeredWindow
                 FocusScales = new PointF(0.7f, 0.7f),
             };
             g.FillPath(glowBrush, glowPath);
+        }
+
+        // Ripples spreading out when you talk loudly
+        foreach (var start in ripples)
+        {
+            float age = (t - start) / 1.3f, rr = r + 6 + age * 62, fade = (1 - age) * (1 - age);
+            using var ripplePen = new Pen(Palette.WithAlpha(Along(age * 0.6f + 0.4f), (int)(200 * fade)), 0.8f + 2.6f * (1 - age));
+            g.DrawEllipse(ripplePen, cx - rr, cy - rr, rr * 2, rr * 2);
+        }
+
+        // The sound ring: bars around the orb that move with your voice (the last second of it), slowly turning
+        if (contentAlpha > 0)
+        {
+            const int Bars = 60;
+            for (int i = 0; i < Bars; i++)
+            {
+                int k = i < Bars / 2 ? i : Bars - 1 - i; // mirrored, so both halves dance together
+                float heard = levels[((levelIndex - 1 - k) % levels.Length + levels.Length) % levels.Length];
+                float wobble = 0.5f + 0.5f * MathF.Sin(t * 5.2f + i * 0.77f);
+                float length = 3f + heard * 34 * (0.55f + 0.45f * wobble) + 2.4f * wobble;
+                float a = i * MathF.Tau / Bars + t * 0.35f;
+                float inner = r + 8, outer = inner + length;
+                using (var barGlow = new Pen(Palette.WithAlpha(Along(i / (float)Bars + t * 0.05f), (int)(70 * contentAlpha)), 7f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                    g.DrawLine(barGlow, cx + MathF.Cos(a) * inner, cy + MathF.Sin(a) * inner, cx + MathF.Cos(a) * outer, cy + MathF.Sin(a) * outer);
+                using var bar = new Pen(Palette.WithAlpha(Along(i / (float)Bars + t * 0.05f), (int)(240 * contentAlpha)), 2.8f)
+                { StartCap = LineCap.Round, EndCap = LineCap.Round };
+                g.DrawLine(bar, cx + MathF.Cos(a) * inner, cy + MathF.Sin(a) * inner, cx + MathF.Cos(a) * outer, cy + MathF.Sin(a) * outer);
+            }
         }
 
         DrawOrb(g, circle, t, level, 1f);
@@ -389,17 +461,71 @@ public class Bubble : LayeredWindow
             using var spotBrush = new PathGradientBrush(spot) { CenterColor = Palette.WithAlpha(Palette.Bright(), 40), SurroundColors = new[] { Color.Transparent } };
             g.FillPath(spotBrush, spot);
         }
+        // Thinking: a sheen of light sweeping across the glass, over and over
+        if (Thinking)
+        {
+            float sweep = (t * 0.75f) % 1.35f / 1.35f;
+            float sx = shape.X - 120 + sweep * (shape.Width + 240);
+            var band = new RectangleF(sx - 75, shape.Y, 150, shape.Height);
+            using var sheenBand = new LinearGradientBrush(RectangleF.Inflate(band, 1, 1), Color.Transparent, Color.Transparent, 0f)
+            {
+                InterpolationColors = new ColorBlend
+                {
+                    Colors = new[] { Color.FromArgb(0, 255, 255, 255), Color.FromArgb(78, 255, 255, 255), Color.FromArgb(0, 255, 255, 255) },
+                    Positions = new[] { 0f, 0.5f, 1f },
+                },
+            };
+            g.FillRectangle(sheenBand, band);
+        }
+        // Talking: a line along the bottom that waves with Dave's voice, running into the pill's round ends (cut off by its edge)
+        if (!listening && contentAlpha > 0 && shape.Width > 2 * radius + 20)
+        {
+            float amp = 1.2f + level * 5.5f, y0 = shape.Bottom - 6;
+            var wave = new List<PointF>();
+            for (float x = shape.X - 12; x <= shape.Right + 12; x += 3)
+                wave.Add(new PointF(x, y0 + MathF.Sin(x * 0.055f + t * 8.5f) * amp + MathF.Sin(x * 0.12f - t * 5.3f) * amp * 0.45f));
+            if (wave.Count > 1)
+            {
+                using var waveBrush = Gradient(new RectangleF(shape.X, y0 - 6, shape.Width, 12), 0, (int)(Math.Min(255, 240 * contentAlpha * (0.55f + level))));
+                using var wavePen = new Pen(waveBrush, 2.4f);
+                g.DrawCurve(wavePen, wave.ToArray(), 0.5f);
+            }
+        }
         g.Restore(state);
         // The shining edge
         using (var edgeBrush = Gradient(shape, spin, 235))
         using (var edge = new Pen(edgeBrush, 1.8f + level * 1.2f))
             g.DrawPath(edge, path);
 
+        // Thinking: two comets racing around the edge, with glowing tails
+        if (Thinking) DrawComets(g, path, t);
+
         // Dave's little orb in front of the text
         var orb = new RectangleF(shape.X + PillPadding - 2, shape.Y + Math.Min(shape.Height / 2, 32) - OrbSize / 2, OrbSize, OrbSize);
         if (shape.Width > OrbSize + PillPadding * 2) DrawOrb(g, orb, t * 1.4f, Math.Max(level, 0.15f), Math.Min(1f, contentAlpha * 1.5f));
 
         DrawText(g, shape);
+    }
+
+    /// <summary>Two comets racing around [path] in Dave's colours, each with a tail that fades out behind it.</summary>
+    private static void DrawComets(Graphics g, GraphicsPath path, float t)
+    {
+        using var flat = (GraphicsPath)path.Clone();
+        flat.Flatten(null, 0.4f);
+        var points = flat.PathPoints;
+        if (points.Length < 8) return;
+        foreach (var (offset, colour) in new[] { (0f, Palette.Cyan), (0.5f, Palette.Pink) })
+        {
+            float head = ((t * 0.62f + offset) % 1f) * points.Length;
+            const int Tail = 34;
+            for (int i = Tail; i >= 0; i--)
+            {
+                var p = points[((int)(head - i * points.Length / 90f) % points.Length + points.Length) % points.Length];
+                float f = 1 - i / (float)Tail, glowSize = 3 + 11 * f, core = 1f + 3.4f * f;
+                using (var glowBrush = new SolidBrush(Palette.WithAlpha(colour, (int)(115 * f * f)))) g.FillEllipse(glowBrush, p.X - glowSize, p.Y - glowSize, glowSize * 2, glowSize * 2);
+                using (var coreBrush = new SolidBrush(Color.FromArgb((int)(255 * f), Lighter(colour)))) g.FillEllipse(coreBrush, p.X - core, p.Y - core, core * 2, core * 2);
+            }
+        }
     }
 
     private Point BottomCenter(int width, int height)
@@ -494,8 +620,12 @@ public class Glow : LayeredWindow
 
     public Glow() : base(clickThrough: true) { }
 
+    /// <summary>When the glow last appeared: two streaks of light then race from the bottom up both sides.</summary>
+    private static double introAt = -10;
+
     public void FadeIn()
     {
+        if (!Visible || targetOpacity == 0) introAt = Clock.Elapsed.TotalSeconds;
         if (!Visible) Show();
         handle = Handle;
         lock (sync)
@@ -537,7 +667,7 @@ public class Glow : LayeredWindow
                     small = new Surface((bounds.Width + Detail - 1) / Detail, (bounds.Height + Detail - 1) / Detail);
                     small.Graphics.ScaleTransform(1f / Detail, 1f / Detail);
                 }
-                Draw(small.Graphics, new Rectangle(0, 0, bounds.Width, bounds.Height), (float)now, Level);
+                Draw(small.Graphics, new Rectangle(0, 0, bounds.Width, bounds.Height), (float)now, Level, (float)(now - introAt));
                 ScaleUp(small, full);
                 Present(handle, full, bounds.Location, (byte)(Math.Clamp(opacity, 0, 1) * 255));
                 WaitForScreen(vsyncs);
@@ -558,11 +688,34 @@ public class Glow : LayeredWindow
         try { BeginInvoke(() => { if (failed || targetOpacity == 0) Hide(); }); } catch { } // already gone while shutting down
     }
 
-    /// <summary>One frame, in full-screen coordinates. [level] is how loud you're talking (0..1).</summary>
-    private static void Draw(Graphics g, Rectangle rect, float t, float level)
+    /// <summary>One frame, in full-screen coordinates. [level] is how loud you're talking (0..1), [sinceIntro] the seconds since it appeared.</summary>
+    private static void Draw(Graphics g, Rectangle rect, float t, float level, float sinceIntro)
     {
         g.Clear(Color.Transparent);
         g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        // Appearing: two streaks of light race from the bottom middle up both sides and meet at the top
+        const float IntroSeconds = 1.25f;
+        if (sinceIntro is >= 0 and < IntroSeconds)
+        {
+            float p = sinceIntro / IntroSeconds, eased = 1 - (1 - p) * (1 - p) * (1 - p); // fast start, gentle finish
+            float bottomMiddle = (1.5f * rect.Width + rect.Height) / (2f * (rect.Width + rect.Height));
+            float fade = p < 0.8f ? 1 : (1 - p) / 0.2f;
+            foreach (var (direction, colour) in new[] { (1f, Palette.Cyan), (-1f, Palette.Pink) })
+                for (int i = 0; i < 7; i++) // the streak and its tail
+                {
+                    var at = Perimeter(rect, bottomMiddle + direction * Math.Max(0, eased - i * 0.018f) * 0.5f);
+                    float r = (190 - i * 18) * (1 + level * 0.4f);
+                    using var streakPath = new GraphicsPath();
+                    streakPath.AddEllipse(at.X - r, at.Y - r, r * 2, r * 2);
+                    using var streak = new PathGradientBrush(streakPath)
+                    {
+                        CenterColor = Palette.WithAlpha(i == 0 ? Color.White : colour, (int)((i == 0 ? 150 : 120 - i * 14) * fade)),
+                        SurroundColors = new[] { Color.Transparent },
+                    };
+                    g.FillPath(streak, streakPath);
+                }
+        }
 
         // Soft blobs that drift around the edges, so the colours sway instead of sitting still.
         var blobs = new[] { (Palette.Purple, 0.00f, 0.031f), (Palette.Cyan, 0.36f, -0.024f), (Palette.Pink, 0.70f, 0.019f) };
