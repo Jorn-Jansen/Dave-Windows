@@ -223,6 +223,7 @@ public sealed partial class DaveWindow : Form
             ["quiet"] = settings.IsQuiet,
             ["hotkey"] = settings.Hotkey,
             ["addresses"] = new JsonArray(PhoneLink.Addresses().Select(a => (JsonNode)a).ToArray()), // for the iPhone app (home and Tailscale)
+            ["ntfyTopic"] = settings.PhoneNotify ? PhoneNotify.TopicFor(settings) : "", // the phone's notifications channel (ntfy)
             ["theme"] = ThemeJson(Themes.Get(settings.Theme)),
             ["chat"] = Array(ConversationLog.Recent(150), e => new JsonObject
             {

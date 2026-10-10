@@ -8,6 +8,12 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        // Explorer → Send to → My iPhone (Dave): send the files to the phone, show a short "sent" and quit (also while Dave runs)
+        if (args.Length >= 1 && args[0] == "--send-to-phone")
+        {
+            SendToPhone(args.Skip(1).ToArray());
+            return;
+        }
         // Testing: Dave.exe --ask "question" answers one typed question and quits.
         var test = args.Length == 2 && args[0] == "--ask" ? args[1] : null;
         using var single = new Mutex(true, test == null ? "DaveWindows-single-instance" : "DaveWindows-test", out var first);
@@ -23,6 +29,24 @@ internal static class Program
         var app = new DaveApp(test);
         Watchdog.Start();
         Application.Run(app);
+    }
+
+    private static void SendToPhone(string[] files)
+    {
+        ApplicationConfiguration.Initialize();
+        var settings = Settings.Load();
+        var problems = new List<string>();
+        var sent = 0;
+        foreach (var file in files.Where(File.Exists))
+        {
+            var why = PhoneNotify.SendFileAsync(settings, File.ReadAllBytes(file), Path.GetFileName(file)).GetAwaiter().GetResult();
+            if (why == null) sent++; else problems.Add(why);
+        }
+        using var tray = new NotifyIcon { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath), Visible = true };
+        tray.ShowBalloonTip(4000, settings.Name, problems.Count > 0 ? problems[0]
+            : settings.Say($"Sent {sent} {(sent == 1 ? "file" : "files")} to your phone.", $"{sent} {(sent == 1 ? "bestand" : "bestanden")} naar je telefoon gestuurd."),
+            problems.Count > 0 ? ToolTipIcon.Warning : ToolTipIcon.Info);
+        Thread.Sleep(4500);
     }
 }
 
@@ -88,7 +112,11 @@ public class DaveApp : ApplicationContext
     {
         Ducker.RestoreAfterCrash(); // in case Dave was closed while other sound was turned down
         Palette.Use(settings.Theme);
-        Watchers.Triggered += message => bubble.BeginInvoke(() => headsUps.Enqueue(message)); // said at the next tick, when Dave is free
+        Watchers.Triggered += message =>
+        {
+            bubble.BeginInvoke(() => headsUps.Enqueue(message)); // said at the next tick, when Dave is free
+            PhoneNotify.Send(settings, "👀 " + settings.Name, message); // and on the phone, when you're not at the PC
+        };
         ConversationLog.Added += () => thinking = false; // the answer is there: no more "thinking" dots
         bubble.Suppressed = WindowOpen;
         if (testQuestion == null)
@@ -182,6 +210,8 @@ public class DaveApp : ApplicationContext
             catch (Exception e) { Log.Write($"Wake word failed: {e}"); }
         }
 
+        PhoneNotify.UpdateSendToShortcut(settings); // Explorer → Send to → My iPhone (Dave), while notifications on the phone are on
+
         phoneLink?.Dispose();
         phoneLink = null;
         if (settings.PhoneEnabled)
@@ -203,7 +233,8 @@ public class DaveApp : ApplicationContext
             {
                 phoneLink = new PhoneLink(settings, question => (Task<string>)bubble.Invoke(() => AskFromPhoneAsync(question)),
                     (name, args) => (Task<string>)bubble.Invoke(() => CommandFromPhoneAsync(name, args)),
-                    change => (Task<System.Text.Json.Nodes.JsonObject>)bubble.Invoke(() => StateForPhoneAsync(change)));
+                    change => (Task<System.Text.Json.Nodes.JsonObject>)bubble.Invoke(() => StateForPhoneAsync(change)),
+                    item => (Task<string>)bubble.Invoke(() => ReceiveFromPhoneAsync(item)));
             }
             catch (Exception e)
             {
@@ -406,6 +437,54 @@ public class DaveApp : ApplicationContext
         }
     }
 
+    /// <summary>
+    /// "Send this to my PC" from the iPhone: a link opens in the browser, text goes on the clipboard, a photo or file is
+    /// saved in Downloads\From iPhone. Only the bubble shows it, so nothing pops up over a game.
+    /// </summary>
+    private async Task<string> ReceiveFromPhoneAsync(System.Text.Json.Nodes.JsonObject item)
+    {
+        var kind = item["kind"]?.ToString() ?? "";
+        try
+        {
+            string done;
+            switch (kind)
+            {
+                case "url":
+                    var url = item["text"]?.ToString() ?? "";
+                    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+                        return T("That's not a web address.", "Dat is geen webadres.");
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.ToString()) { UseShellExecute = true });
+                    done = T($"Opened {uri.Host} on your PC.", $"{uri.Host} geopend op je pc.");
+                    break;
+                case "text":
+                    Clipboard.SetText(item["text"]?.ToString() ?? "");
+                    done = T("It's on your PC's clipboard: paste it with Ctrl+V.", "Het staat op het klembord van je pc: plak het met Ctrl+V.");
+                    break;
+                case "file":
+                    var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "From iPhone");
+                    Directory.CreateDirectory(folder);
+                    var name = string.Concat((item["name"]?.ToString() is { Length: > 0 } n ? Path.GetFileName(n) : "file").Split(Path.GetInvalidFileNameChars()));
+                    var file = Path.Combine(folder, name);
+                    for (int i = 2; File.Exists(file); i++) file = Path.Combine(folder, $"{Path.GetFileNameWithoutExtension(name)} ({i}){Path.GetExtension(name)}");
+                    await File.WriteAllBytesAsync(file, Convert.FromBase64String(item["data"]?.ToString() ?? ""));
+                    done = T($"Saved {Path.GetFileName(file)} on your PC, in Downloads\\From iPhone.", $"{Path.GetFileName(file)} opgeslagen op je pc, in Downloads\\From iPhone.");
+                    break;
+                default:
+                    return T("I don't know what to do with that.", "Ik weet niet wat ik daarmee moet.");
+            }
+            bubble.ShowText("📱 " + done);
+            bubble.HideAfter(3000);
+            ConversationLog.Add($"📱 (sent from the iPhone: {kind})", done);
+            await Task.CompletedTask;
+            return done;
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Receiving from the iPhone failed: {e.Message}");
+            return T("That didn't arrive properly on the PC.", "Dat kwam niet goed aan op de pc.");
+        }
+    }
+
     /// <summary>The iPhone app's tabs: apply its change (if any, e.g. delete a reminder), then what the tabs show, like Dave's window.</summary>
     private async Task<System.Text.Json.Nodes.JsonObject> StateForPhoneAsync(System.Text.Json.Nodes.JsonObject? change)
     {
@@ -584,7 +663,7 @@ public class DaveApp : ApplicationContext
                     return;
                 }
                 if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation" or "screen_time" or "internet_speed" or "read_file"
-                        or "read_page" or "read_notifications" or "game_help"
+                        or "read_page" or "read_notifications" or "game_help" or "where_left_off" or "send_to_phone"
                     ||(command.Name == "calendar" && command.Args["action"]?.ToString() != "add" && CalendarFeed.Links(settings).Count > 0))
                 {
                     Log.Write($"Command {command.Name} {command.Args.ToJsonString()}");
@@ -624,6 +703,18 @@ public class DaveApp : ApplicationContext
                     {
                         Watchdog.Step = "reading the page";
                         answer = await ReadPageAsync(command.Args["question"]?.ToString() is { Length: > 0 } q ? q : text, language);
+                    }
+                    else if (command.Name == "send_to_phone")
+                    {
+                        Watchdog.Step = "sending to the phone";
+                        answer = await SendToPhoneAsync(command.Args);
+                    }
+                    else if (command.Name == "where_left_off")
+                    {
+                        Watchdog.Step = "looking at what you were doing";
+                        answer = await Assistant.WorkOnAsync(settings, command.Args["question"]?.ToString() is { Length: > 0 } wq ? wq : text,
+                            WhereLeftOff(), "what the user was doing on their PC (measured by Dave); mention the apps, pages and song that matter, " +
+                            "and offer to reopen them if they're closed", language, spoken: true);
                     }
                     else if (command.Name == "game_help")
                     {
@@ -707,6 +798,76 @@ public class DaveApp : ApplicationContext
                 return;
             }
         }
+    }
+
+    /// <summary>"Send this to my phone": what's copied (link, text, picture or a copied file), a screenshot, a file, or text.</summary>
+    private async Task<string> SendToPhoneAsync(System.Text.Json.Nodes.JsonObject args)
+    {
+        if (PhoneNotify.NotReady(settings) is { } notReady) return notReady;
+        static bool IsLink(string t) => !t.Contains(' ') && Uri.TryCreate(t.Trim(), UriKind.Absolute, out var u) && u.Scheme is "http" or "https";
+        string? why;
+        string sent;
+        switch (args["what"]?.ToString())
+        {
+            case "screenshot":
+                bubble.ShowText("📸 " + T("Sending a screenshot to your phone…", "Ik stuur een screenshot naar je telefoon…"));
+                why = await PhoneNotify.SendFileAsync(settings, Convert.FromBase64String(Vision.CaptureMainScreen()), $"Screenshot {DateTime.Now:yyyy-MM-dd HH.mm}.jpg");
+                sent = T("the screenshot", "de screenshot");
+                break;
+            case "file":
+                var target = FileFinder.DirectPath(args["path"]?.ToString() is { Length: > 0 } p ? p : args["name"]?.ToString() ?? "", out _);
+                if (target == null || !File.Exists(target))
+                {
+                    var found = await FileFinder.FindAsync(args["name"]?.ToString() ?? "", "any", newest: false);
+                    target = found.Select(f => f.Path).FirstOrDefault(File.Exists);
+                }
+                if (target == null) return T("I couldn't find that file.", "Ik kon dat bestand niet vinden.");
+                bubble.ShowText("📎 " + T($"Sending {Path.GetFileName(target)} to your phone…", $"Ik stuur {Path.GetFileName(target)} naar je telefoon…"));
+                why = await PhoneNotify.SendFileAsync(settings, await File.ReadAllBytesAsync(target), Path.GetFileName(target));
+                sent = Path.GetFileName(target);
+                break;
+            case "text":
+                var text = args["text"]?.ToString()?.Trim() ?? "";
+                if (text.Length == 0) return T("I didn't get what to send.", "Ik snapte niet wat ik moest sturen.");
+                why = IsLink(text) ? await PhoneNotify.SendLinkAsync(settings, text.Trim()) : await PhoneNotify.SendTextAsync(settings, text);
+                sent = IsLink(text) ? T("the link", "de link") : T("it", "het");
+                break;
+            default: // what's copied
+                if (Clipboard.ContainsFileDropList() && Clipboard.GetFileDropList() is { Count: > 0 } files && File.Exists(files[0]))
+                {
+                    why = await PhoneNotify.SendFileAsync(settings, await File.ReadAllBytesAsync(files[0]!), Path.GetFileName(files[0]!));
+                    sent = Path.GetFileName(files[0]!);
+                }
+                else if (Clipboard.ContainsImage() && Clipboard.GetImage() is { } image)
+                {
+                    using (image)
+                        why = await PhoneNotify.SendFileAsync(settings, Vision.ToJpeg(image), "Copied picture.jpg");
+                    sent = T("the picture", "de afbeelding");
+                }
+                else if (Clipboard.ContainsText() && Clipboard.GetText().Trim() is { Length: > 0 } copied)
+                {
+                    why = IsLink(copied) ? await PhoneNotify.SendLinkAsync(settings, copied) : await PhoneNotify.SendTextAsync(settings, copied);
+                    sent = IsLink(copied) ? T("the link", "de link") : T("what you copied", "wat je kopieerde");
+                }
+                else return T("Nothing is copied right now.", "Er is nu niets gekopieerd.");
+                break;
+        }
+        return why ?? T($"Sent {sent} to your phone.", $"{char.ToUpper(sent[0])}{sent[1..]} staat op je telefoon.");
+    }
+
+    /// <summary>"Where did I leave off?": the apps used last (with times), what's open now, the browser pages, the music, what was asked.</summary>
+    private static string WhereLeftOff()
+    {
+        var text = new System.Text.StringBuilder($"Now it's {DateTime.Now:ddd HH:mm}.\n");
+        var sessions = ScreenTime.RecentSessions(TimeSpan.FromHours(12)).Where(s => (s.to - s.from).TotalSeconds >= 20).Take(12).ToList();
+        text.AppendLine("Apps the user used last (newest first): " + (sessions.Count == 0 ? "none measured since Dave started"
+            : string.Join("; ", sessions.Select(s => $"{s.app} {s.from:HH:mm}-{s.to:HH:mm}"))));
+        var windows = WindowList.List().Where(w => w.title.Length > 1 && w.process is not ("explorer" or "TextInputHost" or "SystemSettings")).Take(15).ToList();
+        text.AppendLine("Windows open now (front first): " + (windows.Count == 0 ? "none" : string.Join("; ", windows.Select(w => $"{w.title} ({w.process})"))));
+        if (MusicWatcher.Recent(4) is { Count: > 0 } songs)
+            text.AppendLine("Songs that played last: " + string.Join("; ", songs.Select(p => $"\"{p.Title}\" by {p.Artist} at {p.At:HH:mm}")));
+        if (ConversationLog.RecentTopics() is { } asked) text.AppendLine("What the user asked Dave last: " + asked);
+        return text.ToString();
     }
 
     /// <summary>
@@ -905,7 +1066,12 @@ public class DaveApp : ApplicationContext
         var due = Reminders.TakeDue(settings);
         foreach (var r in due.Where(r => r.Action.Length > 0)) dueActions.Enqueue(r.Action);
         due.RemoveAll(r => r.Action.Length > 0);
-        if (due.Count > 0) { _ = RunSessionAsync(null, string.Join(". ", due.Select(r => r.Message))); return; }
+        if (due.Count > 0)
+        {
+            foreach (var r in due) PhoneNotify.Send(settings, "⏰ " + settings.Name, r.Message); // also on the phone when you're away
+            _ = RunSessionAsync(null, string.Join(". ", due.Select(r => r.Message)));
+            return;
+        }
         if (dueActions.Count > 0)
         {
             // "Lock my PC in 10 minutes": now it's time, so it's asked as if you said it just now (one per tick)

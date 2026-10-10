@@ -127,6 +127,24 @@ public static class Assistant
         Tool("open_website", "Open a website or web search.",
             new JsonObject { ["url"] = Str("Address of a specific site"), ["search"] = Str("Search words"), ["browser"] = Str("Only if the user named one") }),
         Tool("lock_pc", "Lock the PC."),
+        Tool("power", "Turn the PC off, restart it or put it to sleep, now or after some minutes ('turn off my PC in 30 minutes'), or cancel that.",
+            new JsonObject
+            {
+                ["action"] = Enum("shutdown", "restart", "sleep", "cancel"),
+                ["minutes"] = Int("From now; 0 = right away"),
+            }, "action"),
+        Tool("send_to_phone", "Send something from the PC to the user's phone (it arrives as a notification): what they copied " +
+            "(a link, text or a picture), a screenshot, a file, or text you give (e.g. your previous answer, 'send that to my phone').",
+            new JsonObject
+            {
+                ["what"] = Enum("clipboard", "screenshot", "file", "text"),
+                ["text"] = Str("text: exactly what to send (a link is sent as a link)"),
+                ["path"] = Str("file: the full path if the user gave one"),
+                ["name"] = Str("file: otherwise (part of) the file name, e.g. 'report.pdf'"),
+            }, "what"),
+        Tool("where_left_off","Where the user left off on the PC: the apps they used last, the pages and windows open, the song: " +
+            "'where did I leave off', 'what was I doing', 'what did I have open'. After it, open_app / open_website can reopen things.",
+            new JsonObject { ["question"] = Str("The user's question, in their own words") }, "question"),
         Tool("read_file", "Read a file or folder yourself and answer about its contents: rate, review, summarise, explain, find mistakes, " +
             "'what's in this folder'. Text, code, Word, PDF and images. Use this, not opening it, when they want YOUR opinion or answer.",
             new JsonObject
@@ -266,6 +284,15 @@ public static class Assistant
         (Words("open", "start", "launch", "close", "sluit", "quit", "afsluit", "lock", "vergrendel", "op slot", "app", "program", "website", "site",
                "google", "youtube", "browser", "chrome", "discord", "roblox", "steam", "search", "zoek"),
             new[] { "open_app", "open_website", "lock_pc", "close_app", "close_all_apps" }),
+        (Words("shut down", "shutdown", "turn off", "turn it off", "power off", "restart", "reboot", "sleep", "afsluiten", "uitzetten", "zet uit",
+               "zet mijn pc uit", "herstart", "opnieuw opstarten", "slaapstand", "slapen", "cancel the", "annuleer"),
+            new[] { "power" }),
+        (Words("to my phone", "to my iphone", "to my mobile", "naar mijn telefoon", "naar mijn iphone", "naar m'n telefoon", "op mijn telefoon",
+               "on my phone", "to the phone", "naar de telefoon"),
+            new[] { "send_to_phone" }),
+        (Words("left off", "leave off", "was i doing", "was ik aan het doen", "had open", "had i open", "had ik open", "gebleven", "waar was ik",
+               "where was i", "reopen", "heropen", "weer open"),
+            new[] { "where_left_off", "open_app", "open_website" }),
         (Words("file", "bestand", "folder", "map", "document", "pdf", "docx", "path", "pad", "download", "desktop", "bureaublad", "screenshot",
                "picture", "foto", "afbeelding", "image", "where is", "waar is", "rate", "beoordeel", "review", @"[a-z]:\\", @"\.(txt|md|cs|py|json|lua)\b"),
             new[] { "read_file", "find_file" }),
@@ -283,7 +310,8 @@ public static class Assistant
         (Words("copy", "kopieer", "copied", "gekopieerd", "clipboard", "klembord", "paste", "plak", "translate", "vertaal"),
             new[] { "use_clipboard", "copy_to_clipboard" }),
         (Words("cpu", "gpu", "ram", "memory", "geheugen", "temperat", "hot", "warm", "heet", "disk", "schijf", "storage", "opslag", "battery",
-               "accu", "batterij", "uptime", "internet", "speed", "snelheid", "ping", "wifi", "lag", "slow", "traag", "pc doing", "pc het"),
+               "accu", "batterij", "uptime", "internet", "speed", "snelheid", "ping", "wifi", "lag", "slow", "traag", "pc doing", "pc het",
+               "download", "using my pc", "what's using", "wat gebruikt", "busy", "druk"),
             new[] { "pc_stats", "internet_speed" }),
         (Words("update", "version", "versie", "nieuwe dave", "new dave"),
             new[] { "update_dave" }),

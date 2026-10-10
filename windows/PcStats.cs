@@ -9,6 +9,19 @@ namespace DaveWindows;
 /// <summary>What the PC is doing right now: processor, memory, graphics card, drives, battery. Read out by Dave on request.</summary>
 public static class PcStats
 {
+    /// <summary>Bytes received and sent so far on all network connections that are up.</summary>
+    private static (long received, long sent) NetworkBytes()
+    {
+        long received = 0, sent = 0;
+        foreach (var n in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (n.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up ||
+                n.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+            try { var s = n.GetIPStatistics(); received += s.BytesReceived; sent += s.BytesSent; } catch { }
+        }
+        return (received, sent);
+    }
+
     /// <summary>A short plain-text report for the AI to answer from. Takes about half a second (to measure processor use).</summary>
     public static string Collect()
     {
@@ -16,10 +29,12 @@ public static class PcStats
 
         // Processor: total use and the busiest programs, measured over half a second
         var before = ProcessorTimes();
+        var (received1, sent1) = NetworkBytes();
         GetSystemTimes(out var idle1, out var kernel1, out var user1);
         Thread.Sleep(500);
         GetSystemTimes(out var idle2, out var kernel2, out var user2);
         var after = ProcessorTimes();
+        var (received2, sent2) = NetworkBytes();
         double total = (kernel2 - kernel1) + (user2 - user1), busy = total - (idle2 - idle1);
         var cpuName = Registry.GetValue(@"HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString", null) as string;
         report.AppendLine($"Processor: {cpuName?.Trim() ?? "unknown"}, {Environment.ProcessorCount} threads, {(total > 0 ? busy / total * 100 : 0):F0}% in use.");
@@ -28,6 +43,10 @@ public static class PcStats
             .Where(p => p.percent >= 1).OrderByDescending(p => p.percent).Take(5);
         report.AppendLine("Busiest programs (processor): " + Join(busiest.Select(p => $"{p.name} {p.percent:F0}%")));
         report.AppendLine("Processor temperature: Windows doesn't show it without extra software.");
+        // Network right now ("is my game still downloading?"), measured over the same half second
+        double downMb = (received2 - received1) * 2 / 1e6, upMb = (sent2 - sent1) * 2 / 1e6;
+        report.AppendLine($"Network right now: downloading {downMb:F1} MB/s, uploading {upMb:F1} MB/s" +
+                          (downMb > 1 ? " (something is downloading)" : downMb < 0.05 ? " (nothing is downloading)" : "") + ".");
 
         // Memory
         var memory = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() };

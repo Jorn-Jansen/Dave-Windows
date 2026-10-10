@@ -44,6 +44,7 @@ public static class Commands
                 "open_app" => OpenApp(s, Str(args, "name")),
                 "open_website" => OpenWebsite(s, args),
                 "lock_pc" => LockPc(),
+                "power" => Power(s, Str(args, "action"), Int(args, "minutes") ?? 0),
                 "find_file" => await FindFileAsync(s, args),
                 "close_app" => CloseApp(s, Str(args, "name")),
                 "close_all_apps" => CloseAll(s, Str(args, "keep")),
@@ -438,5 +439,43 @@ public static class Commands
     {
         PcActions.LockPc();
         return new Outcome("🔒");
+    }
+
+    private static CancellationTokenSource? pendingSleep;
+
+    /// <summary>
+    /// "Turn off my PC (in 30 minutes)", "restart", "put it to sleep", "cancel that". Shutting down and restarting go
+    /// through Windows' own countdown (at least 30 seconds, so there's time to save, and "cancel" stops it).
+    /// </summary>
+    private static Outcome Power(Settings s, string action, int minutes)
+    {
+        var seconds = Math.Clamp(minutes * 60, 30, 315_360_000);
+        string When(bool dutch) => minutes <= 0 ? (dutch ? "over 30 seconden" : "in 30 seconds")
+            : dutch ? $"over {Reminders.Duration(TimeSpan.FromMinutes(minutes), true)}" : $"in {Reminders.Duration(TimeSpan.FromMinutes(minutes), false)}";
+        void Run(string arguments) =>
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown", arguments) { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit(5000);
+        switch (action)
+        {
+            case "shutdown" or "restart":
+                Run($"/{(action == "restart" ? "r" : "s")} /t {seconds} /c \"{s.Name}: {(action == "restart" ? "restarting" : "shutting down")}. Say 'cancel' to stop it.\"");
+                Log.Write($"Power: {action} in {seconds} s");
+                return new Outcome(action == "restart"
+                    ? s.Say($"Okay, restarting the PC {When(false)}.", $"Oké, de pc start opnieuw op {When(true)}.")
+                    : s.Say($"Okay, the PC turns off {When(false)}.", $"Oké, de pc gaat uit {When(true)}."), true);
+            case "sleep":
+                pendingSleep?.Cancel();
+                var cancel = pendingSleep = new CancellationTokenSource();
+                _ = Task.Delay(TimeSpan.FromSeconds(minutes > 0 ? minutes * 60 : 5), cancel.Token).ContinueWith(t =>
+                {
+                    if (!t.IsCanceled) Application.SetSuspendState(PowerState.Suspend, false, false);
+                });
+                return new Outcome(minutes > 0 ? s.Say($"Okay, the PC goes to sleep {When(false)}.", $"Oké, de pc gaat slapen {When(true)}.")
+                                               : s.Say("Okay, sleep well, PC.", "Oké, slaap lekker, pc."), true);
+            default: // cancel
+                pendingSleep?.Cancel();
+                Run("/a");
+                Log.Write("Power: cancelled");
+                return new Outcome(s.Say("Okay, cancelled: the PC stays on.", "Oké, geannuleerd: de pc blijft aan."), true);
+        }
     }
 }

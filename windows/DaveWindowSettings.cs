@@ -71,8 +71,11 @@ public sealed partial class DaveWindow
                     break;
                 }
                 case "saveSettings":
+                    var notifyWasOn = settings.PhoneNotify;
                     Apply(settings, values);
                     settings.Save();
+                    if (settings.PhoneNotify && !notifyWasOn) // just turned on: a first notification, to check it arrives
+                        PhoneNotify.Send(settings, "✅ " + settings.Name, settings.Say("Notifications from your PC are on.", "Meldingen van je pc staan aan."), evenAtPc: true);
                     applySettings();
                     Text = settings.Name;
                     Send(new JsonObject { ["type"] = "saved", ["warning"] = WakePhraseWarning() });
@@ -104,11 +107,12 @@ public sealed partial class DaveWindow
             ["Hotkey"] = settings.Hotkey, ["WindowHotkey"] = settings.WindowHotkey,
             ["WakeWord"] = settings.WakeWord, ["CarefulWakeWord"] = settings.CarefulWakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
             ["CalendarLinks"] = settings.CalendarLinks, ["SpotifyClientId"] = settings.SpotifyClientId,
-            ["Theme"] = settings.Theme, ["PhoneEnabled"] = settings.PhoneEnabled,
+            ["Theme"] = settings.Theme, ["PhoneEnabled"] = settings.PhoneEnabled, ["PhoneNotify"] = settings.PhoneNotify,
         },
         ["phone"] = new JsonObject
         {
             ["code"] = settings.PhoneEnabled ? PhoneLink.CodeFor(settings) : "",
+            ["topic"] = settings.PhoneNotify ? PhoneNotify.TopicFor(settings) : "",
             ["addresses"] = new JsonArray(PhoneLink.Addresses().Select(a => (JsonNode)a).ToArray()),
         },
         ["themes"] = new JsonArray(Themes.All.Select(t => (JsonNode)ThemeJson(t)).ToArray()),
@@ -169,6 +173,7 @@ public sealed partial class DaveWindow
         s.WakeWord = Bool("WakeWord");
         s.CarefulWakeWord = Bool("CarefulWakeWord");
         s.PhoneEnabled = Bool("PhoneEnabled");
+        s.PhoneNotify = Bool("PhoneNotify");
         s.StartWithWindows = Bool("StartWithWindows");
         s.AutoUpdate = Bool("AutoUpdate");
         s.CalendarLinks = Str("CalendarLinks");

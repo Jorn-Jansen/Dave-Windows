@@ -42,6 +42,9 @@ public class Settings
     /// <summary>Let Dave on the iPhone talk to this Dave (over the network, with <see cref="PhoneCode"/>).</summary>
     public bool PhoneEnabled { get; set; } = false;
     public string PhoneCode { get; set; } = "";
+    /// <summary>Heads-ups and reminders on the phone through ntfy (<see cref="PhoneNotifyTopic"/>), when you're not at the PC.</summary>
+    public bool PhoneNotify { get; set; } = false;
+    public string PhoneNotifyTopic { get; set; } = "";
     /// <summary>Browser for websites when you don't name one, e.g. "Brave" ("" = Windows' default).</summary>
     public string Browser { get; set; } = "";
     public bool StartWithWindows { get; set; } = false;
