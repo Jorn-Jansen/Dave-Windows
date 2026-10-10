@@ -491,6 +491,9 @@ function renderSettings(d) {
     d.phone.code ? `In the app: PC address ${d.phone.addresses.join(" or ")}, code ${d.phone.code}. Windows may ask to allow Dave on your network the first time: allow it. ` +
                    "Away from home too: install Tailscale (free, tailscale.com) on this PC and your iPhone, log in with the same account, and connect the app once more."
                  : "Turn on and save: the address and code for the app show up here. The phone and PC need to be on the same Wi-Fi, or both on Tailscale (also away from home).");
+  field("PhoneNotify", "Notifications on my phone", toggle("PhoneNotify"),
+    d.phone.topic ? `Reminders and heads-ups also go to your phone when you're not at the PC. On your phone: install the free app "ntfy" (App Store), tap +, and subscribe to: ${d.phone.topic} (server ntfy.sh). A test notification was sent when you turned this on.`
+                  : "Reminders and heads-ups (\"Roblox closed\", \"your download is done\") on your phone too, when you're not at the PC. Through the free ntfy app. Turn on and save to see your channel.");
 
   sec("Calendar");
   field("CalendarLinks", "Calendar link (iCal)", text("CalendarLinks", "https://calendar.google.com/calendar/ical/…/basic.ics"),

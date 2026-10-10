@@ -28,11 +28,38 @@ public static class ScreenTime
         }
     });
 
+    /// <summary>How long since the mouse or keyboard was last used (for heads-ups on the phone only when you're away).</summary>
+    public static TimeSpan Idle
+    {
+        get
+        {
+            var info = new LastInput { Size = (uint)Marshal.SizeOf<LastInput>() };
+            return GetLastInputInfo(ref info) ? TimeSpan.FromMilliseconds(Environment.TickCount - (int)info.Time) : TimeSpan.Zero;
+        }
+    }
+
+    /// <summary>Which app was in front from when to when, newest last (only while Dave runs): for "where did I leave off?".</summary>
+    private static readonly List<(string app, DateTime from, DateTime to)> Sessions = new();
+
+    /// <summary>The apps used in the last [within], newest first, each with from–to.</summary>
+    public static List<(string app, DateTime from, DateTime to)> RecentSessions(TimeSpan within)
+    {
+        lock (Sync) return Sessions.Where(s => DateTime.Now - s.to <= within).Reverse().ToList();
+    }
+
     private static void Tick()
     {
         var app = CurrentApp();
         lock (Sync)
         {
+            if (app != null)
+            {
+                var now = DateTime.Now;
+                if (Sessions.Count > 0 && Sessions[^1].app == app && now - Sessions[^1].to < TimeSpan.FromSeconds(StepSeconds * 4))
+                    Sessions[^1] = (app, Sessions[^1].from, now);
+                else Sessions.Add((app, now, now));
+                if (Sessions.Count > 200) Sessions.RemoveAt(0);
+            }
             var all = Load();
             if (app != null)
             {

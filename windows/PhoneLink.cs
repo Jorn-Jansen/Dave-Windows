@@ -21,11 +21,12 @@ public sealed class PhoneLink : IDisposable
     private readonly Func<string, Task<string>> ask;
     private readonly Func<string, JsonObject, Task<string>> command;
     private readonly Func<JsonObject?, Task<JsonObject>> state;
+    private readonly Func<JsonObject, Task<string>> receive;
 
     /// <summary>Commands the phone may give directly (its AI already chose them): carried out without asking the AI again.</summary>
     public static readonly HashSet<string> DirectCommands = new()
     {
-        "media_control", "set_volume", "music_settings", "lock_pc", "open_app", "close_app", "open_website", "quiet_mode",
+        "media_control", "set_volume", "music_settings", "lock_pc", "open_app", "close_app", "open_website", "quiet_mode", "power",
     };
     private readonly TcpListener listener = new(IPAddress.Any, Port);
     private readonly CancellationTokenSource stop = new();
@@ -35,8 +36,9 @@ public sealed class PhoneLink : IDisposable
     /// <param name="command">Carry out one of <see cref="DirectCommands"/> with its arguments; returns the outcome.</param>
     /// <param name="state">Apply a change from the app's tabs (if not null), then return what the tabs show.</param>
     public PhoneLink(Settings settings, Func<string, Task<string>> ask, Func<string, JsonObject, Task<string>> command,
-        Func<JsonObject?, Task<JsonObject>> state)
+        Func<JsonObject?, Task<JsonObject>> state, Func<JsonObject, Task<string>> receive)
     {
+        this.receive = receive;
         this.settings = settings;
         this.ask = ask;
         this.command = command;
@@ -186,6 +188,12 @@ public sealed class PhoneLink : IDisposable
                 }
             }
             else if (path == "/state") (status, reply) = (200, await state(null)); // reminders, memories, music, screen time…
+            else if (method == "POST" && path == "/receive") // "send this to my PC": a link, text, or a photo or file
+            {
+                var item = JsonNode.Parse(body)?.AsObject() ?? new JsonObject();
+                Log.Write($"Received from the iPhone: {item["kind"]} {item["name"]}");
+                (status, reply) = (200, new JsonObject { ["answer"] = await receive(item) });
+            }
             else if (method == "POST" && path == "/action")
             {
                 var change = JsonNode.Parse(body)?.AsObject() ?? new JsonObject();
@@ -221,15 +229,20 @@ public sealed class PhoneLink : IDisposable
         var first = head[0].Split(' ');
         var headers = head.Skip(1).Select(l => l.Split(':', 2)).Where(p => p.Length == 2)
             .GroupBy(p => p[0].Trim().ToLowerInvariant()).ToDictionary(g => g.Key, g => g.First()[1].Trim());
-        var length = int.TryParse(headers.GetValueOrDefault("content-length"), out var l) ? Math.Clamp(l, 0, 64 * 1024) : 0;
-        var bodyBytes = buffer.Skip(headerEnd + 4).ToList();
-        while (bodyBytes.Count < length)
+        var path = first.Length > 1 ? first[1].Split('?')[0] : "/";
+        // Small JSON, except a photo or file sent to the PC (up to about 60 MB, as text)
+        var max = path == "/receive" ? 85 * 1024 * 1024 : 64 * 1024;
+        var length = int.TryParse(headers.GetValueOrDefault("content-length"), out var l) ? Math.Clamp(l, 0, max) : 0;
+        using var body = new MemoryStream();
+        body.Write(buffer.Skip(headerEnd + 4).ToArray());
+        var big = new byte[81920];
+        while (body.Length < length)
         {
-            var read = await stream.ReadAsync(chunk);
+            var read = await stream.ReadAsync(big.AsMemory(0, (int)Math.Min(big.Length, length - body.Length)));
             if (read == 0) break;
-            bodyBytes.AddRange(chunk.AsSpan(0, read).ToArray());
+            body.Write(big, 0, read);
         }
-        return (first[0].ToUpperInvariant(), first.Length > 1 ? first[1].Split('?')[0] : "/", headers, Encoding.UTF8.GetString(bodyBytes.ToArray()));
+        return (first[0].ToUpperInvariant(), path, headers, Encoding.UTF8.GetString(body.GetBuffer(), 0, (int)body.Length));
     }
 
     private static int IndexOfBlankLine(List<byte> b)

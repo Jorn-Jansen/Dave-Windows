@@ -11,7 +11,7 @@ Dave updates himself when a new version is released. To remove him: Settings →
 
 ### On your iPhone
 **[Dave for iPhone](https://github.com/Jorn-Jansen/Dave-iPhone)**: talk to Dave on your phone, control your Spotify, and let him do
-things on your PC ("pause the music on my PC", "lock my PC"). Needs Dave 1.4.0 or newer on the PC (Settings → iPhone app).
+things on your PC ("pause the music on my PC", "lock my PC"). Needs Dave 1.5.0 or newer on the PC (Settings → iPhone app).
 
 ## Use
 - Press **Ctrl+Alt+D** (works in games too), say **"Hey Dave"** (if turned on), or click the tray icon.
@@ -24,16 +24,20 @@ things on your PC ("pause the music on my PC", "lock my PC"). Needs Dave 1.4.0 o
 - **Questions:** anything, with live web search; remembers your conversations for 30 days
 - **Music (Spotify Premium):** play songs, artists, your playlists or liked songs, random songs, DJ mixes, a music quiz;
   "what's this song about?", "play something like this", "play X next", "I don't like this song" (never plays it again), shuffle, repeat, skip ahead
-- **PC control:** volume of the PC or one app ("make Discord quieter", "mute Chrome"), open and close programs, websites, lock the PC, find files, do things inside apps
+- **PC control:** volume of the PC or one app ("make Discord quieter", "mute Chrome"), open and close programs, websites, lock the PC, find files, do things inside apps;
+  "turn off my PC in 30 minutes", "restart", "put it to sleep", "cancel that"
+- **Where you left off:** "where did I leave off?" (the apps you used last, what's open, the song), and he can reopen it
 - **Your screen:** "what's this error?", "read this out"
 - **Web pages:** "summarise this page", "what does this article say about…" (the page open in your browser)
 - **Notifications:** "what did I miss?", "what did Sam say on Discord?"
 - **Game help:** "how do I beat this boss?", "where do I find…?" (looks at your game and searches guides)
-- **iPhone:** [Dave for iPhone](https://github.com/Jorn-Jansen/Dave-iPhone) can do things on your PC: "pause the music on my PC", "lock my PC"
-  (Settings → iPhone app)
+- **iPhone:** [Dave for iPhone](https://github.com/Jorn-Jansen/Dave-iPhone) can do things on your PC: "pause the music on my PC", "lock my PC",
+  send photos and files to it (Settings → iPhone app); at home over Wi-Fi, away from home through Tailscale
+- **To your phone:** "send this to my phone", "send a screenshot to my phone", or right-click a file → Send to → My iPhone (Dave);
+  and reminders and heads-ups on your phone when you're away from the PC (through the free ntfy app)
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
 - **Files:** "look at C:\…\report.docx and rate it", "summarise this PDF", "what's in my Downloads folder?"
-- **PC stats:** "how hot is my GPU?", "what's using my memory?", "how fast is my internet?", "what's my ping?"
+- **PC stats:** "how hot is my GPU?", "what's using my memory?", "is it still downloading?", "how fast is my internet?", "what's my ping?"
 - **Screen time:** "how long did I play Roblox today?", "my screen time this week" (kept only on your PC)
 - **Quiet mode:** "be quiet for a bit, I'm in a call" shows answers instead of saying them
 - **Reminders and timers**, also repeating ("every weekday at 8", "every 2 hours"), **later actions** ("lock my PC in 10 minutes",
