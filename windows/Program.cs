@@ -117,7 +117,7 @@ public class DaveApp : ApplicationContext
             bubble.BeginInvoke(() => headsUps.Enqueue(message)); // said at the next tick, when Dave is free
             PhoneNotify.Send(settings, "👀 " + settings.Name, message); // and on the phone, when you're not at the PC
         };
-        ConversationLog.Added += () => thinking = false; // the answer is there: no more "thinking" dots
+        ConversationLog.Added += () => { thinking = false; bubble.Thinking = false; }; // the answer is there: no more "thinking" dots or comets
         bubble.Suppressed = WindowOpen;
         if (testQuestion == null)
         {
@@ -172,13 +172,19 @@ public class DaveApp : ApplicationContext
 
     private async Task TestAsync(string question)
     {
-        if (question == "demo") // shows the listening circle, then an answer pill, without talking to anyone
+        if (question == "demo") // shows listening, thinking and talking, without talking to anyone (for checking the look)
         {
+            if (Environment.GetEnvironmentVariable("DAVE_DEMO_THEME") is { Length: > 0 } demoTheme) Palette.Use(demoTheme); // try a theme without changing the settings
             bubble.ShowListening();
-            for (int i = 0; i < 30; i++) { Recorder.Level = (float)Math.Abs(Math.Sin(i / 3.0)) * 0.8f; await Task.Delay(100); }
+            for (int i = 0; i < 50; i++) { Recorder.Level = (float)Math.Abs(Math.Sin(i / 3.0)) * 0.85f; await Task.Delay(100); }
             Recorder.Level = 0;
-            bubble.ShowText("Dit is de nieuwe look van Dave: een cirkel als ik luister, en een pill voor het antwoord.");
-            await Task.Delay(4000);
+            bubble.Thinking = true;
+            bubble.ShowText("“What's the weather tomorrow?”\nThinking…");
+            await Task.Delay(3500);
+            bubble.Thinking = false;
+            bubble.ShowText("Tomorrow it'll be sunny and 21 degrees in Utrecht, with a light breeze in the afternoon.");
+            for (int i = 0; i < 50; i++) { Speaker.Level = (float)(0.35 + 0.35 * Math.Sin(i / 1.7)); await Task.Delay(100); }
+            Speaker.Level = 0;
             bubble.HideAfter(1);
             await Task.Delay(1500);
             ExitThread();
@@ -279,6 +285,7 @@ public class DaveApp : ApplicationContext
     private void SetThinking(bool on)
     {
         thinking = on;
+        bubble.Thinking = on; // the comets and the sheen on the bubble
         window?.Push();
     }
 

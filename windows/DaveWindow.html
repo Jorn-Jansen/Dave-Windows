@@ -252,14 +252,95 @@
   .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--panel2); border: 1px solid var(--line);
     padding: 10px 18px; border-radius: 12px; opacity: 0; transition: .25s; pointer-events: none; }
   .toast.show { opacity: 1; transform: translateX(-50%); }
+
+  /* ===== Effects (not in Legacy) ===== */
+  /* Stars and drifting sparks, drawn on a canvas between the light and the glass; faster and brighter while Dave works */
+  #fx { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+  body.legacy #fx, body.legacy .edgeglow { display: none; }
+  /* While listening or thinking, the window's own edges glow, like the glow around the screen */
+  .edgeglow { position: fixed; inset: 0; z-index: 50; pointer-events: none; opacity: 0; transition: opacity .5s;
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--cyan) 60%, transparent), inset 0 0 40px color-mix(in srgb, var(--purple) 55%, transparent),
+                inset 0 0 120px color-mix(in srgb, var(--pink) 25%, transparent); }
+  body[data-status="listening"] .edgeglow { opacity: 1; animation: edgepulse 1.1s ease-in-out infinite; }
+  body[data-status="thinking"] .edgeglow { opacity: .55; animation: edgepulse 2.2s ease-in-out infinite; }
+  @keyframes edgepulse { 50% { box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--cyan) 85%, transparent), inset 0 0 70px color-mix(in srgb, var(--purple) 75%, transparent),
+                                           inset 0 0 180px color-mix(in srgb, var(--pink) 35%, transparent); } }
+
+  /* A gradient that turns around things (cards, Dave's messages, the active tab): needs a registered angle to animate */
+  @property --spin { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+  @keyframes turn { to { --spin: 360deg; } }
+
+  /* Dave's orb: a ring of light turning around it, and a soft halo that breathes */
+  body:not(.legacy) .brand .logo { overflow: visible; isolation: isolate; }
+  body:not(.legacy) .logo::before { border-radius: 50%; inset: 0; filter: blur(5px); clip-path: circle(50%); }
+  body:not(.legacy) .logo > .ring { position: absolute; inset: -5px; border-radius: 50%; padding: 2px; z-index: -1;
+    background: conic-gradient(from var(--spin), transparent 0 40%, var(--cyan), var(--pink), transparent 70% 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+    animation: turn 3s linear infinite; filter: drop-shadow(0 0 6px var(--cyan)); }
+  body:not(.legacy) .logo.busy > .ring { animation-duration: .9s; }
+
+  /* The title shimmers */
+  body:not(.legacy) header h1 { background-size: 220% 100%; animation: shimmer 6s ease-in-out infinite; }
+  @keyframes shimmer { 50% { background-position: 100% 0; } }
+
+  /* Switching tabs: the page slides and fades in */
+  body:not(.legacy) .view.active { animation: viewin .38s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes viewin { from { opacity: 0; transform: translateY(10px); filter: blur(4px); } }
+
+  /* The active tab: a glowing bar that slides in, and a light that turns along its edge */
+  body:not(.legacy) .tab { position: relative; transition: background .2s, color .2s, transform .2s; }
+  body:not(.legacy) .tab:hover { transform: translateX(3px); }
+  body:not(.legacy) .tab.active { box-shadow: none; background: linear-gradient(90deg, color-mix(in srgb, var(--purple) 26%, transparent), transparent); }
+  body:not(.legacy) .tab.active::before { content: ""; position: absolute; left: 0; top: 18%; bottom: 18%; width: 3px; border-radius: 3px;
+    background: linear-gradient(var(--cyan), var(--pink)); box-shadow: 0 0 12px var(--cyan); animation: barin .35s cubic-bezier(.2, .9, .3, 1.4); }
+  @keyframes barin { from { transform: scaleY(0); } }
+
+  /* Cards: they lift and tilt towards the mouse, with a light turning around their edge */
+  body:not(.legacy) .card { position: relative; transform: perspective(700px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform .25s, box-shadow .25s, border-color .25s; }
+  body:not(.legacy) .card:hover { box-shadow: 0 12px 40px rgba(0, 0, 0, .35), 0 0 30px color-mix(in srgb, var(--purple) 22%, transparent); border-color: transparent; }
+  body:not(.legacy) .card::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none; opacity: 0; transition: opacity .25s;
+    background: conic-gradient(from var(--spin), transparent 0 55%, var(--cyan), var(--pink), transparent 85% 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: turn 2.6s linear infinite; }
+  body:not(.legacy) .card:hover::after { opacity: 1; }
+
+  /* Messages: Dave's arrive with a soft flash of light, yours slide in */
+  body:not(.legacy) .msg.dave.new { animation: arrivedave .6s cubic-bezier(.2, .9, .3, 1.15); }
+  @keyframes arrivedave { 0% { opacity: 0; transform: translateY(14px) scale(.94); filter: blur(6px); }
+                          55% { box-shadow: 0 0 34px color-mix(in srgb, var(--cyan) 55%, transparent); filter: blur(0); } }
+  body:not(.legacy) .msg.you.new { animation: arriveyou .45s cubic-bezier(.2, .9, .3, 1.25); }
+  @keyframes arriveyou { from { opacity: 0; transform: translateX(26px) scale(.94); } }
+  body:not(.legacy) .msg.dave { position: relative; }
+  body:not(.legacy) .msg.dave.new::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
+    background: conic-gradient(from var(--spin), transparent 0 60%, color-mix(in srgb, var(--cyan) 80%, transparent), transparent 90% 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: turn 4s linear infinite; }
+
+  /* Thinking: the dots become little orbs that bounce in a wave, in Dave's colours */
+  body:not(.legacy) .typing { background: var(--glass); border-color: color-mix(in srgb, var(--cyan) 35%, transparent); box-shadow: 0 0 22px color-mix(in srgb, var(--purple) 30%, transparent); }
+  body:not(.legacy) .typing i { width: 9px; height: 9px; background: radial-gradient(circle at 35% 30%, #fff, var(--cyan) 45%, var(--purple));
+    box-shadow: 0 0 10px var(--cyan); animation: orbhop 1.1s cubic-bezier(.45, 0, .55, 1) infinite; }
+  @keyframes orbhop { 0%, 100% { transform: translateY(0) scale(1); opacity: .55; } 40% { transform: translateY(-7px) scale(1.25); opacity: 1; } }
+
+  /* Buttons: a glow on hover, a ripple where you click */
+  body:not(.legacy) .round, body:not(.legacy) .btn { position: relative; overflow: hidden; }
+  body:not(.legacy) .round:hover { box-shadow: 0 0 0 4px color-mix(in srgb, var(--cyan) 18%, transparent), 0 0 26px color-mix(in srgb, var(--purple) 70%, transparent); }
+  .ripple { position: absolute; border-radius: 50%; background: rgba(255, 255, 255, .45); transform: scale(0); animation: ripple .6s ease-out forwards; pointer-events: none; }
+  @keyframes ripple { to { transform: scale(4); opacity: 0; } }
+
+  /* Typing to Dave: the field glows */
+  body:not(.legacy) .composer input { transition: border-color .2s, box-shadow .3s; }
+  body:not(.legacy) .composer input:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet) 25%, transparent), 0 0 24px color-mix(in srgb, var(--cyan) 22%, transparent); }
+
+  @media (prefers-reduced-motion: reduce) { #fx { display: none; } *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
 </style>
 </head>
 <body>
 <div class="aurora"><i></i><i></i><i></i></div>
+<canvas id="fx"></canvas>
+<div class="edgeglow"></div>
 <div class="app">
   <nav>
     <div class="brand">
-      <div class="logo" id="logo"></div>
+      <div class="logo" id="logo"><span class="ring"></span></div>
       <div><b id="name">Dave</b><small id="version"></small></div>
     </div>
     <div class="tab active" data-view="chat"><span class="ico">💬</span><span data-t="chat"></span></div>
@@ -384,6 +465,7 @@ function applyTheme(th) {
   r.setProperty("--purple", th.main); r.setProperty("--violet", th.middle); r.setProperty("--pink", th.accent);
   r.setProperty("--cyan", th.bright); r.setProperty("--deep", th.deep);
   document.body.classList.toggle("legacy", !!th.legacy);
+  document.body.dataset.theme = th.id || "aurora"; // each theme has its own effect in the background
 }
 
 function renderThemes(d) {
@@ -724,6 +806,7 @@ window.chrome.webview.addEventListener("message", e => {
   $("name").textContent = m.name;
   $("version").textContent = "v" + m.version;
   $("logo").classList.toggle("busy", m.busy);
+  document.body.dataset.status = m.status || ""; // listening / thinking / busy: the effects react to it
   $("mic").classList.toggle("listening", m.status === "listening"); // the bubble stays away while this window is open
   $("quietSwitch").classList.toggle("on", m.quiet);
   count("c-reminders", m.reminders.length); count("c-memories", m.memories.length); count("c-watching", m.watching.length);
@@ -735,6 +818,176 @@ window.chrome.webview.addEventListener("message", e => {
 });
 labels();
 send({ type: "ready" });
+
+// ===== Effects (not in Legacy) =====
+
+// Each theme's own effect behind the glass: northern lights (Aurora), fire and embers (Ember), dripping slime (Toxic),
+// light rays and waves (Ocean), falling petals (Sakura), stars and shooting stars (Midnight). Stronger while Dave listens
+// or thinks; the mouse moves it a little (depth). Only drawn while the window is visible.
+(() => {
+  const canvas = $("fx"), g = canvas.getContext("2d");
+  let w = 0, h = 0, mx = 0, my = 0, energy = 0, last = 0;
+  const parts = [], stars = [];
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#9646ff";
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  function size() {
+    const r = devicePixelRatio || 1;
+    w = innerWidth; h = innerHeight;
+    canvas.width = w * r; canvas.height = h * r; g.setTransform(r, 0, 0, r, 0, 0);
+    stars.length = 0;
+    for (let i = 0; i < Math.round(w * h / 7000); i++) stars.push({ x: Math.random() * w, y: Math.random() * h, z: .3 + Math.random() * .7, s: .4 + Math.random() * 1.2, p: Math.random() * 6.28 });
+  }
+  addEventListener("resize", size);
+  addEventListener("mousemove", e => { mx = e.clientX / w - .5; my = e.clientY / h - .5; });
+  size();
+
+  const effects = {
+    // Curtains of light hanging from the top, waving and shifting colour
+    aurora(t, c) {
+      g.globalCompositeOperation = "lighter";
+      g.filter = "blur(10px)";
+      for (const [colour, speed, phase, reach] of [[c.purple, .5, 0, .55], [c.cyan, -.38, 2, .45], [c.pink, .27, 4, .38]]) {
+        for (let x = -20; x < w + 20; x += 6) {
+          const u = x / w;
+          const wave = .5 + .5 * Math.sin(u * 9 + t * speed + phase) * Math.sin(u * 23 - t * speed * 1.7 + phase);
+          const height = h * reach * (.25 + .75 * wave) * (1 + energy * .4);
+          const sway = Math.sin(t * .8 + u * 6 + phase) * 30 - mx * 40;
+          const grad = g.createLinearGradient(0, 0, 0, height);
+          grad.addColorStop(0, colour + "00"); grad.addColorStop(.22, colour + "90"); grad.addColorStop(1, colour + "00");
+          g.strokeStyle = grad; g.lineWidth = 9;
+          g.beginPath(); g.moveTo(x + sway, 0); g.lineTo(x + sway * .4, height); g.stroke();
+        }
+      }
+      g.filter = "none"; g.globalCompositeOperation = "source-over";
+    },
+    // A fire glow along the bottom, and embers rising from it, flickering and cooling from gold to red
+    ember(t, c) {
+      const flicker = .75 + .25 * Math.sin(t * 7) * Math.sin(t * 11.3);
+      const glow = g.createLinearGradient(0, h, 0, h * .55);
+      glow.addColorStop(0, c.pink + Math.min(255, Math.round(140 * flicker * (1 + energy * .5))).toString(16).padStart(2, "0"));
+      glow.addColorStop(1, c.purple + "00");
+      g.fillStyle = glow; g.fillRect(0, 0, w, h);
+      if (Math.random() < .35 + energy * .9) parts.push({ k: "e", x: rnd(0, w), y: h + 5, vx: rnd(-.3, .3), vy: -rnd(.8, 2) * (1 + energy), life: 0, max: rnd(3, 6), r: rnd(1, 2.4) });
+    },
+    // Slime along the top edge with drops forming and falling, and a faint glow at the bottom
+    toxic(t, c) {
+      g.fillStyle = c.pink + "cc";
+      g.beginPath(); g.moveTo(0, 0);
+      for (let x = 0; x <= w; x += 8) g.lineTo(x, 6 + 5 * Math.sin(x * .02 + t * .9) + 4 * Math.sin(x * .053 - t * 1.3));
+      g.lineTo(w, 0); g.closePath(); g.fill();
+      const fog = g.createLinearGradient(0, h, 0, h * .7);
+      fog.addColorStop(0, c.purple + "40"); fog.addColorStop(1, c.purple + "00");
+      g.fillStyle = fog; g.fillRect(0, 0, w, h);
+      if (Math.random() < .025 + energy * .06) parts.push({ k: "d", x: rnd(10, w - 10), y: 8, vy: 0, life: 0, max: 8, r: rnd(3, 5.5) });
+    },
+    // Light rays falling in from the top, slowly moving, and waves rolling along the bottom
+    ocean(t, c) {
+      g.globalCompositeOperation = "lighter";
+      for (let i = 0; i < 6; i++) {
+        const x = w * (i / 5) + Math.sin(t * .2 + i * 1.7) * 80 - mx * 30, spread = 60 + 30 * Math.sin(t * .5 + i);
+        const ray = g.createLinearGradient(0, 0, 0, h * .8);
+        ray.addColorStop(0, c.cyan + "30"); ray.addColorStop(1, c.cyan + "00");
+        g.fillStyle = ray; g.beginPath(); g.moveTo(x - 20, 0); g.lineTo(x + 20, 0); g.lineTo(x + spread + 120, h * .8); g.lineTo(x + 120 - spread, h * .8); g.closePath(); g.fill();
+      }
+      g.globalCompositeOperation = "source-over";
+      for (const [colour, amp, len, speed, base] of [[c.purple, 14, .006, .6, .9], [c.cyan, 10, .009, -.9, .94]]) {
+        g.fillStyle = colour + "60"; g.beginPath(); g.moveTo(0, h);
+        for (let x = 0; x <= w; x += 10) g.lineTo(x, h * base + Math.sin(x * len + t * speed) * amp * (1 + energy) + Math.sin(x * len * 2.3 - t * speed) * amp * .4);
+        g.lineTo(w, h); g.closePath(); g.fill();
+      }
+    },
+    // Cherry blossom petals drifting down, turning
+    sakura(t, c) {
+      if (Math.random() < .07 + energy * .2) parts.push({ k: "p", x: rnd(-60, w), y: -20, vx: rnd(.4, 1.1), vy: rnd(.5, 1.2), life: 0, max: 30, r: rnd(4, 7), a: rnd(0, 6.28), spin: rnd(-.04, .04) });
+    },
+    // Twinkling stars at different depths, and now and then a shooting star
+    midnight(t, c) {
+      for (const s of stars) {
+        const tw = .45 + .55 * Math.sin(t * (1 + s.z) + s.p);
+        g.globalAlpha = (.25 + .5 * tw) * s.z * (1 + energy * .5);
+        g.fillStyle = "#fff"; g.beginPath(); g.arc(s.x - mx * 30 * s.z, s.y - my * 30 * s.z, s.s, 0, 6.28); g.fill();
+      }
+      g.globalAlpha = 1;
+      if (Math.random() < .006 + energy * .02) parts.push({ k: "s", x: rnd(0, w * .7), y: rnd(0, h * .4), vx: rnd(9, 14), vy: rnd(2.5, 5), life: 0, max: .7 });
+    },
+  };
+
+  function particles(t, c) {
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      p.life += 1 / 60;
+      if (p.life > p.max || p.y > h + 30 || p.x > w + 60) { parts.splice(i, 1); continue; }
+      const fade = Math.min(1, p.life * 2) * (1 - p.life / p.max);
+      if (p.k === "e") { // ember
+        p.x += p.vx + Math.sin(p.life * 4 + i) * .4; p.y += p.vy;
+        const age = p.life / p.max, colour = age < .35 ? "#ffeaa8" : age < .7 ? c.pink : c.purple;
+        g.globalAlpha = fade * (.6 + .4 * Math.sin(p.life * 30 + i));
+        const glow = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 5);
+        glow.addColorStop(0, colour); glow.addColorStop(1, colour + "00");
+        g.fillStyle = glow; g.beginPath(); g.arc(p.x, p.y, p.r * 5, 0, 6.28); g.fill();
+        g.fillStyle = colour; g.beginPath(); g.ellipse(p.x, p.y, p.r * .6, p.r * 1.6, 0, 0, 6.28); g.fill();
+      } else if (p.k === "d") { // a drop of slime: swells, then falls
+        if (p.life > 1.2) { p.vy += .25; p.y += p.vy; }
+        const grow = Math.min(1, p.life / 1.2), r = p.r * (.4 + .6 * grow), stretch = 1 + Math.min(.9, p.vy * .05);
+        g.globalAlpha = .9;
+        if (p.vy < 4) { g.strokeStyle = c.pink + "aa"; g.lineWidth = r * .6; g.beginPath(); g.moveTo(p.x, 6); g.lineTo(p.x, p.y); g.stroke(); }
+        g.fillStyle = c.pink; g.beginPath(); g.ellipse(p.x, p.y, r, r * stretch, 0, 0, 6.28); g.fill();
+        g.fillStyle = "#ffffffaa"; g.beginPath(); g.arc(p.x - r * .3, p.y - r * .35, r * .3, 0, 6.28); g.fill();
+      } else if (p.k === "p") { // a petal
+        p.x += p.vx + Math.sin(p.life * 1.6 + i) * .6; p.y += p.vy; p.a += p.spin;
+        g.globalAlpha = fade * .85;
+        g.save(); g.translate(p.x, p.y); g.rotate(p.a); g.scale(1, .6 + .4 * Math.sin(p.life * 3 + i));
+        const fill = g.createLinearGradient(0, -p.r, 0, p.r); fill.addColorStop(0, c.cyan); fill.addColorStop(1, c.purple);
+        g.fillStyle = fill; g.beginPath(); g.moveTo(0, -p.r * 1.5);
+        g.bezierCurveTo(p.r, -p.r * .6, p.r, p.r * .6, 0, p.r * 1.5); g.bezierCurveTo(-p.r, p.r * .6, -p.r, -p.r * .6, 0, -p.r * 1.5); g.fill();
+        g.restore();
+      } else if (p.k === "s") { // a shooting star
+        p.x += p.vx; p.y += p.vy;
+        g.globalAlpha = Math.sin(Math.PI * p.life / p.max);
+        const tail = g.createLinearGradient(p.x, p.y, p.x - p.vx * 10, p.y - p.vy * 10);
+        tail.addColorStop(0, "#fff"); tail.addColorStop(1, "#fff0");
+        g.strokeStyle = tail; g.lineWidth = 2; g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(p.x - p.vx * 10, p.y - p.vy * 10); g.stroke();
+      }
+    }
+    g.globalAlpha = 1;
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (document.hidden || document.body.classList.contains("legacy")) return;
+    if (now - last < 15) return; // about 60 per second, also on fast screens
+    last = now;
+    const t = now / 1000, status = document.body.dataset.status || "";
+    energy += ((status === "listening" ? 1 : status === "thinking" ? .65 : status === "busy" ? .4 : 0) - energy) * .04;
+    const c = { purple: css("--purple"), cyan: css("--cyan"), pink: css("--pink") };
+    g.clearRect(0, 0, w, h);
+    (effects[document.body.dataset.theme] || effects.aurora)(t, c);
+    particles(t, c);
+  }
+  requestAnimationFrame(frame);
+})();
+
+
+// Cards tilt a little towards the mouse
+document.addEventListener("mousemove", e => {
+  const card = e.target.closest && e.target.closest(".card");
+  document.querySelectorAll(".card[style*='--rx']").forEach(c => { if (c !== card) { c.style.removeProperty("--rx"); c.style.removeProperty("--ry"); } });
+  if (!card || document.body.classList.contains("legacy")) return;
+  const r = card.getBoundingClientRect();
+  card.style.setProperty("--ry", ((e.clientX - r.left) / r.width - .5) * 6 + "deg");
+  card.style.setProperty("--rx", -((e.clientY - r.top) / r.height - .5) * 6 + "deg");
+});
+
+// A ripple where you click a button
+document.addEventListener("pointerdown", e => {
+  const b = e.target.closest && e.target.closest(".round, .btn");
+  if (!b || document.body.classList.contains("legacy")) return;
+  const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height);
+  const ripple = el("span", "ripple");
+  ripple.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
+  b.append(ripple);
+  setTimeout(() => ripple.remove(), 650);
+});
 </script>
 </body>
 </html>
