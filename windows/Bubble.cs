@@ -615,9 +615,10 @@ public class Glow : LayeredWindow
     private float level;   // Level, smoothed (render thread only)
     private float travel;  // how far the orbs have gone since the glow appeared, in rounds (render thread only)
     private double seenIntro = double.NaN;
-    private ushort[] edgeU = Array.Empty<ushort>(); // for each pixel: where along the screen edge it is (0..1 as 0..65535)
+    private const int InBands = 8;                  // how far in from the edge, in steps of 40 px (for how soft the orbs' front is)
+    private ushort[] edgeU = Array.Empty<ushort>(); // for each pixel: how far in from the edge, and where along it it is
     private int edgeW, edgeH;
-    private readonly int[] reveal = new int[1024];  // how visible each spot along the edge is this frame (0..256)
+    private readonly int[] reveal = new int[InBands * 1024]; // how visible each spot is this frame (0..256), by how far in and where along
     private uint[] stretched = Array.Empty<uint>(); // scratch space for ScaleUp, kept between frames
 
     /// <summary>How loud you're talking (0..1): the glow gets stronger with your voice.</summary>
@@ -847,33 +848,43 @@ public class Glow : LayeredWindow
         int w = full.Width, h = full.Height;
         if (edgeW != w || edgeH != h)
         {
+            // per pixel: where along the edge it is (10 bits) and how far in from the edge (3 bits, 40 px each)
             var map = new ushort[w * h];
             var screen = new Rectangle(0, 0, w, h);
             Parallel.For(0, h, y =>
             {
-                for (int x = 0; x < w; x++) map[y * w + x] = (ushort)(EdgeU(new PointF(x + 0.5f, y + 0.5f), screen) * 65535);
+                for (int x = 0; x < w; x++)
+                {
+                    int u = Math.Min(1023, (int)(EdgeU(new PointF(x + 0.5f, y + 0.5f), screen) * 1024));
+                    int inside = Math.Min(Math.Min(x, w - 1 - x), Math.Min(y, h - 1 - y));
+                    map[y * w + x] = (ushort)(Math.Min(InBands - 1, inside / 40) << 10 | u);
+                }
             });
             edgeU = map; edgeW = w; edgeH = h;
         }
 
-        static float Behind(float behind, float travel, float trail)
+        static float Behind(float behind, float travel, float trail, float ahead)
         {
             behind -= MathF.Floor(behind);
-            // a soft start in front of the orb, so it never slices through the colour spots with a hard cut
-            const float Ahead = 0.03f;
-            if (behind > 1 - Ahead)
+            if (behind > 1 - ahead)
             {
-                float a = (behind - (1 - Ahead)) / Ahead;
-                return a * a * (3 - 2 * a) * Math.Clamp(travel / Ahead, 0, 1);
+                float a = (behind - (1 - ahead)) / ahead;
+                return a * a * (3 - 2 * a) * Math.Clamp(travel / ahead, 0, 1);
             }
-            if (behind > travel + Ahead) return 0; // not drawn yet
-            float x = Math.Clamp(1 - behind / trail, 0, 1), fresh = Math.Clamp((travel + Ahead - behind) / Ahead, 0, 1);
+            if (behind > travel + ahead) return 0; // not drawn yet
+            float x = Math.Clamp(1 - behind / trail, 0, 1), fresh = Math.Clamp((travel + ahead - behind) / ahead, 0, 1);
             return x * x * (3 - 2 * x) * fresh * fresh * (3 - 2 * fresh);
         }
-        for (int i = 0; i < reveal.Length; i++)
+        // A soft start in front of the orb: short along the edge, so the lines begin right at the orb, and gradually
+        // longer further in, so it never slices through the colour spots with a hard cut
+        for (int band = 0; band < InBands; band++)
         {
-            float u = (i + 0.5f) / reveal.Length;
-            reveal[i] = (int)(256 * Math.Max(Behind(uA - u, travel, trail), Behind(u - uB, travel, trail)));
+            float k = band / (float)(InBands - 1), ahead = 0.006f + 0.024f * k * k * (3 - 2 * k);
+            for (int i = 0; i < 1024; i++)
+            {
+                float u = (i + 0.5f) / 1024;
+                reveal[band << 10 | i] = (int)(256 * Math.Max(Behind(uA - u, travel, trail, ahead), Behind(u - uB, travel, trail, ahead)));
+            }
         }
 
         var lut = reveal; var edge = edgeU;
@@ -886,7 +897,7 @@ public class Glow : LayeredWindow
                 {
                     uint px = row[x];
                     if (px == 0) continue;
-                    uint f = (uint)lut[us[x] >> 6];
+                    uint f = (uint)lut[us[x]];
                     if (f >= 256) continue;
                     // premultiplied: all four channels scale together
                     uint low = (((px & 0x00FF00FF) * f) >> 8) & 0x00FF00FF;
