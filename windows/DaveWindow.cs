@@ -193,23 +193,31 @@ public sealed partial class DaveWindow : Form
     {
         try
         {
-            string? note = null;
-            switch (type)
+            string? note;
+            if (type == "socialCopy")
             {
-                case "socialAdd": note = await Social.AddAsync(settings, text); break;
-                case "socialAccept": await Social.AcceptAsync(settings, code); break;
-                case "socialRemove": await Social.RemoveAsync(settings, code); break;
-                case "socialSend": note = await Social.SendAsync(settings, code, text); break;
-                case "socialRead": Social.MarkRead(settings, code); break;
-                case "socialCopy":
-                    Clipboard.SetText(Social.MyCode(settings));
-                    note = settings.Say("Your friend code is copied. Send it to a friend!", "Je vriendcode is gekopieerd. Stuur hem naar een vriend!");
-                    break;
+                Clipboard.SetText(Social.MyCode(settings));
+                note = settings.Say("Your friend code is copied. Send it to a friend!", "Je vriendcode is gekopieerd. Stuur hem naar een vriend!");
             }
+            else note = await SocialActionAsync(settings, type, code, text);
             if (note != null) Send(new JsonObject { ["type"] = "socialNote", ["text"] = note });
             Push();
         }
         catch (Exception e) { Log.Write($"Social action failed: {e.Message}"); }
+    }
+
+    /// <summary>A change in the Social tab (here or in the iPhone app's): add, accept, remove, send, mark read. Returns what to tell the user, if anything.</summary>
+    public static async Task<string?> SocialActionAsync(Settings settings, string type, string code, string text)
+    {
+        switch (type)
+        {
+            case "socialAdd": return await Social.AddAsync(settings, text);
+            case "socialAccept": await Social.AcceptAsync(settings, code); return null;
+            case "socialRemove": await Social.RemoveAsync(settings, code); return null;
+            case "socialSend": return await Social.SendAsync(settings, code, text);
+            case "socialRead": Social.MarkRead(settings, code); return null;
+            default: return null;
+        }
     }
 
     // --- Dave -> page ---

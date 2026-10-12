@@ -550,8 +550,16 @@ public class DaveApp : ApplicationContext
     /// <summary>The iPhone app's tabs: apply its change (if any, e.g. delete a reminder), then what the tabs show, like Dave's window.</summary>
     private async Task<System.Text.Json.Nodes.JsonObject> StateForPhoneAsync(System.Text.Json.Nodes.JsonObject? change)
     {
-        if (change != null && DaveWindow.ApplyAction(settings, change)) window?.Push();
-        return await DaveWindow.StateAsync(settings, session != null, Status());
+        string? note = null;
+        if (change?["type"]?.ToString() is { } type && type.StartsWith("social")) // the Social tab: friends and chats
+        {
+            note = await DaveWindow.SocialActionAsync(settings, type, change["code"]?.ToString() ?? "", change["text"]?.ToString() ?? "");
+            window?.Push();
+        }
+        else if (change != null && DaveWindow.ApplyAction(settings, change)) window?.Push();
+        var state = await DaveWindow.StateAsync(settings, session != null, Status());
+        if (note != null) state["note"] = note; // e.g. "Friend request sent"
+        return state;
     }
 
     /// <summary>Ask a typed question (from the settings window).</summary>
