@@ -443,7 +443,7 @@ const T = {
     social: "Social", yourCode: "Your friend code", copy: "Copy", addFriend: "Paste a friend's code…", requests: "Friend requests",
     wantsFriends: "wants to be friends", accept: "Accept", decline: "Decline", waiting: "Waiting for them to accept", friends: "Friends",
     noFriends: "No friends yet", noFriendsHint: "Send your friend code to a friend who uses Dave, or paste theirs above. Then chat here, or say “tell Alex I'm online”.",
-    secure: "🔒 End-to-end encrypted: only you two can read this", notSecure: "⚠️ Not encrypted yet: they need the latest Dave",
+    notSecure: "⚠️ Not encrypted yet: they need the latest Dave",
     typeMessage: "Message…", removeAsk: "Remove {name} as a friend?", pickFriend: "Pick a friend to chat with", noLines: "No messages yet. Say hi!",
   },
   nl: {
@@ -464,7 +464,7 @@ const T = {
     social: "Sociaal", yourCode: "Jouw vriendcode", copy: "Kopiëren", addFriend: "Plak de code van een vriend…", requests: "Vriendverzoeken",
     wantsFriends: "wil vrienden worden", accept: "Accepteren", decline: "Weigeren", waiting: "Wacht tot die accepteert", friends: "Vrienden",
     noFriends: "Nog geen vrienden", noFriendsHint: "Stuur je vriendcode naar een vriend die Dave gebruikt, of plak die van hen hierboven. Chat dan hier, of zeg “zeg tegen Alex dat ik online ben”.",
-    secure: "🔒 End-to-end versleuteld: alleen jullie tweeën kunnen dit lezen", notSecure: "⚠️ Nog niet versleuteld: ze hebben de nieuwste Dave nodig",
+    notSecure: "⚠️ Nog niet versleuteld: ze hebben de nieuwste Dave nodig",
     typeMessage: "Bericht…", removeAsk: "{name} verwijderen als vriend?", pickFriend: "Kies een vriend om mee te chatten", noLines: "Nog geen berichten. Zeg hoi!",
   },
 };
@@ -901,7 +901,8 @@ function renderSocial() {
   back.onclick = () => { chatting = false; rendered.social = null; renderSocial(); };
   const remove = el("button", "x", "✕"); remove.title = "Remove";
   remove.onclick = () => { if (confirm(t("removeAsk").replace("{name}", sel.name))) send({ type: "socialRemove", code: sel.code }); };
-  const title = el("div", "main"); title.append(el("b", null, sel.name), el("div", "sub", sel.secure ? t("secure") : t("notSecure")));
+  const title = el("div", "main"); title.append(el("b", null, sel.name));
+  if (!sel.secure) title.append(el("div", "sub", t("notSecure"))); // only a warning; encrypted is simply how it is
   head.append(back, avatar(sel.name), title, remove);
   const lines = el("div", "dm-lines");
   if (!sel.lines.length) lines.append(empty("👋", t("noLines")));
