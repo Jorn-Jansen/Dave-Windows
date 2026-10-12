@@ -38,14 +38,19 @@ things on your PC ("pause the music on my PC", "lock my PC"). Needs Dave 1.5.0 o
 - **Typing and clipboard:** dictate into any window; read, translate or summarise what you copied
 - **Files:** "look at C:\…\report.docx and rate it", "summarise this PDF", "what's in my Downloads folder?"
 - **PC stats:** "how hot is my GPU?", "what's using my memory?", "is it still downloading?", "how fast is my internet?", "what's my ping?"
+- **Lag check:** "why is my game lagging?", "my fps is low": measures your PC for two seconds while you play and tells you the likely cause
 - **Screen time:** "how long did I play Roblox today?", "my screen time this week" (kept only on your PC)
 - **Quiet mode:** "be quiet for a bit, I'm in a call" shows answers instead of saying them
 - **Reminders and timers**, also repeating ("every weekday at 8", "every 2 hours"), **later actions** ("lock my PC in 10 minutes",
   "pause the music at 23:00"), and **heads-ups:** "tell me when Roblox closes", "let me know when my download is done"
+  Timers count down in a small card in the corner of your screen (can be turned off)
+- **Friends (Social):** chat with friends who use Dave too: add each other with a friend code in the Social tab, then
+  "tell Alex I'm online", "any messages?". Messages pop up and are read out loud (both can be turned off)
+- **Personality:** normal, chill, hyped, butler or sarcastic ("be a butler"): changes how he talks and how his voice sounds
 - **Windows:** "put this on my other screen", "Chrome and Discord side by side", "minimise everything"
 - **Screenshots:** "screenshot this and copy it", "save a screenshot on my desktop"
 - **Calendar:** "what do I have tomorrow?", "put football on Saturday at 2 in my calendar" (paste your calendar's iCal link in Settings)
-- **Settings:** custom name and wake phrase, voices (Windows or Azure), language, AI provider (Groq, OpenAI, OpenRouter or your own), and 7 color themes
+- **Settings:** custom name and wake phrase, voices (Windows or Azure), language, AI provider (Groq, OpenAI, OpenRouter or your own), 7 color themes with their own sounds, and "Keep Dave off games"
 
 ### Spotify
 In Settings, paste your app's Client ID from [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard),

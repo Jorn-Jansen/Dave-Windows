@@ -55,6 +55,9 @@ public static class Commands
                 "screenshot" => Screenshots.Take(s, Str(args, "what"), Str(args, "action") is { Length: > 0 } a ? a : "copy", Str(args, "where")),
                 "calendar" => AddToCalendar(s, args),
                 "quiet_mode" => QuietMode(s, Bool(args, "on"), Int(args, "minutes") ?? 0),
+                "timers_on_screen" => TimersOnScreen(s, Bool(args, "show")),
+                "set_personality" => SetPersonality(s, Str(args, "personality")),
+                "send_message" => await SendMessageAsync(s, Str(args, "to"), Str(args, "text")),
                 "watch_for" => new Outcome(Watchers.Add(s, Str(args, "what"), Str(args, "program"),
                     args["number"] is JsonValue n && n.TryGetValue<double>(out var limit) ? limit : 0, Str(args, "message")), true),
                 "stop_watching" => new Outcome(Watchers.CancelAll() is var stopped and > 0
@@ -320,6 +323,38 @@ public static class Commands
         return new Outcome("🤫 " + (minutes > 0
             ? s.Say($"Quiet until {s.QuietUntil:HH:mm}. I'll show my answers here.", $"Stil tot {s.QuietUntil:HH:mm}. Ik laat mijn antwoorden hier zien.")
             : s.Say("Quiet mode on. I'll show my answers here until you say I can talk again.", "Stille modus aan. Ik laat mijn antwoorden hier zien tot je zegt dat ik weer mag praten.")), true);
+    }
+
+    /// <summary>"Tell Alex I'm online": a message to a friend who uses Dave too (see Social).</summary>
+    private static async Task<Outcome> SendMessageAsync(Settings s, string to, string text)
+    {
+        var friend = Social.Find(s, to);
+        if (friend == null)
+            return new Outcome(s.Friends.Any(f => f.Status == "friend")
+                ? s.Say($"You don't have a friend called {to} in Dave. Your friends: {string.Join(", ", s.Friends.Where(f => f.Status == "friend").Select(f => f.Name))}.",
+                        $"Je hebt geen vriend die {to} heet in Dave. Je vrienden: {string.Join(", ", s.Friends.Where(f => f.Status == "friend").Select(f => f.Name))}.")
+                : s.Say("You haven't added any friends yet: open the Social tab in my window and add their friend code.",
+                        "Je hebt nog geen vrienden toegevoegd: open het tabblad Sociaal in mijn venster en voeg hun vriendcode toe."), true);
+        var why = await Social.SendAsync(s, friend.Code, text);
+        return new Outcome(why ?? "💬 " + s.Say($"Sent to {friend.Name}: {text}", $"Verstuurd naar {friend.Name}: {text}"), true);
+    }
+
+    /// <summary>Another personality ("be a butler", "act normal"): said in the new personality's own way.</summary>
+    private static Outcome SetPersonality(Settings s, string id)
+    {
+        var p = Personalities.Get(id);
+        s.Personality = p.Id;
+        s.Save();
+        return new Outcome(s.Say(p.Hello, p.HelloDutch), true);
+    }
+
+    /// <summary>The countdown cards for timers in the corner of the screen: on or off (also in the settings).</summary>
+    private static Outcome TimersOnScreen(Settings s, bool show)
+    {
+        s.TimersOnScreen = show;
+        s.Save();
+        return new Outcome(show ? s.Say("⏱ Okay, timers show on your screen again.", "⏱ Oké, timers staan weer op je scherm.")
+                                : s.Say("Okay, no more timers on your screen. I'll still tell you when they're done.", "Oké, geen timers meer op je scherm. Ik zeg nog steeds wanneer ze klaar zijn."), true);
     }
 
     /// <summary>Opens the event, filled in, in your calendar; you click Save (reading happens in Program, with the AI).</summary>

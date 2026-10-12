@@ -123,6 +123,8 @@ public static class Assistant
             }, "message"),
         Tool("cancel_reminders", "Cancel reminders: one ('stop the water reminder') or all.",
             new JsonObject { ["which"] = Str("Words from the reminder to cancel; empty for all") }),
+        Tool("timers_on_screen", "Show or hide the countdown of timers in the corner of the screen ('hide the timer', 'show the timer again'). Timers still go off.",
+            new JsonObject { ["show"] = new JsonObject { ["type"] = "boolean" } }, "show"),
         Tool("open_app", "Open a program.", new JsonObject { ["name"] = Str("e.g. 'Roblox Studio'") }, "name"),
         Tool("open_website", "Open a website or web search.",
             new JsonObject { ["url"] = Str("Address of a specific site"), ["search"] = Str("Search words"), ["browser"] = Str("Only if the user named one") }),
@@ -198,6 +200,9 @@ public static class Assistant
             "Not for something the user copied: that's use_clipboard.", new JsonObject { ["text"] = Str("The actual text, never a placeholder") }, "text"),
         Tool("pc_stats", "How the PC is doing: CPU/GPU use and temperature, RAM and what uses it, disk space, battery, uptime.",
             new JsonObject { ["question"] = Str("The user's question") }, "question"),
+        Tool("performance_check", "Why a game or the PC is lagging, stuttering, slow or has low FPS / frame drops / high ping: measures the PC " +
+            "for two seconds while they play and finds the likely cause. Use this rather than pc_stats for anything about lag or slowness.",
+            new JsonObject { ["question"] = Str("The user's question") }, "question"),
         Tool("update_dave", "Check for and install a new version of Dave."),
         Tool("recall_conversation", "Look up what the user said to you earlier (last 30 days), e.g. 'what did I ask you yesterday'. Not for app use: that's screen_time.",
             new JsonObject
@@ -225,6 +230,15 @@ public static class Assistant
             }, "question", "from_date", "to_date"),
         Tool("internet_speed", "Test the internet: 'how fast is my internet' (speed) or 'what's my ping' (ping, quick).",
             new JsonObject { ["what"] = Enum("speed", "ping") }, "what"),
+        Tool("send_message", "Send a chat message to a friend who uses Dave too: 'tell Alex I'm online', 'ask Sam if he's coming to play', " +
+            "'reply: on my way' (to = 'last' for whoever messaged last). Write the message as the user would send it, in their own words " +
+            "and language ('tell Alex I'm online' -> text 'I'm online').",
+            new JsonObject { ["to"] = Str("The friend's name, or 'last'"), ["text"] = Str("The message itself") }, "to", "text"),
+        Tool("read_messages", "Messages from friends in Dave's Social chat: 'any messages?', 'what did Alex say?', 'read my messages'.",
+            new JsonObject { ["from"] = Str("A friend's name, or empty for everyone"), ["question"] = Str("The user's question") }, "question"),
+        Tool("set_personality", "Change your personality (how you talk and sound): 'be a butler', 'be more chill', 'get hyped', 'be sarcastic', " +
+            "'act normal again'.",
+            new JsonObject { ["personality"] = Enum(Personalities.All.Select(p => p.Id).ToArray()) }, "personality"),
         Tool("quiet_mode", "Quiet mode: only show answers instead of saying them ('be quiet for a bit', 'I'm in a call'), or talk again.",
             new JsonObject
             {
@@ -280,7 +294,7 @@ public static class Assistant
             new[] { "remember", "forget", "recall_conversation" }),
         (Words("remind", "herinner", "timer", "alarm", "wekker", "reminder", "every", "elke", "iedere", "cancel", "annuleer", "later",
                "tonight", "vanavond", "tomorrow", "morgen", "minute", "minuut", "minuten", "hour", "uur", "second", "seconde"),
-            new[] { "set_reminder", "cancel_reminders" }),
+            new[] { "set_reminder", "cancel_reminders", "timers_on_screen" }),
         (Words("open", "start", "launch", "close", "sluit", "quit", "afsluit", "lock", "vergrendel", "op slot", "app", "program", "website", "site",
                "google", "youtube", "browser", "chrome", "discord", "roblox", "steam", "search", "zoek"),
             new[] { "open_app", "open_website", "lock_pc", "close_app", "close_all_apps" }),
@@ -313,8 +327,17 @@ public static class Assistant
                "accu", "batterij", "uptime", "internet", "speed", "snelheid", "ping", "wifi", "lag", "slow", "traag", "pc doing", "pc het",
                "download", "using my pc", "what's using", "wat gebruikt", "busy", "druk"),
             new[] { "pc_stats", "internet_speed" }),
+        (Words("lag", "laggy", "lagging", "stutter", "hapert", "haperen", "schokt", "fps", "frames", "frame drop", "framedrop", "slow", "traag",
+               "langzaam", "performance", "prestaties", "smooth", "soepel", "choppy", "freez", "bevriest", "loopt vast", "high ping", "hoge ping"),
+            new[] { "performance_check", "close_app", "close_all_apps" }),
         (Words("update", "version", "versie", "nieuwe dave", "new dave"),
             new[] { "update_dave" }),
+        (Words("tell ", "zeg tegen", "message", "bericht", "text ", "ask ", "vraag ", "reply", "antwoord", "friend", "vriend", "chat", "dm ",
+               "messaged", "said", "zei", "texted", "geappt"),
+            new[] { "send_message", "read_messages" }),
+        (Words("personality", "persoonlijkheid", "butler", "chill", "relaxed", "hyped", "hype", "sarcastic", "sarcastisch", "act normal",
+               "doe normaal", "be normal", "be more", "wees", "talk like", "praat als", "mood", "stemming"),
+            new[] { "set_personality" }),
         (Words("tell me when", "let me know", "laat me weten", "laat weten", "zeg het als", "zeg wanneer", "seintje", "heads-up", "watch", "keep an eye",
                "houd in de gaten", "when it's done", "als het klaar", "closes", "afsluit", "stop watching", "stop met"),
             new[] { "watch_for", "stop_watching" }),
@@ -346,6 +369,7 @@ public static class Assistant
         var everything = CommandTools();
         var wanted = new HashSet<string>(Groups.Where(g => g.words.IsMatch(text)).SelectMany(g => g.tools));
         if (Reminders.TryFindLater(text, out _, out _, out _)) wanted.Add("set_reminder"); // "… at 23:00": something for later
+        if (Social.Mentioned(text)) { wanted.Add("send_message"); wanted.Add("read_messages"); } // a friend's name
         foreach (var turn in History) // (also: the AI may not accept earlier calls to commands it doesn't get now)
             foreach (var m in turn)
                 if (m["tool_calls"] is JsonArray calls)
@@ -371,6 +395,7 @@ public static class Assistant
               "When asked to read text out, read it as it is if it's short, otherwise summarise it. Plain speech only: no markdown, lists, emojis or symbols."
             : "Reply with only the resulting text, exactly as it should be pasted: no introduction, quotes or comments.";
         var system = $"You are {settings.Name}, a voice assistant on the user's PC. Below is {what}. Do what the user asks with it. {style}";
+        if (spoken) system += " " + Personalities.Instruction(settings);
         var body = new JsonObject
         {
             ["model"] = Groq.Model,
@@ -402,6 +427,7 @@ public static class Assistant
             Search the web (guides, wikis, forums) unless you're sure, and give the answer that fits where they are now.
             Answer in {language}: two to four short spoken sentences with concrete steps. Plain speech only: no markdown, lists, emojis or links.
             """;
+        system += "\n" + Personalities.Instruction(settings);
         var body = new JsonObject
         {
             ["model"] = Groq.Model,
@@ -457,6 +483,7 @@ public static class Assistant
 
         var system = System.Replace("Dave", settings.Name) + $"\nYour name is {settings.Name}. You are version {Updater.Display}; " +
                      "for questions about updating or newer versions, use update_dave.";
+        system = Personalities.Instruction(settings) + "\n\n" + system; // first, so it colours everything below
         if (settings.IsDutch)
             system += "\nThe user speaks Dutch or English. For very short commands that could be either, assume Dutch: 'harder' means louder and 'zachter' means quieter.";
         if (settings.Memories.Count > 0)
@@ -469,7 +496,7 @@ public static class Assistant
 
         var messages = new JsonArray { Message("system", system) };
         foreach (var turn in History) foreach (var m in turn) messages.Add(m.DeepClone());
-        messages.Add(Message("user", $"{context}\n\n{text}"));
+        messages.Add(Message("user", $"{context}\n\n{text}{Personalities.Nudge(settings)}"));
 
         var body = new JsonObject { ["model"] = Groq.Model, ["reasoning_effort"] = "low", ["messages"] = messages };
 
@@ -601,9 +628,10 @@ public static class Assistant
         catch { return new JsonObject(); }
     }
 
-    /// <summary>Drop emojis and symbols text-to-speech would read out.</summary>
+    /// <summary>Drop emojis and symbols text-to-speech would read out, and the mood tag ("[excited]") the AI may start with
+    /// (remembered for how the answer is said).</summary>
     public static string Speakable(string text) =>
-        Regex.Replace(Regex.Replace(Regex.Replace(text, @"\*\*|__|`|^#+\s*", "", RegexOptions.Multiline), @"[\p{So}\p{Cs}️‍]", ""), @"\s+", " ").Trim();
+        Regex.Replace(Regex.Replace(Regex.Replace(Personalities.TakeMood(text), @"\*\*|__|`|^#+\s*", "", RegexOptions.Multiline), @"[\p{So}\p{Cs}️‍]", ""), @"\s+", " ").Trim();
 
     private static string TimeContext()
     {

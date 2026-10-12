@@ -139,10 +139,11 @@ public static class Speaker
             await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(text.Length / 15.0, 2.5, 15)), cancel);
             return;
         }
+        var sound = Personalities.Voice(settings); // how it sounds: the personality, and the mood of this answer
         if (settings.VoiceEngine == "azure" && Azure.IsConfigured(settings))
         {
             byte[]? azureWav = null;
-            try { azureWav = await Azure.SynthesizeAsync(settings, text, languageTag, cancel); }
+            try { azureWav = await Azure.SynthesizeAsync(settings, text, languageTag, cancel, sound.rate, sound.pitch, sound.style, sound.degree); }
             catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
             catch (Exception e) { Log.Write($"Azure voice failed, using the Windows voice instead: {e.Message}"); }
             if (azureWav != null)
@@ -152,18 +153,21 @@ public static class Speaker
                 return;
             }
         }
-        await SpeakWindowsAsync(settings, text, languageTag, cancel);
+        await SpeakWindowsAsync(settings, text, languageTag, cancel, sound.rate, sound.pitch, sound.volume);
     }
 
     /// <summary>The built-in Windows voices (offline). Also the fallback when Azure isn't reachable.</summary>
-    private static async Task SpeakWindowsAsync(Settings settings, string text, string languageTag, CancellationToken cancel)
+    private static async Task SpeakWindowsAsync(Settings settings, string text, string languageTag, CancellationToken cancel,
+        double rate = 1, double pitch = 1, double volume = 1)
     {
         using var synth = new SpeechSynthesizer();
         var wanted = languageTag == settings.Language ? settings.Voice : settings.SecondVoice;
         var voice = VoicesFor(languageTag).FirstOrDefault(v => v.DisplayName == wanted)
                     ?? VoicesFor(languageTag).FirstOrDefault();
         if (voice != null) synth.Voice = voice;
-        synth.Options.SpeakingRate = Math.Clamp(settings.SpeechRate, 0.5, 3.0);
+        synth.Options.SpeakingRate = Math.Clamp(settings.SpeechRate * rate, 0.5, 3.0);
+        synth.Options.AudioPitch = Math.Clamp(pitch, 0, 2);   // 1 = the voice's own
+        synth.Options.AudioVolume = Math.Clamp(volume, 0, 1);
 
         using var stream = await synth.SynthesizeTextToStreamAsync(text);
         using var wav = new MemoryStream();

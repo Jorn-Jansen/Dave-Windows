@@ -93,6 +93,7 @@ public class DaveApp : ApplicationContext
     private HotkeyWindow? windowHotkey;
     private DaveWindow? window; // made the first time you open it
     private readonly System.Windows.Forms.Timer reminderTimer = new() { Interval = 1_000 }; // every second, so timers go off on time
+    private readonly TimerOverlay timerOverlay; // the countdown cards in the corner of the screen
     private WakeWord? wakeWord;
     private PhoneLink? phoneLink; // Dave on the iPhone talking to this Dave (when turned on)
     private bool remote; // answering the iPhone: no speaking, ducking or listening here
@@ -100,6 +101,7 @@ public class DaveApp : ApplicationContext
     private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 6 * 60 * 60 * 1000 }; // look for a new version every 6 hours
     private Updater.Release? pendingInstall; // asked for by voice: installed once Dave has finished talking
     private readonly Queue<string> headsUps = new(); // things Dave was watching for that happened; said once he's free
+    private readonly Queue<Social.Incoming> incoming = new(); // messages from friends, said once Dave is free
     private readonly Queue<string> dueActions = new(); // "lock my PC in 10 minutes" when it's time; done once he's free
 
     private CancellationTokenSource? session;          // the conversation or quiz that's running
@@ -111,6 +113,7 @@ public class DaveApp : ApplicationContext
     public DaveApp(string? testQuestion = null)
     {
         Ducker.RestoreAfterCrash(); // in case Dave was closed while other sound was turned down
+        timerOverlay = new TimerOverlay(settings);
         Palette.Use(settings.Theme);
         Watchers.Triggered += message =>
         {
@@ -124,6 +127,9 @@ public class DaveApp : ApplicationContext
             MusicWatcher.Start(settings); // song history, and skipping songs you don't like
             Notifications.Start(); // "what did I miss?" also covers notifications you already dismissed
             ScreenTime.Start();
+            Social.Start(settings); // messages from friends who use Dave too
+            Social.Received += message => { incoming.Enqueue(message); AnnounceDueReminders(); }; // right away, or once Dave is free
+            Social.Changed += () => window?.Push();
         }
         if (testQuestion != null)
         {
@@ -157,7 +163,7 @@ public class DaveApp : ApplicationContext
         windowHotkey = new HotkeyWindow(ToggleWindow);
         ApplySettings();
 
-        reminderTimer.Tick += (_, _) => AnnounceDueReminders();
+        reminderTimer.Tick += (_, _) => { AnnounceDueReminders(); timerOverlay.Sync(); };
         reminderTimer.Start();
         AnnounceDueReminders(); // ones that came due while the PC was off
 
@@ -172,6 +178,7 @@ public class DaveApp : ApplicationContext
 
     private async Task TestAsync(string question)
     {
+        if (Environment.GetEnvironmentVariable("DAVE_DEMO_KEEPOFF") == "1") GameGuard.KeepOffGames = true; // try "Keep Dave off games"
         if (question == "demo") // shows listening, thinking and talking, without talking to anyone (for checking the look)
         {
             if (Environment.GetEnvironmentVariable("DAVE_DEMO_THEME") is { Length: > 0 } demoTheme) Palette.Use(demoTheme); // try a theme without changing the settings
@@ -190,6 +197,22 @@ public class DaveApp : ApplicationContext
             ExitThread();
             return;
         }
+        if (question == "timers") // the timer cards with two made-up timers, one going off after 12 seconds (your own stay untouched)
+        {
+            if (Environment.GetEnvironmentVariable("DAVE_DEMO_THEME") is { Length: > 0 } demoTheme) Palette.Use(demoTheme);
+            var demo = new Settings { Language = settings.Language };
+            demo.Reminders.Add(new Settings.Reminder { Id = DateTime.Now.AddSeconds(-48).Ticks, At = DateTimeOffset.Now.AddSeconds(12), Message = T("Pizza", "Pizza") });
+            demo.Reminders.Add(new Settings.Reminder { Id = DateTime.Now.AddMinutes(-10).Ticks, At = DateTimeOffset.Now.AddMinutes(25), Message = T("Take the laundry out", "Was eruit halen") });
+            using var cards = new TimerOverlay(demo);
+            for (int i = 0; i < 20; i++)
+            {
+                demo.Reminders.RemoveAll(r => r.At <= DateTimeOffset.Now); // went off
+                cards.Sync();
+                await Task.Delay(1000);
+            }
+            ExitThread();
+            return;
+        }
         Log.Write($"TEST ask: {question}");
         await RunSessionAsync(question);
         // For testing things that happen later (watchers): DAVE_TEST_LINGER=seconds keeps the test running that long.
@@ -203,6 +226,7 @@ public class DaveApp : ApplicationContext
     private void ApplySettings()
     {
         Palette.Use(settings.Theme);
+        GameGuard.KeepOffGames = settings.KeepOffGames;
         if (!hotkey.Register(settings.Hotkey))
             tray.ShowBalloonTip(4000, "Dave", $"Shortcut {settings.Hotkey} is already used by another program. Pick another in Settings.", ToolTipIcon.Warning);
         if (windowHotkey != null && settings.WindowHotkey.Trim().Length > 0 && !windowHotkey.Register(settings.WindowHotkey))
@@ -523,7 +547,7 @@ public class DaveApp : ApplicationContext
             {
                 using (new Ducker(settings.DuckTo))
                 {
-                    Speaker.Beep();
+                    ThemeSounds.Play(settings, ThemeSounds.Cue.Alert);
                     var text = isReminder ? T("Reminder: ", "Herinnering: ") + announcement : announcement;
                     bubble.ShowText((isReminder ? "⏰ " : "👀 ") + text, spoken: true);
                     ConversationLog.Add(isReminder ? "(reminder went off)" : "(something you asked me to watch for happened)", text);
@@ -669,7 +693,7 @@ public class DaveApp : ApplicationContext
                     await Speaker.SpeakAsync(settings, seen, language, cancel);
                     return;
                 }
-                if (command.Name is "use_clipboard" or "pc_stats" or "update_dave" or "recall_conversation" or "screen_time" or "internet_speed" or "read_file"
+                if (command.Name is "use_clipboard" or "pc_stats" or "performance_check" or "read_messages" or "update_dave" or "recall_conversation" or "screen_time" or "internet_speed" or "read_file"
                         or "read_page" or "read_notifications" or "game_help" or "where_left_off" or "send_to_phone"
                     ||(command.Name == "calendar" && command.Args["action"]?.ToString() != "add" && CalendarFeed.Links(settings).Count > 0))
                 {
@@ -690,6 +714,25 @@ public class DaveApp : ApplicationContext
                         Log.Write("PC stats:\n" + stats.TrimEnd());
                         answer = await Assistant.WorkOnAsync(settings, command.Args["question"]?.ToString() ?? text, stats,
                             "a report of the user's PC, measured just now", language, spoken: true);
+                    }
+                    else if (command.Name == "read_messages")
+                    {
+                        Watchdog.Step = "reading messages";
+                        answer = await Assistant.WorkOnAsync(settings, command.Args["question"]?.ToString() is { Length: > 0 } mq ? mq : text,
+                            Social.Describe(settings, command.Args["from"]?.ToString() ?? ""), "the user's chats with friends in Dave (Social); " +
+                            "say who wrote what, newest and unread first, briefly", language, spoken: true);
+                    }
+                    else if (command.Name == "performance_check")
+                    {
+                        Watchdog.Step = "checking why it lags";
+                        bubble.ShowText("🎮 " + T("Checking what slows your PC down…", "Ik kijk wat je pc vertraagt…"));
+                        var measured = await Task.Run(PerformanceCheck.Collect);
+                        Log.Write("Performance check:\n" + measured.TrimEnd());
+                        answer = await Assistant.WorkOnAsync(settings, command.Args["question"]?.ToString() ?? text, measured,
+                            "the user's PC measured for two seconds just now, while they play, with the likely causes worked out. Say briefly what is " +
+                            "most likely slowing it down and what to do about it (lag = connection, stutters/low frames = the PC). If background " +
+                            "programs are to blame, offer to close them by name (never the game, Dave or parts of Windows). If nothing stands " +
+                            "out, say so", language, spoken: true);
                     }
                     else if (command.Name == "recall_conversation")
                     {
@@ -798,10 +841,13 @@ public class DaveApp : ApplicationContext
                 Watchdog.Step = $"command {command.Name}";
                 var outcome = await Commands.RunAsync(settings, command.Name, command.Args, text);
                 Log.Write($"Outcome: {outcome.Text}");
-                ConversationLog.Add(text, $"({command.Name}) {outcome.Text}");
-                bubble.ShowText(outcome.Text, spoken: outcome.Speak);
-                if (outcome.Speak) await Speaker.SpeakAsync(settings, outcome.Text, settings.Language, cancel);
-                else Speaker.Beep(1320, 90);
+                // Said in Dave's personality ("Timer set" → "Certainly, sir, your timer is set"); a new personality says hello itself
+                var said = outcome.Speak && command.Name != "set_personality"
+                    ? await Personalities.RestyleAsync(settings, outcome.Text, language) : outcome.Text;
+                ConversationLog.Add(text, $"({command.Name}) {said}");
+                bubble.ShowText(said, spoken: outcome.Speak);
+                if (outcome.Speak) await Speaker.SpeakAsync(settings, said, settings.Language, cancel);
+                else ThemeSounds.Play(settings, ThemeSounds.Cue.Done);
                 return;
             }
         }
@@ -927,8 +973,8 @@ public class DaveApp : ApplicationContext
         for (int attempt = 0; attempt < attempts; attempt++)
         {
             bubble.ShowListening();
-            Speaker.Beep();
-            await Task.Delay(150, cancel);
+            var sound = ThemeSounds.Play(settings, ThemeSounds.Cue.Listen);
+            await Task.Delay(Math.Max(150, (int)sound.TotalMilliseconds), cancel); // so the sound isn't recorded
             Watchdog.Step = "listening";
             window?.Push(); // the window's microphone lights up
             var wav = await Recorder.RecordAsync(cancel);
@@ -941,6 +987,7 @@ public class DaveApp : ApplicationContext
                 await Task.Delay(1200, cancel);
                 return null;
             }
+            ThemeSounds.Play(settings, ThemeSounds.Cue.Heard);
             bubble.ShowText("…");
             Watchdog.Step = "transcribing";
             var (text, whisperLanguage) = await Groq.TranscribeAsync(settings, wav);
@@ -1065,6 +1112,46 @@ public class DaveApp : ApplicationContext
         await Speaker.SpeakAsync(settings, T($"That's the end of the quiz! You got {score} out of {played}.", $"Einde van de quiz! Je had er {score} van de {played} goed."), settings.Language, cancel);
     }
 
+    // --- Messages from friends ---
+
+    /// <summary>
+    /// A friend's message: the notification sound, then the name and message in the bubble (or in Dave's window when you're
+    /// in it), read out loud unless that's turned off (or in quiet mode). Also on the phone when you're away from the PC.
+    /// </summary>
+    private async Task AnnounceMessageAsync(Social.Incoming message)
+    {
+        session = new CancellationTokenSource();
+        var cancel = session.Token;
+        if (wakeWord != null) wakeWord.Paused = true;
+        var inWindow = WindowOpen();
+        try
+        {
+            Log.Write($"Message from {message.Name}");
+            if (settings.MessageSound) ThemeSounds.Play(settings, ThemeSounds.Cue.Message);
+            var shown = $"💬 {message.Name}: {message.Text}";
+            var aloud = settings.ReadMessagesAloud && !settings.IsQuiet;
+            if (inWindow) window!.Notify(shown);
+            else bubble.ShowText(shown, spoken: aloud);
+            PhoneNotify.Send(settings, "💬 " + message.Name, message.Text); // (only when you've been away from the PC)
+            if (aloud)
+            {
+                await Task.Delay(450, cancel); // the sound first
+                var language = LanguageOf(null, message.Text);
+                using (new Ducker(settings.DuckTo))
+                    await Speaker.SpeakAsync(settings, language.StartsWith("nl") ? $"{message.Name} zegt: {message.Text}" : $"{message.Name} says: {message.Text}", language, cancel);
+            }
+            else if (!inWindow) await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(message.Text.Length / 15.0, 4, 12)), cancel); // long enough to read
+        }
+        catch (OperationCanceledException) { /* clicked away */ }
+        catch (Exception e) { Log.Write($"Showing a message failed: {e.Message}"); }
+        finally
+        {
+            if (!inWindow) bubble.HideAfter(1500);
+            session = null;
+            if (wakeWord != null) wakeWord.Paused = false;
+        }
+    }
+
     // --- Reminders ---
 
     private void AnnounceDueReminders()
@@ -1085,6 +1172,11 @@ public class DaveApp : ApplicationContext
             var action = dueActions.Dequeue();
             Log.Write($"Doing what was asked for now: {action}");
             _ = RunSessionAsync(action);
+            return;
+        }
+        if (incoming.Count > 0)
+        {
+            _ = AnnounceMessageAsync(incoming.Dequeue()); // one at a time
             return;
         }
         if (headsUps.Count > 0)

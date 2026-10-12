@@ -110,7 +110,7 @@ public static class PcStats
             var f = line?.Split(',').Select(x => x.Trim()).ToArray();
             if (f == null || f.Length < 5) return null;
             var extra = (f.Length > 5 && f[5] != "[N/A]" ? $", using {f[5]} watts" : "") + (f.Length > 6 && f[6] != "[N/A]" ? $", fans at {f[6]}%" : "");
-            return $"Graphics card: {f[0]}, {f[1]} Ã‚Â°C, {f[2]}% in use, video memory {double.Parse(f[3], CultureInfo.InvariantCulture) / 1024:F1} of {double.Parse(f[4], CultureInfo.InvariantCulture) / 1024:F1} GB{extra}.";
+            return $"Graphics card: {f[0]}, {f[1]} degrees C,{f[2]}% in use, video memory {double.Parse(f[3], CultureInfo.InvariantCulture) / 1024:F1} of {double.Parse(f[4], CultureInfo.InvariantCulture) / 1024:F1} GB{extra}.";
         }
         catch { return null; } // no NVIDIA card or driver
     }

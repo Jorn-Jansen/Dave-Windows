@@ -17,7 +17,10 @@ public static class Azure
     public static bool IsConfigured(Settings s) => s.AzureKey.Length > 0 && s.AzureRegion.Length > 0;
 
     /// <summary>Speech as WAV bytes (24 kHz mono), in [languageTag] with the chosen Azure voice.</summary>
-    public static async Task<byte[]> SynthesizeAsync(Settings s, string text, string languageTag, CancellationToken cancel)
+    /// <param name="speed">Times the speed setting, and [pitch] (1 = the voice's own), for the personality and mood.</param>
+    /// <param name="style">A speaking style (excited, calm, whispering…), used only when this voice has it; [degree] how strongly (0.01..2).</param>
+    public static async Task<byte[]> SynthesizeAsync(Settings s, string text, string languageTag, CancellationToken cancel,
+        double speed = 1, double pitch = 1, string style = "", double degree = 1)
     {
         var voice = languageTag == s.Language ? s.AzureVoice : s.AzureSecondVoice;
         if (voice.Length == 0) throw new InvalidOperationException($"No Azure voice chosen for {languageTag}");
@@ -25,10 +28,15 @@ public static class Azure
         // "Multilingual" voices speak other languages too, as long as we say which one this sentence is in.
         var body = SecurityElement.Escape(text);
         if (voice.Contains("Multilingual", StringComparison.OrdinalIgnoreCase)) body = $"<lang xml:lang='{languageTag}'>{body}</lang>";
-        var rate = (int)Math.Round((s.SpeechRate - 1.0) * 100);
+        var rate = (int)Math.Round((s.SpeechRate * speed - 1.0) * 100);
+        var tone = (int)Math.Round((pitch - 1.0) * 100);
         var voiceLocale = string.Join('-', voice.Split('-').Take(2));
-        var ssml = $"<speak version='1.0' xml:lang='{voiceLocale}'><voice name='{voice}'>" +
-                   $"<prosody rate='{(rate >= 0 ? "+" : "")}{rate}%'>{body}</prosody></voice></speak>";
+        var pitchAttribute = tone != 0 ? $" pitch='{(tone > 0 ? "+" : "")}{tone}%'" : ""; // only when changed: not every voice takes it
+        body = $"<prosody rate='{(rate >= 0 ? "+" : "")}{rate}%'{pitchAttribute}>{body}</prosody>";
+        if (style.Length > 0 && (await StylesAsync(s, voice)).Contains(style))
+            body = $"<mstts:express-as style='{style}' styledegree='{Math.Clamp(degree, 0.01, 2).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}'>{body}</mstts:express-as>";
+        var ssml = $"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='{voiceLocale}'>" +
+                   $"<voice name='{voice}'>{body}</voice></speak>";
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"https://{s.AzureRegion}.tts.speech.microsoft.com/cognitiveservices/v1")
         {
@@ -41,6 +49,34 @@ public static class Azure
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"Azure said {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync(cancel)}");
         return await response.Content.ReadAsByteArrayAsync(cancel);
+    }
+
+    private static readonly Dictionary<string, HashSet<string>> Styles = new();
+
+    /// <summary>The speaking styles a voice has (most voices have none), from Azure's voice list; asked once per voice.</summary>
+    private static async Task<HashSet<string>> StylesAsync(Settings s, string voice)
+    {
+        lock (Styles) if (Styles.TryGetValue(voice, out var known)) return known;
+        var styles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"https://{s.AzureRegion}.tts.speech.microsoft.com/cognitiveservices/voices/list");
+            request.Headers.Add("Ocp-Apim-Subscription-Key", s.AzureKey);
+            using var response = await Http.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return styles; // try again next time
+            foreach (var v in JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsArray())
+            {
+                if (v?["ShortName"]?.ToString() is not { } name) continue;
+                var list = new HashSet<string>(v["StyleList"]?.AsArray().Select(x => x?.ToString() ?? "") ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+                lock (Styles) Styles[name] = list;
+            }
+            lock (Styles) { if (!Styles.ContainsKey(voice)) Styles[voice] = styles; return Styles[voice]; }
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Couldn't get the Azure voice styles: {e.Message}");
+            return styles;
+        }
     }
 
     /// <summary>All Azure voices that can speak [languageTag]'s language (its own voices plus multilingual ones).</summary>

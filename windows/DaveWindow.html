@@ -195,6 +195,30 @@
   .stabs button { border: 0; background: transparent; color: var(--dim); padding: 7px 16px; border-radius: 8px; font: inherit; cursor: pointer; }
   .stabs button.on { background: var(--grad); color: #fff; }
 
+  /* Social: friends on the left, the chat with one of them on the right (stacked on a narrow window) */
+  .social { flex: 1; min-height: 0; display: flex; }
+  .friends { width: 320px; flex: none; min-width: 0; overflow-y: auto; padding: 18px; border-right: 1px solid var(--line); }
+  .friends .row input { min-width: 0; }
+  .friends h3 { margin: 18px 4px 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+  .mecode { font-family: Consolas, monospace; font-size: 13.5px; white-space: nowrap; user-select: text; }
+  .friend { cursor: pointer; }
+  .friend.on { border-color: color-mix(in srgb, var(--cyan) 60%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--cyan) 40%, transparent), 0 6px 24px color-mix(in srgb, var(--violet) 25%, transparent); }
+  .friend:hover { transform: translateY(-1px); }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 700; color: #fff; background: var(--grad); }
+  .unread { min-width: 22px; height: 22px; border-radius: 11px; padding: 0 7px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff;
+    background: var(--grad); box-shadow: 0 0 12px color-mix(in srgb, var(--pink) 60%, transparent); }
+  .dm { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .dm-head { display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-bottom: 1px solid var(--line); }
+  .dm-head b { font-size: 17px; flex: 1; }
+  .dm-lines { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 10px; }
+  .dm-back { display: none; }
+  @media (max-width: 700px) {
+    .friends { width: auto; flex: 1; border-right: 0; }
+    .social.chatting .friends { display: none; }
+    .social:not(.chatting) .dm { display: none; }
+    .dm-back { display: inline-block; }
+  }
+
   /* Theme cards: a little preview of the bubble and orb in each theme's colours */
   .themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; max-width: 980px; margin: 0 auto; }
   .tcard { border-radius: 16px; border: 2px solid var(--line); background: var(--panel); cursor: pointer; overflow: hidden; transition: .15s; }
@@ -349,6 +373,7 @@
     <div class="tab" data-view="screen"><span class="ico">⏱</span><span data-t="screen"></span></div>
     <div class="tab" data-view="music"><span class="ico">🎵</span><span data-t="music"></span></div>
     <div class="tab" data-view="watching"><span class="ico">👀</span><span data-t="watching"></span><span class="count" id="c-watching"></span></div>
+    <div class="tab" id="socialTab"><span class="ico">👥</span><span data-t="social"></span><span class="count" id="c-social"></span></div>
     <div class="spacer"></div>
     <div class="toggle" id="quiet"><span>🤫 <span data-t="quiet"></span></span><div class="switch" id="quietSwitch"></div></div>
     <div class="tab" id="settings"><span class="ico">⚙️</span><span data-t="settings"></span></div>
@@ -381,6 +406,13 @@
   <div class="ov-body hidden" id="themeBody"></div>
   <div class="ov-foot"><button class="btn" id="settingsCancel" data-t="cancel"></button><button class="save" id="settingsSave" data-t="save"></button></div>
 </div>
+<div class="overlay" id="socialPanel">
+  <div class="ov-head">
+    <h1>👥 <span data-t="social"></span></h1>
+    <button class="close" id="socialClose" title="Close">✕</button>
+  </div>
+  <div class="social" id="social"><aside class="friends" id="friends"></aside><section class="dm" id="dm"></section></div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -400,6 +432,10 @@ const T = {
     noWatchingHint: "Say “tell me when Discord closes”.", stopAll: "Stop watching all", next: "next",
     save: "Save", cancel: "Cancel", general: "General", theme: "Theme", current: "current",
     themeHint: "Changes the bubble, the orb, the glow around your screen and this window. Click one to try it; Save to keep it.",
+    social: "Social", yourCode: "Your friend code", copy: "Copy", addFriend: "Paste a friend's code…", requests: "Friend requests",
+    wantsFriends: "wants to be friends", accept: "Accept", decline: "Decline", waiting: "Waiting for them to accept", friends: "Friends",
+    noFriends: "No friends yet", noFriendsHint: "Send your friend code to a friend who uses Dave, or paste theirs above. Then chat here, or say “tell Alex I'm online”.",
+    typeMessage: "Message…", removeAsk: "Remove {name} as a friend?", pickFriend: "Pick a friend to chat with", noLines: "No messages yet. Say hi!",
   },
   nl: {
     chat: "Chat", reminders: "Herinneringen", memories: "Onthouden", screen: "Schermtijd", music: "Muziek", watching: "Opletten",
@@ -416,6 +452,10 @@ const T = {
     noWatchingHint: "Zeg “laat het me weten als Discord sluit”.", stopAll: "Overal mee stoppen", next: "volgende",
     save: "Opslaan", cancel: "Annuleren", general: "Algemeen", theme: "Thema", current: "huidig",
     themeHint: "Verandert de bubbel, de bol, de gloed rond je scherm en dit venster. Klik er een om te proberen; Opslaan om te houden.",
+    social: "Sociaal", yourCode: "Jouw vriendcode", copy: "Kopiëren", addFriend: "Plak de code van een vriend…", requests: "Vriendverzoeken",
+    wantsFriends: "wil vrienden worden", accept: "Accepteren", decline: "Weigeren", waiting: "Wacht tot die accepteert", friends: "Vrienden",
+    noFriends: "Nog geen vrienden", noFriendsHint: "Stuur je vriendcode naar een vriend die Dave gebruikt, of plak die van hen hierboven. Chat dan hier, of zeg “zeg tegen Alex dat ik online ben”.",
+    typeMessage: "Bericht…", removeAsk: "{name} verwijderen als vriend?", pickFriend: "Kies een vriend om mee te chatten", noLines: "Nog geen berichten. Zeg hoi!",
   },
 };
 /* Errors in this page go to Dave's log (dave.log), so they can be found and fixed */
@@ -439,7 +479,11 @@ $("settings").onclick = openSettings;
 $("settingsClose").onclick = closeSettings;
 $("settingsCancel").onclick = closeSettings;
 $("settingsSave").onclick = () => send({ type: "saveSettings", values: readSettings() });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && $("settingsPanel").classList.contains("show")) closeSettings(); });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if ($("settingsPanel").classList.contains("show")) closeSettings();
+  else if ($("socialPanel").classList.contains("show")) $("socialClose").click();
+});
 
 /* --- Settings panel --- */
 const PROVIDERS = [["groq", "Groq (free, fastest)"], ["openai", "OpenAI"], ["openrouter", "OpenRouter"], ["custom", "Custom (OpenAI-compatible)"]];
@@ -539,6 +583,8 @@ function renderSettings(d) {
 
   sec("You");
   field("AssistantName", "Name", text("AssistantName", "Dave"), "Empty = Dave.");
+  field("Personality", "Personality", select("Personality", [["normal", "Normal: friendly and to the point"], ["chill", "Chill: relaxed and laid-back"], ["hyped", "Hyped: super energetic"], ["butler", "Butler: polite and formal"], ["sarcastic", "Sarcastic: dry, teasing humour"]]),
+    "How he talks and sounds. Also by voice: \"be a butler\", \"act normal again\".");
   field("WakePhrase", "Wake phrase", text("WakePhrase", ""), "Empty = “hey” + the name. E.g. hey jarvis, whats up dave, yo computer.");
   field("Country", "Country", text("Country", "the Netherlands"), "For units, currency and local results.");
   field("Language", "Main language", text("Language", "nl-NL"), "e.g. nl-NL or en-US");
@@ -567,6 +613,9 @@ function renderSettings(d) {
   field("CarefulWakeWord", "Careful wake word", toggle("CarefulWakeWord"), "Double-checks he really heard it: fewer accidental wake-ups, but he reacts a bit later.");
   field("StartWithWindows", "Start with Windows", toggle("StartWithWindows"));
   field("AutoUpdate", "Update automatically", toggle("AutoUpdate"), `Now version ${d.version}.`);
+  field("TimersOnScreen", "Show timers on screen", toggle("TimersOnScreen"), "A small countdown in the top-right corner while a timer runs.");
+  field("ThemeSounds", "Theme sounds", c => { c.append(button("▶ Listen", () => send({ type: "themeSounds", values: readSettings() }))); return toggle("ThemeSounds")(); }, "Soft sounds that fit your theme when Dave starts listening, heard you, is done, or has a reminder. Off: the old beeps.");
+  field("KeepOffGames", "Keep Dave off games", toggle("KeepOffGames"), "Nothing of Dave (his bubble, the glow, timers) over a full-screen game or Roblox: it goes to your other monitor, or stays out of sight if you only have one. You still hear him.");
 
   sec("iPhone app");
   field("PhoneEnabled", "Let the iPhone app connect", toggle("PhoneEnabled"),
@@ -576,6 +625,11 @@ function renderSettings(d) {
   field("PhoneNotify", "Notifications on my phone", toggle("PhoneNotify"),
     d.phone.topic ? `Reminders and heads-ups also go to your phone when you're not at the PC. On your phone: install the free app "ntfy" (App Store), tap +, and subscribe to: ${d.phone.topic} (server ntfy.sh). A test notification was sent when you turned this on.`
                   : "Reminders and heads-ups (\"Roblox closed\", \"your download is done\") on your phone too, when you're not at the PC. Through the free ntfy app. Turn on and save to see your channel.");
+
+  sec("Social");
+  field("SocialName", "Your name for friends", text("SocialName", d.social.defaultName), `What friends see when you message them. Your friend code: ${d.social.code} (also in the Social tab, with a copy button).`);
+  field("ReadMessagesAloud", "Read messages out loud", toggle("ReadMessagesAloud"), "Dave says who it's from and what they wrote. Off: only the sound, and the message on screen.");
+  field("MessageSound", "Message sound", toggle("MessageSound"), "A notification sound when a friend messages you; in your theme's style when Theme sounds are on.");
 
   sec("Calendar");
   field("CalendarLinks", "Calendar link (iCal)", text("CalendarLinks", "https://calendar.google.com/calendar/ical/…/basic.ics"),
@@ -772,6 +826,85 @@ function renderWatching() {
   const stop = el("button", "btn", t("stopAll")); stop.onclick = () => send({ type: "stopWatching" }); v.append(stop);
 }
 
+/* --- Social: friends, requests and chats (a panel over the window, like the settings) --- */
+let socialOpen = false, friendSel = null, chatting = false;
+$("socialTab").onclick = () => { $("socialPanel").classList.add("show"); socialOpen = true; rendered.social = null; renderSocial(); };
+$("socialClose").onclick = () => { $("socialPanel").classList.remove("show"); socialOpen = false; };
+
+function renderSocial() {
+  if (!state || !state.social) return;
+  const s = state.social;
+  count("c-social", s.friends.reduce((n, f) => n + f.unread + (f.status === "incoming" ? 1 : 0), 0));
+  if (!socialOpen) return;
+  if (friendSel && !s.friends.some(f => f.code === friendSel && f.status === "friend")) friendSel = null;
+  if (!friendSel && innerWidth > 700) { const first = s.friends.find(f => f.status === "friend"); if (first) friendSel = first.code; }
+  const sel = s.friends.find(f => f.code === friendSel);
+  if (sel && sel.unread) send({ type: "socialRead", code: sel.code }); // you're looking at it
+  if (!changed("social", [s, friendSel, chatting])) return;
+
+  // What you were typing stays, also when a message comes in
+  const keep = { add: $("addCode") ? $("addCode").value : "", msg: $("dmInput") ? $("dmInput").value : "", focus: document.activeElement ? document.activeElement.id : "" };
+  $("social").classList.toggle("chatting", chatting && !!sel);
+
+  const L = $("friends"); L.textContent = "";
+  const me = el("div", "card"), meMain = el("div", "main");
+  meMain.append(el("div", "sub", t("yourCode")), el("div", "mecode", s.code));
+  const copy = el("button", "btn", t("copy")); copy.onclick = () => send({ type: "socialCopy" });
+  me.append(meMain, copy); L.append(me);
+  const row = el("div", "row"), input = el("input"), add = el("button", "btn", t("add"));
+  input.id = "addCode"; input.placeholder = t("addFriend"); input.value = keep.add;
+  const addIt = () => { if (input.value.trim()) { send({ type: "socialAdd", text: input.value.trim() }); input.value = ""; } };
+  add.onclick = addIt; input.onkeydown = e => { if (e.key === "Enter") addIt(); };
+  row.append(input, add); L.append(row);
+
+  const avatar = name => el("div", "avatar", (name || "?").trim().charAt(0).toUpperCase());
+  const asking = s.friends.filter(f => f.status !== "friend");
+  if (asking.length) {
+    L.append(el("h3", null, t("requests")));
+    for (const f of asking) {
+      const card = el("div", "card"), main = el("div", "main");
+      main.append(el("div", "title", f.name), el("div", "sub", f.status === "incoming" ? t("wantsFriends") : t("waiting")));
+      card.append(avatar(f.name), main);
+      if (f.status === "incoming") {
+        const yes = el("button", "btn", t("accept")); yes.onclick = () => send({ type: "socialAccept", code: f.code });
+        const no = el("button", "x", "✕"); no.title = t("decline"); no.onclick = () => send({ type: "socialRemove", code: f.code });
+        card.append(yes, no);
+      } else { const no = el("button", "x", "✕"); no.onclick = () => send({ type: "socialRemove", code: f.code }); card.append(no); }
+      L.append(card);
+    }
+  }
+  const friends = s.friends.filter(f => f.status === "friend");
+  L.append(el("h3", null, t("friends")));
+  if (!friends.length) L.append(empty("👥", t("noFriends"), t("noFriendsHint")));
+  for (const f of friends) {
+    const card = el("div", "card friend" + (f.code === friendSel ? " on" : "")), main = el("div", "main");
+    main.append(el("div", "title", f.name), el("div", "sub", f.last || "…"));
+    card.append(avatar(f.name), main);
+    if (f.unread && f.code !== friendSel) card.append(el("span", "unread", f.unread));
+    card.onclick = () => { friendSel = f.code; chatting = true; rendered.social = null; renderSocial(); const i = $("dmInput"); if (i) i.focus(); };
+    L.append(card);
+  }
+
+  const R = $("dm"); R.textContent = "";
+  if (!sel) { R.append(empty("💬", t("pickFriend"))); return; }
+  const head = el("div", "dm-head"), back = el("button", "btn dm-back", "←");
+  back.onclick = () => { chatting = false; rendered.social = null; renderSocial(); };
+  const remove = el("button", "x", "✕"); remove.title = "Remove";
+  remove.onclick = () => { if (confirm(t("removeAsk").replace("{name}", sel.name))) send({ type: "socialRemove", code: sel.code }); };
+  head.append(back, avatar(sel.name), el("b", null, sel.name), remove);
+  const lines = el("div", "dm-lines");
+  if (!sel.lines.length) lines.append(empty("👋", t("noLines")));
+  for (const l of sel.lines) { const m = el("div", "msg " + (l.mine ? "you" : "dave"), l.text); m.append(el("span", "time", l.at)); lines.append(m); }
+  const compose = el("div", "composer show"), box = el("input"), go = el("button", "round", "➤");
+  box.id = "dmInput"; box.placeholder = t("typeMessage"); box.value = keep.msg; box.maxLength = 1000;
+  const sendIt = () => { if (box.value.trim()) { send({ type: "socialSend", code: sel.code, text: box.value.trim() }); box.value = ""; } };
+  go.onclick = sendIt; box.onkeydown = e => { if (e.key === "Enter") sendIt(); };
+  compose.append(box, go);
+  R.append(head, lines, compose);
+  lines.scrollTop = lines.scrollHeight;
+  if (keep.focus === "dmInput" || keep.focus === "addCode") $(keep.focus).focus();
+}
+
 function count(id, n) { $(id).textContent = n || ""; $(id).style.display = n ? "" : "none"; }
 
 window.chrome.webview.addEventListener("message", e => {
@@ -783,6 +916,7 @@ window.chrome.webview.addEventListener("message", e => {
     return;
   }
   if (m.type === "openSettings") { openSettings(); return; }
+  if (m.type === "socialNote") { const toast = $("toast"); toast.textContent = m.text; toast.classList.add("show"); setTimeout(() => toast.classList.remove("show"), 4000); return; }
   if (m.type === "settingsData") { if ($("settingsPanel").classList.contains("show")) renderSettings(m); return; }
   if (m.type === "voices" && sdata) { options(form[m.field], m.items, form[m.field].value); return; }
   if (m.type === "azureVoices" && sdata) {
@@ -811,7 +945,7 @@ window.chrome.webview.addEventListener("message", e => {
   $("quietSwitch").classList.toggle("on", m.quiet);
   count("c-reminders", m.reminders.length); count("c-memories", m.memories.length); count("c-watching", m.watching.length);
   // Each tab on its own: a problem in one never leaves the others empty
-  for (const render of [renderChat, renderReminders, renderMemories, renderScreen, renderMusic, renderWatching]) {
+  for (const render of [renderChat, renderReminders, renderMemories, renderScreen, renderMusic, renderWatching, renderSocial]) {
     try { render(); } catch (err) { report(err, render.name); }
   }
   if (first) { show("chat"); }

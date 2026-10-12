@@ -273,7 +273,10 @@ public partial class Bubble : LayeredWindow
         else DrawPill(g, shape, radius, voice, t);
         if (!Palette.Legacy) DrawThemeFront(g, shape, t); // embers, drips, petals, shooting stars
 
-        Present(surface, BottomCenter(width, height), (byte)(opacity * 255));
+        // On Dave's monitor; with "Keep Dave off games" and no free monitor: out of sight (he still talks)
+        var screen = GameGuard.ScreenForDave();
+        if (screen != null) placed = BottomCenter(screen, width, height);
+        Present(surface, placed, (byte)(screen == null ? 0 : opacity * 255));
     }
 
     private static Color Lighter(Color c) => Color.FromArgb((c.R + 255 * 2) / 3, (c.G + 255 * 2) / 3, (c.B + 255 * 2) / 3);
@@ -528,9 +531,11 @@ public partial class Bubble : LayeredWindow
         }
     }
 
-    private Point BottomCenter(int width, int height)
+    private Point placed; // where the bubble is
+
+    private Point BottomCenter(Screen screen, int width, int height)
     {
-        var area = Screen.PrimaryScreen!.WorkingArea;
+        var area = screen.WorkingArea;
         return new Point(area.Left + (area.Width - width) / 2, area.Bottom - 40 - height + HaloMargin);
     }
 
@@ -665,7 +670,9 @@ public class Glow : LayeredWindow
                     if (targetOpacity == 0 && opacity < 0.02f) { opacity = 0; renderer = null; break; }
                 }
 
-                var bounds = Screen.PrimaryScreen!.Bounds;
+                // On Dave's monitor; with "Keep Dave off games" and no free monitor: out of sight
+                var onScreen = GameGuard.ScreenForDave();
+                var bounds = (onScreen ?? Screen.PrimaryScreen!).Bounds;
                 if (full == null || small == null || full.Width != bounds.Width || full.Height != bounds.Height)
                 {
                     small?.Dispose();
@@ -695,7 +702,7 @@ public class Glow : LayeredWindow
                 DrawRunner(full.Graphics, curves[0], start + travel, 1, Palette.Cyan, level);
                 DrawRunner(full.Graphics, curves[0], start - travel, -1, Palette.Pink, level);
                 full.Graphics.Flush(FlushIntention.Sync);
-                Present(handle, full, bounds.Location, (byte)(Math.Clamp(opacity, 0, 1) * 255));
+                Present(handle, full, bounds.Location, (byte)(onScreen == null ? 0 : Math.Clamp(opacity, 0, 1) * 255));
                 WaitForScreen(vsyncs);
             }
         }

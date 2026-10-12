@@ -143,6 +143,9 @@ public sealed partial class DaveWindow : Form
                         Send(new JsonObject { ["type"] = "toast", ["text"] = settings.Say("I'm still busy, one moment.", "Ik ben nog bezig, momentje.") });
                     break;
                 case "listen": listen(); break;
+                case "socialAdd" or "socialAccept" or "socialRemove" or "socialSend" or "socialRead" or "socialCopy":
+                    _ = OnSocialMessageAsync(Str("type"), Str("code"), Str("text"));
+                    return;
                 case "getSettings" or "voices" or "azureVoices" or "preview" or "spotifyConnect" or "saveSettings":
                     _ = OnSettingsMessageAsync(Str("type"), m);
                     return;
@@ -185,7 +188,39 @@ public sealed partial class DaveWindow : Form
         }
     }
 
+    /// <summary>The Social panel: add a friend, accept or decline, remove, send a message, mark a chat read, copy your code.</summary>
+    private async Task OnSocialMessageAsync(string type, string code, string text)
+    {
+        try
+        {
+            string? note = null;
+            switch (type)
+            {
+                case "socialAdd": note = await Social.AddAsync(settings, text); break;
+                case "socialAccept": await Social.AcceptAsync(settings, code); break;
+                case "socialRemove": await Social.RemoveAsync(settings, code); break;
+                case "socialSend": note = await Social.SendAsync(settings, code, text); break;
+                case "socialRead": Social.MarkRead(settings, code); break;
+                case "socialCopy":
+                    Clipboard.SetText(Social.MyCode(settings));
+                    note = settings.Say("Your friend code is copied. Send it to a friend!", "Je vriendcode is gekopieerd. Stuur hem naar een vriend!");
+                    break;
+            }
+            if (note != null) Send(new JsonObject { ["type"] = "socialNote", ["text"] = note });
+            Push();
+        }
+        catch (Exception e) { Log.Write($"Social action failed: {e.Message}"); }
+    }
+
     // --- Dave -> page ---
+
+    /// <summary>A short note at the bottom of the window (a friend's message while you're in it), and the tabs updated.</summary>
+    public void Notify(string text)
+    {
+        if (InvokeRequired) { BeginInvoke(() => Notify(text)); return; }
+        Send(new JsonObject { ["type"] = "toast", ["text"] = text });
+        Push();
+    }
 
     private void Send(JsonObject message)
     {
@@ -225,6 +260,7 @@ public sealed partial class DaveWindow : Form
             ["addresses"] = new JsonArray(PhoneLink.Addresses().Select(a => (JsonNode)a).ToArray()), // for the iPhone app (home and Tailscale)
             ["ntfyTopic"] = settings.PhoneNotify ? PhoneNotify.TopicFor(settings) : "", // the phone's notifications channel (ntfy)
             ["theme"] = ThemeJson(Themes.Get(settings.Theme)),
+            ["social"] = Social.StateJson(settings), // friends, requests and chats
             ["chat"] = Array(ConversationLog.Recent(150), e => new JsonObject
             {
                 ["at"] = e.At.ToString(e.At.Date == DateTime.Today ? "HH:mm" : "ddd d MMM HH:mm", culture),

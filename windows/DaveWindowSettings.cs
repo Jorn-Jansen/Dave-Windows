@@ -50,6 +50,15 @@ public sealed partial class DaveWindow
                     await Speaker.SpeakAsync(temp, sample, tag);
                     break;
                 }
+                case "themeSounds":
+                {
+                    // All four sounds of the theme picked in the panel, one after the other
+                    var temp = Draft(values);
+                    temp.ThemeSounds = true;
+                    foreach (var cue in Enum.GetValues<ThemeSounds.Cue>())
+                        await Task.Delay(ThemeSounds.Play(temp, cue, Themes.Get(temp.Theme).Id) + TimeSpan.FromMilliseconds(450));
+                    break;
+                }
                 case "spotifyConnect":
                 {
                     var id = m["clientId"]?.ToString()?.Trim() ?? "";
@@ -107,7 +116,7 @@ public sealed partial class DaveWindow
             ["Hotkey"] = settings.Hotkey, ["WindowHotkey"] = settings.WindowHotkey,
             ["WakeWord"] = settings.WakeWord, ["CarefulWakeWord"] = settings.CarefulWakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
             ["CalendarLinks"] = settings.CalendarLinks, ["SpotifyClientId"] = settings.SpotifyClientId,
-            ["Theme"] = settings.Theme, ["PhoneEnabled"] = settings.PhoneEnabled, ["PhoneNotify"] = settings.PhoneNotify,
+            ["Theme"] = settings.Theme, ["TimersOnScreen"] = settings.TimersOnScreen, ["KeepOffGames"] = settings.KeepOffGames, ["ThemeSounds"] = settings.ThemeSounds, ["SocialName"] = settings.SocialName, ["ReadMessagesAloud"] = settings.ReadMessagesAloud, ["MessageSound"] = settings.MessageSound, ["Personality"] = settings.Personality, ["PhoneEnabled"] = settings.PhoneEnabled, ["PhoneNotify"] = settings.PhoneNotify,
         },
         ["phone"] = new JsonObject
         {
@@ -115,6 +124,7 @@ public sealed partial class DaveWindow
             ["topic"] = settings.PhoneNotify ? PhoneNotify.TopicFor(settings) : "",
             ["addresses"] = new JsonArray(PhoneLink.Addresses().Select(a => (JsonNode)a).ToArray()),
         },
+        ["social"] = new JsonObject { ["code"] = Social.MyCode(settings), ["defaultName"] = Environment.UserName },
         ["themes"] = new JsonArray(Themes.All.Select(t => (JsonNode)ThemeJson(t)).ToArray()),
         ["voices"] = new JsonObject
         {
@@ -176,6 +186,13 @@ public sealed partial class DaveWindow
         s.PhoneNotify = Bool("PhoneNotify");
         s.StartWithWindows = Bool("StartWithWindows");
         s.AutoUpdate = Bool("AutoUpdate");
+        s.TimersOnScreen = Bool("TimersOnScreen");
+        s.KeepOffGames = Bool("KeepOffGames");
+        s.ThemeSounds = Bool("ThemeSounds");
+        s.SocialName = Str("SocialName");
+        s.ReadMessagesAloud = Bool("ReadMessagesAloud");
+        s.MessageSound = Bool("MessageSound");
+        s.Personality = Personalities.Get(Str("Personality")).Id;
         s.CalendarLinks = Str("CalendarLinks");
         if (Str("Theme") is { Length: > 0 } theme) s.Theme = Themes.Get(theme).Id;
         if (Str("SpotifyClientId") != s.SpotifyClientId)

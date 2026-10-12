@@ -51,6 +51,14 @@ public class Settings
     public bool AutoUpdate { get; set; } = true;
     /// <summary>How Dave looks: "aurora" (default), "legacy" (the original), "ember", "toxic", "ocean", "sakura", "midnight".</summary>
     public string Theme { get; set; } = "aurora";
+    /// <summary>Timers counting down in a small card in the top-right corner of the screen.</summary>
+    public bool TimersOnScreen { get; set; } = true;
+    /// <summary>Nothing of Dave (bubble, glow, timers) over a full-screen game or Roblox: on another monitor then, or out of sight.</summary>
+    public bool KeepOffGames { get; set; } = false;
+    /// <summary>Short sounds in the theme's style (listening, heard you, done, reminder) instead of the beeps.</summary>
+    public bool ThemeSounds { get; set; } = true;
+    /// <summary>How Dave talks and sounds: "normal", "chill", "hyped", "butler" or "sarcastic" (see Personalities).</summary>
+    public string Personality { get; set; } = "normal";
     /// <summary>Quiet mode: until when Dave only shows his answers instead of saying them (MinValue = off).</summary>
     public DateTime QuietUntil { get; set; } = DateTime.MinValue;
     [JsonIgnore] public bool IsQuiet => DateTime.Now < QuietUntil;
@@ -94,6 +102,29 @@ public class Settings
         public string Artist { get; set; } = "";
     }
     public List<Reminder> Reminders { get; set; } = new();
+
+    // --- Social (Dave-to-Dave messages, see Social) ---
+    /// <summary>Your friend code ("DAVE-K7QX-M2PA-9TRB-W4NE"), made the first time; friends add you with it.</summary>
+    public string SocialCode { get; set; } = "";
+    /// <summary>The name friends see ("" = your Windows user name).</summary>
+    public string SocialName { get; set; } = "";
+    /// <summary>The last message seen in your channel, so none is handled twice and none is missed after a restart.</summary>
+    public string SocialSince { get; set; } = "";
+    /// <summary>Messages from friends read out loud (with the name); off: only the sound and the bubble.</summary>
+    public bool ReadMessagesAloud { get; set; } = true;
+    /// <summary>A notification sound for messages (in the theme's style when theme sounds are on).</summary>
+    public bool MessageSound { get; set; } = true;
+    public List<Friend> Friends { get; set; } = new();
+
+    public class Friend
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        /// <summary>"friend", "incoming" (they asked you) or "outgoing" (you asked them, waiting).</summary>
+        public string Status { get; set; } = "";
+        public DateTimeOffset Since { get; set; }
+        public int Unread { get; set; }
+    }
 
     public class Reminder
     {
