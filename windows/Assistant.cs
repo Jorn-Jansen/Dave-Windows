@@ -231,11 +231,22 @@ public static class Assistant
         Tool("internet_speed", "Test the internet: 'how fast is my internet' (speed) or 'what's my ping' (ping, quick).",
             new JsonObject { ["what"] = Enum("speed", "ping") }, "what"),
         Tool("send_message", "Send a chat message to a friend who uses Dave too: 'tell Alex I'm online', 'ask Sam if he's coming to play', " +
-            "'reply: on my way' (to = 'last' for whoever messaged last). Write the message as the user would send it, in their own words " +
+            "'reply: on my way' (to = 'last' for whoever messaged last), 'send that to Alex' (text = your previous answer, word for word). " +
+            "Otherwise write the message as the user would send it, in their own words " +
             "and language ('tell Alex I'm online' -> text 'I'm online').",
             new JsonObject { ["to"] = Str("The friend's name, or 'last'"), ["text"] = Str("The message itself") }, "to", "text"),
         Tool("read_messages", "Messages from friends in Dave's Social chat: 'any messages?', 'what did Alex say?', 'read my messages'.",
             new JsonObject { ["from"] = Str("A friend's name, or empty for everyone"), ["question"] = Str("The user's question") }, "question"),
+        Tool("change_setting", "Change one of your own settings when the user asks: 'switch to the ember theme', 'use the midnight theme', " +
+            "'turn on the wake word', 'talk faster', 'call yourself Jarvis', 'turn off theme sounds', 'stop reading messages out loud', " +
+            "'start with Windows', 'open websites in Brave'. Themes: " + string.Join(", ", Themes.All.Select(t => t.Id)) + ". " +
+            "For the personality use set_personality, for quiet mode quiet_mode. Keys, logins and the AI provider can't be changed this way.",
+            new JsonObject
+            {
+                ["setting"] = Enum(Commands.ChangeableSettings),
+                ["value"] = Str("The new value: a theme id, a name, on/off, a speed (slow, normal, faster, fast or a number like 1.2), " +
+                                "a voice name, a language tag like en-US, a country or a browser"),
+            }, "setting", "value"),
         Tool("set_personality", "Change your personality (how you talk and sound): 'be a butler', 'be more chill', 'get hyped', 'be sarcastic', " +
             "'act normal again'.",
             new JsonObject { ["personality"] = Enum(Personalities.All.Select(p => p.Id).ToArray()) }, "personality"),
@@ -335,6 +346,12 @@ public static class Assistant
         (Words("tell ", "zeg tegen", "message", "bericht", "text ", "ask ", "vraag ", "reply", "antwoord", "friend", "vriend", "chat", "dm ",
                "messaged", "said", "zei", "texted", "geappt"),
             new[] { "send_message", "read_messages" }),
+        (Words("setting", "instelling", "theme", "thema", "aurora", "ember", "toxic", "ocean", "sakura", "midnight", "legacy", "wake word", "wake phrase",
+               "wekwoord", "wekzin", "call yourself", "noem jezelf", "your name", "je naam", "voice", "stem", "faster", "slower", "sneller", "langzamer",
+               "speed", "snelheid", "sounds", "geluiden", "read out", "voorlezen", "start with windows", "opstarten", "auto update", "browser",
+               "language", "taal", "keep off", "turn on", "turn off", "zet aan", "zet uit", "switch to", "change your", "verander", "sound",
+               "geluid", "back on", "weer aan", "messages out loud", "berichten"),
+            new[] { "change_setting", "set_personality", "quiet_mode", "timers_on_screen" }),
         (Words("personality", "persoonlijkheid", "butler", "chill", "relaxed", "hyped", "hype", "sarcastic", "sarcastisch", "act normal",
                "doe normaal", "be normal", "be more", "wees", "talk like", "praat als", "mood", "stemming"),
             new[] { "set_personality" }),

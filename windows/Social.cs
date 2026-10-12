@@ -239,11 +239,40 @@ public static class Social
     public static Settings.Friend? Find(Settings s, string name)
     {
         var friends = s.Friends.Where(f => f.Status == "friend").ToList();
-        name = name.Trim();
-        if (name.Length == 0 || name is "last" or "laatste") return friends.OrderByDescending(f => LastAt(f.Code)).FirstOrDefault(); // "reply …"
+        name = name.Trim().Trim('.', '!', '?');
+        // "reply …", "send it to him": whoever you chatted with last (or your only friend)
+        if (name.Length == 0 || name.ToLowerInvariant() is "last" or "laatste" or "him" or "her" or "them" or "hem" or "haar" or "hen" or "ze" or "zij")
+            return friends.OrderByDescending(f => LastAt(f.Code)).FirstOrDefault();
         return friends.FirstOrDefault(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
             ?? friends.FirstOrDefault(f => f.Name.StartsWith(name, StringComparison.OrdinalIgnoreCase) || name.StartsWith(f.Name, StringComparison.OrdinalIgnoreCase))
-            ?? friends.FirstOrDefault(f => f.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+            ?? friends.FirstOrDefault(f => f.Name.Contains(name, StringComparison.OrdinalIgnoreCase))
+            // nearly the name ("Alec" for Alex: heard or "corrected" wrong): at most a letter or two off
+            ?? friends.Select(f => (f, off: Distance(f.Name.ToLowerInvariant(), name.ToLowerInvariant())))
+                      .Where(x => x.off <= Math.Max(1, Math.Min(2, x.f.Name.Length / 3))).OrderBy(x => x.off).Select(x => x.f).FirstOrDefault();
+    }
+
+    /// <summary>The friend named in [text] ("send that to alex"), whatever the AI made of the name; null when none is.</summary>
+    public static Settings.Friend? NamedIn(Settings s, string text) =>
+        s.Friends.Where(f => f.Status == "friend" && f.Name.Length > 1)
+            .FirstOrDefault(f => System.Text.RegularExpressions.Regex.IsMatch(text, $@"\b{System.Text.RegularExpressions.Regex.Escape(f.Name)}\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+
+    /// <summary>How many letters to change, add or remove to get from [a] to [b].</summary>
+    private static int Distance(string a, string b)
+    {
+        var row = Enumerable.Range(0, b.Length + 1).ToArray();
+        for (int i = 1; i <= a.Length; i++)
+        {
+            int previous = row[0];
+            row[0] = i;
+            for (int j = 1; j <= b.Length; j++)
+            {
+                int was = row[j];
+                row[j] = Math.Min(Math.Min(row[j] + 1, row[j - 1] + 1), previous + (a[i - 1] == b[j - 1] ? 0 : 1));
+                previous = was;
+            }
+        }
+        return row[b.Length];
     }
 
     /// <summary>Does [text] name one of your friends ("tell Alex…")? Then the message commands are offered.</summary>

@@ -57,6 +57,7 @@ public static class Commands
                 "quiet_mode" => QuietMode(s, Bool(args, "on"), Int(args, "minutes") ?? 0),
                 "timers_on_screen" => TimersOnScreen(s, Bool(args, "show")),
                 "set_personality" => SetPersonality(s, Str(args, "personality")),
+                "change_setting" => ChangeSetting(s, Str(args, "setting"), Str(args, "value")),
                 "send_message" => await SendMessageAsync(s, Str(args, "to"), Str(args, "text")),
                 "watch_for" => new Outcome(Watchers.Add(s, Str(args, "what"), Str(args, "program"),
                     args["number"] is JsonValue n && n.TryGetValue<double>(out var limit) ? limit : 0, Str(args, "message")), true),
@@ -325,6 +326,117 @@ public static class Commands
             : s.Say("Quiet mode on. I'll show my answers here until you say I can talk again.", "Stille modus aan. Ik laat mijn antwoorden hier zien tot je zegt dat ik weer mag praten.")), true);
     }
 
+    /// <summary>The settings Dave may change himself when you ask ("switch to the ember theme", "turn on the wake word").
+    /// Not keys, logins or the AI provider: those stay in the settings panel.</summary>
+    public static readonly string[] ChangeableSettings =
+    {
+        "theme", "name", "wake_phrase", "wake_word", "careful_wake_word", "speech_speed", "voice", "second_voice", "language", "second_language",
+        "country", "browser", "start_with_windows", "auto_update", "timers_on_screen", "keep_off_games", "theme_sounds",
+        "read_messages_aloud", "message_sound", "social_name",
+    };
+
+    /// <summary>Changes one of <see cref="ChangeableSettings"/>; the app applies it right after (theme, wake word, autostart…).</summary>
+    private static Outcome ChangeSetting(Settings s, string setting, string value)
+    {
+        value = value.Trim();
+        bool? On() => value.ToLowerInvariant() switch
+        {
+            "on" or "true" or "yes" or "aan" or "ja" or "1" or "enable" or "enabled" => true,
+            "off" or "false" or "no" or "uit" or "nee" or "0" or "disable" or "disabled" => false,
+            _ => null,
+        };
+        Outcome Done(string en, string nl) => new("⚙️ " + s.Say(en, nl), true);
+        Outcome Toggle(Action<bool> set, string what, string watNl)
+        {
+            if (On() is not { } on) return new Outcome(s.Say($"Should {what} be on or off?", $"Moet {watNl} aan of uit?"), true);
+            set(on);
+            s.Save();
+            return Done($"{what} is {(on ? "on" : "off")} now.", $"{watNl} staat nu {(on ? "aan" : "uit")}.");
+        }
+        Outcome? Voice(string language, Action<string> set)
+        {
+            var voices = Speaker.VoicesFor(language).Select(v => v.DisplayName).ToList();
+            var match = voices.FirstOrDefault(v => v.Equals(value, StringComparison.OrdinalIgnoreCase))
+                     ?? voices.FirstOrDefault(v => v.Contains(value, StringComparison.OrdinalIgnoreCase));
+            if (match == null) return new Outcome(s.Say($"I don't have that voice. I can use: {string.Join(", ", voices)}.", $"Die stem heb ik niet. Ik kan: {string.Join(", ", voices)}."), true);
+            set(match);
+            s.Save();
+            return Done($"I'll talk with {match} from now on.", $"Ik praat vanaf nu met {match}.");
+        }
+        string? Language()
+        {
+            try { return CultureInfo.GetCultureInfo(value).Name is { Length: >= 2 } tag && tag.Contains('-') ? tag : null; }
+            catch (CultureNotFoundException) { return null; }
+        }
+
+        switch (setting)
+        {
+            case "theme":
+                var theme = Themes.All.FirstOrDefault(t => t.Id.Equals(value, StringComparison.OrdinalIgnoreCase) || t.Name.Equals(value, StringComparison.OrdinalIgnoreCase));
+                if (theme == null) return new Outcome(s.Say($"I don't have that theme. Pick one of: {string.Join(", ", Themes.All.Select(t => t.Name))}.",
+                    $"Dat thema heb ik niet. Kies uit: {string.Join(", ", Themes.All.Select(t => t.Name))}."), true);
+                s.Theme = theme.Id;
+                s.Save();
+                return Done($"Switched to the {theme.Name} theme.", $"Ik ben overgestapt op het thema {theme.Name}.");
+            case "name":
+                if (value.Length is 0 or > 30) return new Outcome(s.Say("What should my name be?", "Hoe moet ik heten?"), true);
+                s.AssistantName = value;
+                s.Save();
+                return Done($"From now on I'm {value}.", $"Vanaf nu heet ik {value}.");
+            case "wake_phrase":
+                s.WakePhrase = value.ToLowerInvariant();
+                s.Save();
+                return Done(value.Length > 0 ? $"I'll listen for \"{s.WakePhrase}\" now." : "I'll listen for my name again.",
+                            value.Length > 0 ? $"Ik luister nu naar \"{s.WakePhrase}\"." : "Ik luister weer naar mijn naam.");
+            case "wake_word": return Toggle(on => s.WakeWord = on, "Listening for the wake phrase", "Luisteren naar de wekzin");
+            case "careful_wake_word": return Toggle(on => s.CarefulWakeWord = on, "Careful wake word", "Voorzichtige wekzin");
+            case "start_with_windows": return Toggle(on => s.StartWithWindows = on, "Starting with Windows", "Starten met Windows");
+            case "auto_update": return Toggle(on => s.AutoUpdate = on, "Updating automatically", "Automatisch updaten");
+            case "timers_on_screen": return Toggle(on => s.TimersOnScreen = on, "Timers on screen", "Timers op het scherm");
+            case "keep_off_games": return Toggle(on => s.KeepOffGames = on, "Keep Dave off games", "Dave weghouden bij games");
+            case "theme_sounds": return Toggle(on => s.ThemeSounds = on, "Theme sounds", "Themageluiden");
+            case "read_messages_aloud": return Toggle(on => s.ReadMessagesAloud = on, "Reading messages out loud", "Berichten voorlezen");
+            case "message_sound": return Toggle(on => s.MessageSound = on, "The message sound", "Het berichtgeluid");
+            case "speech_speed":
+                double? speed = value.ToLowerInvariant() switch
+                {
+                    "slow" or "slower" or "langzaam" or "langzamer" => 0.85, "normal" or "normaal" => 1, "faster" or "a bit faster" or "sneller" => 1.15,
+                    "fast" or "snel" => 1.3,
+                    var n => double.TryParse(n.Replace(',', '.').TrimEnd('x'), NumberStyles.Float, CultureInfo.InvariantCulture, out var x) ? x : null,
+                };
+                if (speed is not { } rate) return new Outcome(s.Say("How fast: slow, normal, a bit faster or fast?", "Hoe snel: langzaam, normaal, iets sneller of snel?"), true);
+                s.SpeechRate = Math.Clamp(rate, 0.5, 3);
+                s.Save();
+                return Done($"Okay, I'll talk at {s.SpeechRate:0.##} times the normal speed.", $"Oké, ik praat nu {s.SpeechRate:0.##} keer zo snel als normaal.");
+            case "voice": return Voice(s.Language, v => s.Voice = v)!;
+            case "second_voice": return Voice(s.SecondLanguage, v => s.SecondVoice = v)!;
+            case "language" or "second_language":
+                if (Language() is not { } tag) return new Outcome(s.Say("Which language? Say it like en-US or nl-NL.", "Welke taal? Zeg het zoals nl-NL of en-US."), true);
+                if (setting == "language") { s.Language = tag; s.Voice = ""; } else { s.SecondLanguage = tag; s.SecondVoice = ""; }
+                s.Save();
+                return Done($"{(setting == "language" ? "My main language" : "My second language")} is {CultureInfo.GetCultureInfo(tag).EnglishName} now.",
+                            $"{(setting == "language" ? "Mijn hoofdtaal" : "Mijn tweede taal")} is nu {CultureInfo.GetCultureInfo(tag).NativeName}.");
+            case "country":
+                if (value.Length == 0) return new Outcome(s.Say("Which country?", "Welk land?"), true);
+                s.Country = value;
+                s.Save();
+                return Done($"Okay, I'll use {value} for units, currency and local results.", $"Oké, ik gebruik {value} voor eenheden, valuta en lokale resultaten.");
+            case "browser":
+                s.Browser = value is "default" or "standaard" ? "" : value;
+                s.Save();
+                return Done(s.Browser.Length > 0 ? $"I'll open websites in {s.Browser}." : "I'll open websites in Windows' default browser.",
+                            s.Browser.Length > 0 ? $"Ik open websites in {s.Browser}." : "Ik open websites in de standaardbrowser van Windows.");
+            case "social_name":
+                if (value.Length is 0 or > 40) return new Outcome(s.Say("What name should your friends see?", "Welke naam moeten je vrienden zien?"), true);
+                s.SocialName = value;
+                s.Save();
+                return Done($"Your friends will see you as {value}.", $"Je vrienden zien je nu als {value}.");
+            default:
+                return new Outcome(s.Say("I can't change that one myself; it's in my settings (Ctrl+Alt+W, then the gear).",
+                                         "Die kan ik zelf niet veranderen; die staat in mijn instellingen (Ctrl+Alt+W, dan het tandwiel)."), true);
+        }
+    }
+
     /// <summary>"Tell Alex I'm online": a message to a friend who uses Dave too (see Social).</summary>
     private static async Task<Outcome> SendMessageAsync(Settings s, string to, string text)
     {
@@ -336,7 +448,8 @@ public static class Commands
                 : s.Say("You haven't added any friends yet: open the Social tab in my window and add their friend code.",
                         "Je hebt nog geen vrienden toegevoegd: open het tabblad Sociaal in mijn venster en voeg hun vriendcode toe."), true);
         var why = await Social.SendAsync(s, friend.Code, text);
-        return new Outcome(why ?? "💬 " + s.Say($"Sent to {friend.Name}: {text}", $"Verstuurd naar {friend.Name}: {text}"), true);
+        var said = text.Length > 80 ? text[..70].TrimEnd() + "…" : text; // a long one (your last answer): just the start
+        return new Outcome(why ?? "💬 " + s.Say($"Sent to {friend.Name}: {said}", $"Verstuurd naar {friend.Name}: {said}"), true);
     }
 
     /// <summary>Another personality ("be a butler", "act normal"): said in the new personality's own way.</summary>

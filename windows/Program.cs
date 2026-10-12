@@ -294,8 +294,14 @@ public class DaveApp : ApplicationContext
     private void ToggleWindow() => Window().Toggle();
 
     private DaveWindow Window() => window is { IsDisposed: false } ? window : window = new DaveWindow(settings, // a new one if it was closed for real
-        ask: question => { if (session != null) return false; AskTyped(question); return true; },
-        listen: () => { if (session == null) Trigger(); },
+        ask: question =>
+        {
+            if (session == null) { AskTyped(question); return true; }
+            if (remote) return false; // answering the iPhone: wait for that
+            Interrupt(() => AskTyped(question)); // talking or thinking: stop, and answer this instead
+            return true;
+        },
+        listen: () => { if (Status() != "listening") Trigger(); },
         applySettings: ApplySettings,
         busy: () => session != null,
         status: Status);
@@ -418,8 +424,33 @@ public class DaveApp : ApplicationContext
             snippetCut?.Cancel(); // "I know it!": stop the snippet and answer now
             return;
         }
-        if (session != null) { Cancel(); return; }
+        if (session != null)
+        {
+            // While he listens the shortcut stops him (and answering the iPhone isn't interrupted); while he talks or
+            // thinks, he stops and listens to what you say now
+            if (remote || Status() == "listening") Cancel();
+            else Interrupt(() => _ = RunSessionAsync(typed: null));
+            return;
+        }
         _ = RunSessionAsync(typed: null);
+    }
+
+    /// <summary>What to do as soon as the current conversation has stopped (you interrupted Dave).</summary>
+    private Action? afterSession;
+
+    /// <summary>Interrupt Dave: stop what he's saying or working out, and do [next] right after.</summary>
+    private void Interrupt(Action next)
+    {
+        Log.Write("Interrupted: stopping, then the next request");
+        afterSession = next;
+        Cancel();
+    }
+
+    /// <summary>A conversation (or announcement) is over: Dave is free, and does what you interrupted him with, if anything.</summary>
+    private void EndSession()
+    {
+        session = null;
+        if (afterSession is { } next) { afterSession = null; bubble.BeginInvoke(next); }
     }
 
     /// <summary>
@@ -568,7 +599,7 @@ public class DaveApp : ApplicationContext
         finally
         {
             bubble.HideAfter(1500);
-            session = null;
+            EndSession();
             Watchdog.Step = "idle";
             SetThinking(false);
             if (wakeWord != null) wakeWord.Paused = false;
@@ -673,6 +704,19 @@ public class DaveApp : ApplicationContext
                         args.Remove("time");
                         args["minutes"] = laterMinutes;
                     }
+                }
+                // "Send that to alex": the friend you named, also when the AI made something else of the name ("Alec")
+                if (command.Name is "send_message" or "read_messages" && Social.NamedIn(settings, text) is { } named)
+                    command.Args[command.Name == "send_message" ? "to" : "from"] = named.Name;
+                // "Send that to Alex": "that" is Dave's last answer (the AI sometimes fills in something else, like the song playing)
+                if (command.Name == "send_message"
+                    && System.Text.RegularExpressions.Regex.IsMatch(text, @"\b(send|forward|share|stuur|deel)\s+(that|this|it|dat|dit|het|your (last )?(answer|reply)|je (laatste )?antwoord)\s+(to|naar|with|met)\b",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                    && ConversationLog.Recent(1).LastOrDefault() is { } previous
+                    && System.Text.RegularExpressions.Regex.Replace(previous.Dave, @"^\([a-z_]+\)\s*", "").Trim() is { Length: > 0 } lastAnswer)
+                {
+                    Log.Write($"send_message: \"{text}\" means my last answer, not \"{command.Args["text"]}\"");
+                    command.Args["text"] = lastAnswer;
                 }
                 duck.Dispose(); // give the sound back before touching music or volume
                 if (command.Name == "start_music_quiz")
@@ -840,6 +884,7 @@ public class DaveApp : ApplicationContext
                 }
                 Watchdog.Step = $"command {command.Name}";
                 var outcome = await Commands.RunAsync(settings, command.Name, command.Args, text);
+                if (command.Name == "change_setting") { ApplySettings(); window?.Push(); } // the new theme, wake word, autostart… right away
                 Log.Write($"Outcome: {outcome.Text}");
                 // Said in Dave's personality ("Timer set" → "Certainly, sir, your timer is set"); a new personality says hello itself
                 var said = outcome.Speak && command.Name != "set_personality"
@@ -1116,7 +1161,8 @@ public class DaveApp : ApplicationContext
 
     /// <summary>
     /// A friend's message: the notification sound, then the name and message in the bubble (or in Dave's window when you're
-    /// in it), read out loud unless that's turned off (or in quiet mode). Also on the phone when you're away from the PC.
+    /// in it), read out loud unless that's turned off, in quiet mode, or you're in his window (you can read it there).
+    /// Also on the phone when you're away from the PC.
     /// </summary>
     private async Task AnnounceMessageAsync(Social.Incoming message)
     {
@@ -1129,7 +1175,7 @@ public class DaveApp : ApplicationContext
             Log.Write($"Message from {message.Name}");
             if (settings.MessageSound) ThemeSounds.Play(settings, ThemeSounds.Cue.Message);
             var shown = $"💬 {message.Name}: {message.Text}";
-            var aloud = settings.ReadMessagesAloud && !settings.IsQuiet;
+            var aloud = settings.ReadMessagesAloud && !settings.IsQuiet && !inWindow; // in his window you can read it yourself
             if (inWindow) window!.Notify(shown);
             else bubble.ShowText(shown, spoken: aloud);
             PhoneNotify.Send(settings, "💬 " + message.Name, message.Text); // (only when you've been away from the PC)
@@ -1147,7 +1193,7 @@ public class DaveApp : ApplicationContext
         finally
         {
             if (!inWindow) bubble.HideAfter(1500);
-            session = null;
+            EndSession();
             if (wakeWord != null) wakeWord.Paused = false;
         }
     }
