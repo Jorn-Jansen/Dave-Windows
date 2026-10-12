@@ -78,6 +78,8 @@ public static class Social
         var token = listening.Token;
         var topic = Topic(MyCode(s));
         _ = Task.Run(() => ListenAsync(s, topic, token));
+        // Friends from before end-to-end encryption: tell them our key, so their (updated) Dave answers with theirs
+        foreach (var f in s.Friends.Where(f => f.Status == "friend" && f.PublicKey.Length == 0).ToList()) _ = PublishAsync(s, f.Code, "hello");
     }
 
     private static async Task ListenAsync(Settings s, string topic, CancellationToken token)
@@ -114,7 +116,11 @@ public static class Social
         }
     }
 
-    /// <summary>One message from the channel: a friend request, an accept, a chat message, or a goodbye.</summary>
+    /// <summary>
+    /// One message from the channel. Friend requests and accepts are open (they carry the sender's public key: that's how
+    /// two Daves learn each other's lock); everything after that (chat messages, goodbyes) is sealed with a key only the
+    /// two friends can make, so nobody else can read it, fake it, or unfriend you, not even someone who has your code.
+    /// </summary>
     private static void Handle(Settings s, string raw)
     {
         JsonNode? m;
@@ -122,51 +128,80 @@ public static class Social
         if (m?["dave"] == null) return;
         var from = Normalise(m["from"]?.ToString() ?? "");
         if (from == null || from == MyCode(s)) return;
-        var name = Clean(m["name"]?.ToString() ?? "", 40) is { Length: > 0 } n ? n : "?";
         Settings.Friend? friend;
-        lock (Sync)
+        lock (Sync) friend = s.Friends.FirstOrDefault(f => f.Code == from);
+
+        if (m["c"] != null) // sealed: a chat message or a goodbye from a friend
         {
-            friend = s.Friends.FirstOrDefault(f => f.Code == from);
-            if (friend != null) friend.Name = name; // they may have changed their name
+            if (friend is not { Status: "friend", PublicKey.Length: > 0 } || Open(s, friend, m) is not { } inner) return; // not from them
+            var at = DateTimeOffset.FromUnixTimeSeconds(inner["at"]?.GetValue<long>() ?? 0);
+            var id = inner["id"]?.ToString() ?? "";
+            if (DateTimeOffset.Now - at > TimeSpan.FromHours(13) || id.Length == 0 || !Seen.Add(id)) return; // an old one sent again
+            if (Clean(inner["name"]?.ToString() ?? "", 40) is { Length: > 0 } newName) friend.Name = newName; // they may have changed their name
+            switch (inner["type"]?.ToString())
+            {
+                case "msg":
+                    var text = Clean(inner["text"]?.ToString() ?? "", 1000);
+                    if (text.Length == 0) return;
+                    Add(friend.Code, new Line { At = DateTimeOffset.Now, Mine = false, Text = text });
+                    friend.Unread++;
+                    s.Save();
+                    Changed?.Invoke();
+                    Received?.Invoke(new Incoming(friend.Code, friend.Name, text));
+                    return;
+                case "bye":
+                    lock (Sync) s.Friends.Remove(friend);
+                    break;
+                default:
+                    return;
+            }
+            s.Save();
+            Changed?.Invoke();
+            return;
         }
 
+        var name = Clean(m["name"]?.ToString() ?? "", 40) is { Length: > 0 } n ? n : "?";
+        var key = ValidKey(m["key"]?.ToString());
         switch (m["type"]?.ToString())
         {
             case "hello":
                 if (friend == null)
                 {
-                    lock (Sync) s.Friends.Add(new Settings.Friend { Code = from, Name = name, Status = "incoming", Since = DateTimeOffset.Now });
+                    lock (Sync) s.Friends.Add(new Settings.Friend { Code = from, Name = name, Status = "incoming", Since = DateTimeOffset.Now, PublicKey = key ?? "" });
                     Log.Write($"Social: friend request from {name}");
                 }
-                else if (friend.Status == "outgoing" || friend.Status == "friend")
+                else if (friend.PublicKey.Length > 0 && friend.PublicKey != key)
                 {
-                    // We asked them as well (or they re-added us): friends straight away
+                    // A different lock for a friend we have: someone pretending to be them (or they reinstalled Dave: then
+                    // remove them and add them again). Ignored, so nobody can take over a friend's chat.
+                    Log.Write($"Social: a friend request in {friend.Name}'s name with a different key: ignored");
+                    return;
+                }
+                else if (friend.Status is "outgoing" or "friend")
+                {
+                    // We asked them as well, they re-added us, or they're telling us their key (after updating): friends right away
+                    friend.Name = name;
+                    if (key != null) friend.PublicKey = key;
                     friend.Status = "friend";
-                    _ = PublishAsync(s, from, "accept", "");
+                    _ = PublishAsync(s, from, "accept");
                 }
                 break;
             case "accept":
-                if (friend is { Status: "outgoing" or "friend" }) friend.Status = "friend";
+                if (friend is not { Status: "outgoing" or "friend" }) return;
+                if (key != null && friend.PublicKey.Length > 0 && friend.PublicKey != key) return; // not the lock we know
+                friend.Name = name;
+                if (key != null) friend.PublicKey = key;
+                friend.Status = "friend";
                 break;
-            case "bye":
-                if (friend != null) lock (Sync) s.Friends.Remove(friend);
-                break;
-            case "msg":
-                if (friend is not { Status: "friend" }) return; // only friends can message you
-                var text = Clean(m["text"]?.ToString() ?? "", 1000);
-                if (text.Length == 0) return;
-                Add(friend.Code, new Line { At = DateTimeOffset.Now, Mine = false, Text = text });
-                friend.Unread++;
-                s.Save();
-                Changed?.Invoke();
-                Received?.Invoke(new Incoming(friend.Code, friend.Name, text));
-                return;
             default:
-                return;
+                return; // (old, unsealed messages from before end-to-end encryption aren't trusted)
         }
         s.Save();
         Changed?.Invoke();
     }
+
+    /// <summary>Ids of sealed messages handled lately, so one sent again (replayed) isn't shown twice.</summary>
+    private static readonly HashSet<string> Seen = new();
 
     private static string Clean(string text, int max)
     {
@@ -188,7 +223,7 @@ public static class Social
         if (existing == null) lock (Sync) s.Friends.Add(new Settings.Friend { Code = code, Name = s.Say("Waiting…", "Wachten…"), Status = "outgoing", Since = DateTimeOffset.Now });
         s.Save();
         Changed?.Invoke();
-        var why = await PublishAsync(s, code, "hello", "");
+        var why = await PublishAsync(s, code, "hello");
         return why ?? s.Say("Friend request sent. Once they accept, you can chat.", "Vriendverzoek verstuurd. Zodra ze accepteren, kunnen jullie chatten.");
     }
 
@@ -199,7 +234,7 @@ public static class Social
         friend.Status = "friend";
         s.Save();
         Changed?.Invoke();
-        await PublishAsync(s, code, "accept", "");
+        await PublishAsync(s, code, "accept");
     }
 
     /// <summary>Decline a request, or remove a friend (they're told, so the chat closes on their side too).</summary>
@@ -214,7 +249,7 @@ public static class Social
         }
         s.Save();
         Changed?.Invoke();
-        if (friend.Status != "incoming") await PublishAsync(s, code, "bye", "");
+        if (friend is { Status: "friend", PublicKey.Length: > 0 }) await SealAsync(s, friend, new JsonObject { ["type"] = "bye" });
     }
 
     /// <summary>Send a chat message to a friend. Null when it went, otherwise why not.</summary>
@@ -223,7 +258,13 @@ public static class Social
         text = Clean(text, 1000);
         var friend = s.Friends.FirstOrDefault(f => f.Code == code);
         if (friend is not { Status: "friend" } || text.Length == 0) return s.Say("You can only message friends who accepted you.", "Je kunt alleen vrienden berichten die je hebben geaccepteerd.");
-        var why = await PublishAsync(s, code, "msg", text);
+        if (friend.PublicKey.Length == 0) // their Dave is from before end-to-end encryption: ask it for its key again
+        {
+            _ = PublishAsync(s, code, "hello");
+            return s.Say($"{friend.Name}'s Dave needs the latest update first, so your messages can be encrypted. Ask them to update Dave.",
+                          $"De Dave van {friend.Name} heeft eerst de nieuwste update nodig, zodat je berichten versleuteld kunnen worden. Vraag ze Dave te updaten.");
+        }
+        var why = await SealAsync(s, friend, new JsonObject { ["type"] = "msg", ["text"] = text });
         if (why != null) return why;
         Add(code, new Line { At = DateTimeOffset.Now, Mine = true, Text = text });
         Changed?.Invoke();
@@ -309,7 +350,7 @@ public static class Social
             var lines = Lines(f.Code);
             friends.Add(new JsonObject
             {
-                ["code"] = f.Code, ["name"] = f.Name, ["status"] = f.Status, ["unread"] = f.Unread,
+                ["code"] = f.Code, ["name"] = f.Name, ["status"] = f.Status, ["unread"] = f.Unread, ["secure"] = f.PublicKey.Length > 0,
                 ["last"] = lines.Count > 0 ? (lines[^1].Mine ? s.Say("You: ", "Jij: ") : "") + lines[^1].Text : "",
                 ["lines"] = new JsonArray(lines.TakeLast(100).Select(l => (JsonNode)new JsonObject
                 {
@@ -323,10 +364,105 @@ public static class Social
 
     // --- Sending and keeping the chats ---
 
-    /// <summary>Puts a message in [code]'s channel. Null when it went, otherwise why not.</summary>
-    private static async Task<string?> PublishAsync(Settings s, string code, string type, string text)
+    /// <summary>A friend request or an accept in [code]'s channel, with your name and public key. Null when it went, otherwise why not.</summary>
+    private static Task<string?> PublishAsync(Settings s, string code, string type) =>
+        PostAsync(s, code, new JsonObject { ["dave"] = 2, ["type"] = type, ["from"] = MyCode(s), ["name"] = MyName(s), ["key"] = MyPublicKey(s) });
+
+    /// <summary>
+    /// A message only [friend] can read: [inner] (with your name, the time and an id added) locked with AES-GCM, using a key
+    /// made from your private key and their public one (the same key comes out on their side: ECDH). Also proves it's from you.
+    /// </summary>
+    private static Task<string?> SealAsync(Settings s, Settings.Friend friend, JsonObject inner)
     {
-        var body = new JsonObject { ["dave"] = 1, ["type"] = type, ["from"] = MyCode(s), ["name"] = MyName(s), ["text"] = text }.ToJsonString();
+        inner["name"] = MyName(s);
+        inner["at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        inner["id"] = Guid.NewGuid().ToString("N");
+        var key = SharedKey(s, friend);
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var plain = Encoding.UTF8.GetBytes(inner.ToJsonString());
+        var cipher = new byte[plain.Length];
+        var tag = new byte[16];
+        using (var aes = new AesGcm(key, 16)) aes.Encrypt(nonce, plain, cipher, tag, Direction(MyCode(s), friend.Code));
+        return PostAsync(s, friend.Code, new JsonObject
+        {
+            ["dave"] = 2, ["from"] = MyCode(s),
+            ["n"] = Convert.ToBase64String(nonce), ["c"] = Convert.ToBase64String(cipher), ["t"] = Convert.ToBase64String(tag),
+        });
+    }
+
+    /// <summary>Unlocks a sealed message from [friend]; null when it isn't really from them (or was changed on the way).</summary>
+    private static JsonNode? Open(Settings s, Settings.Friend friend, JsonNode m)
+    {
+        try
+        {
+            var nonce = Convert.FromBase64String(m["n"]?.ToString() ?? "");
+            var cipher = Convert.FromBase64String(m["c"]?.ToString() ?? "");
+            var tag = Convert.FromBase64String(m["t"]?.ToString() ?? "");
+            var plain = new byte[cipher.Length];
+            using (var aes = new AesGcm(SharedKey(s, friend), 16)) aes.Decrypt(nonce, cipher, tag, plain, Direction(friend.Code, MyCode(s)));
+            return JsonNode.Parse(plain);
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Social: a sealed message in {friend.Name}'s name couldn't be opened ({e.GetType().Name}): ignored");
+            return null;
+        }
+    }
+
+    /// <summary>Who sent it to whom: part of what's checked, so a message can't be passed off the other way round.</summary>
+    private static byte[] Direction(string from, string to) => Encoding.UTF8.GetBytes($"dave-chat {from} -> {to}");
+
+    // --- Keys ---
+
+    /// <summary>Your private key (made the first time, kept in the settings on this PC).</summary>
+    private static ECDiffieHellman MyKey(Settings s)
+    {
+        var key = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        if (s.SocialKey.Length > 0)
+        {
+            try { key.ImportPkcs8PrivateKey(Convert.FromBase64String(s.SocialKey), out _); return key; }
+            catch (Exception e) { Log.Write($"Social: the private key couldn't be read ({e.Message}), making a new one"); }
+        }
+        s.SocialKey = Convert.ToBase64String(key.ExportPkcs8PrivateKey());
+        s.Save();
+        return key;
+    }
+
+    /// <summary>Your public key, for friends (sent along with requests and accepts).</summary>
+    private static string MyPublicKey(Settings s)
+    {
+        using var key = MyKey(s);
+        return Convert.ToBase64String(key.PublicKey.ExportSubjectPublicKeyInfo());
+    }
+
+    /// <summary>[text] when it's a usable public key, otherwise null.</summary>
+    private static string? ValidKey(string? text)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length > 400) return null;
+        try
+        {
+            using var key = ECDiffieHellman.Create();
+            key.ImportSubjectPublicKeyInfo(Convert.FromBase64String(text), out _);
+            return key.KeySize == 256 ? text : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>The key you and [friend] share: the same on both sides (ECDH), and nobody else can work it out.</summary>
+    private static byte[] SharedKey(Settings s, Settings.Friend friend)
+    {
+        using var mine = MyKey(s);
+        using var theirs = ECDiffieHellman.Create();
+        theirs.ImportSubjectPublicKeyInfo(Convert.FromBase64String(friend.PublicKey), out _);
+        var secret = mine.DeriveKeyFromHash(theirs.PublicKey, HashAlgorithmName.SHA256);
+        var codes = string.CompareOrdinal(MyCode(s), friend.Code) < 0 ? MyCode(s) + friend.Code : friend.Code + MyCode(s);
+        return HKDF.DeriveKey(HashAlgorithmName.SHA256, secret, 32, Encoding.UTF8.GetBytes("dave-social-v2"), Encoding.UTF8.GetBytes(codes));
+    }
+
+    /// <summary>Puts [message] in [code]'s channel. Null when it went, otherwise why not.</summary>
+    private static async Task<string?> PostAsync(Settings s, string code, JsonObject message)
+    {
+        var body = message.ToJsonString();
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));

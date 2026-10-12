@@ -110,6 +110,8 @@ public class Settings
     public string SocialName { get; set; } = "";
     /// <summary>The last message seen in your channel, so none is handled twice and none is missed after a restart.</summary>
     public string SocialSince { get; set; } = "";
+    /// <summary>Your private key for end-to-end encrypted chats (made the first time; never leaves this PC).</summary>
+    public string SocialKey { get; set; } = "";
     /// <summary>Messages from friends read out loud (with the name); off: only the sound and the bubble.</summary>
     public bool ReadMessagesAloud { get; set; } = true;
     /// <summary>A notification sound for messages (in the theme's style when theme sounds are on).</summary>
@@ -124,6 +126,8 @@ public class Settings
         public string Status { get; set; } = "";
         public DateTimeOffset Since { get; set; }
         public int Unread { get; set; }
+        /// <summary>Their public key (from their request or accept): messages to and from them are locked with it.</summary>
+        public string PublicKey { get; set; } = "";
     }
 
     public class Reminder
