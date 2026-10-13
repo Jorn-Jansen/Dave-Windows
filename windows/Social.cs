@@ -127,7 +127,19 @@ public static class Social
         try { m = JsonNode.Parse(raw); } catch { return; } // not ours
         if (m?["dave"] == null) return;
         var from = Normalise(m["from"]?.ToString() ?? "");
-        if (from == null || from == MyCode(s)) return;
+        if (from == null) return;
+        if (from == MyCode(s))
+        {
+            // A copy of a message you sent from your iPhone (sealed with your own key): in the chat here too
+            if (m["c"] == null || Open(s, Self(s), m) is not { } echo || echo["type"]?.ToString() != "sent" || echo["by"]?.ToString() == "pc") return;
+            var echoId = echo["id"]?.ToString() ?? "";
+            if (echoId.Length == 0 || !Seen.Add(echoId) || Normalise(echo["to"]?.ToString() ?? "") is not { } to) return;
+            var sent = Clean(echo["text"]?.ToString() ?? "", 1000);
+            if (sent.Length == 0 || s.Friends.All(f => f.Code != to)) return;
+            Add(to, new Line { At = DateTimeOffset.Now, Mine = true, Text = sent });
+            Changed?.Invoke();
+            return;
+        }
         Settings.Friend? friend;
         lock (Sync) friend = s.Friends.FirstOrDefault(f => f.Code == from);
 
@@ -267,6 +279,8 @@ public static class Social
         var why = await SealAsync(s, friend, new JsonObject { ["type"] = "msg", ["text"] = text });
         if (why != null) return why;
         Add(code, new Line { At = DateTimeOffset.Now, Mine = true, Text = text });
+        // A copy, sealed with your own key, so the iPhone app shows it in the chat too
+        _ = SealAsync(s, Self(s), new JsonObject { ["type"] = "sent", ["to"] = code, ["text"] = text, ["by"] = "pc" });
         Changed?.Invoke();
         return null;
     }
@@ -426,6 +440,27 @@ public static class Social
         s.SocialKey = Convert.ToBase64String(key.ExportPkcs8PrivateKey());
         s.Save();
         return key;
+    }
+
+    /// <summary>You, as a "friend": for copies of your own messages (sealed with your own key, for your other devices).</summary>
+    private static Settings.Friend Self(Settings s) => new() { Code = MyCode(s), Name = MyName(s), Status = "friend", PublicKey = MyPublicKey(s) };
+
+    /// <summary>
+    /// For the iPhone app, so it can chat on its own (also when the PC is off): your friend code, name and private key,
+    /// and your friends with their public keys. Only over the phone link, which needs the pairing code.
+    /// </summary>
+    public static JsonObject Identity(Settings s)
+    {
+        using var key = MyKey(s);
+        var d = key.ExportParameters(true).D!;
+        return new JsonObject
+        {
+            ["code"] = MyCode(s), ["name"] = MyName(s), ["d"] = Convert.ToBase64String(d), ["key"] = MyPublicKey(s),
+            ["friends"] = new JsonArray(s.Friends.Select(f => (JsonNode)new JsonObject
+            {
+                ["code"] = f.Code, ["name"] = f.Name, ["status"] = f.Status, ["key"] = f.PublicKey,
+            }).ToArray()),
+        };
     }
 
     /// <summary>Your public key, for friends (sent along with requests and accepts).</summary>

@@ -188,6 +188,7 @@ public sealed class PhoneLink : IDisposable
                 }
             }
             else if (path == "/state") (status, reply) = (200, await state(null)); // reminders, memories, music, screen time…
+            else if (path == "/social") (status, reply) = (200, Social.Identity(settings)); // the iPhone app chats on its own with this
             else if (method == "POST" && path == "/receive") // "send this to my PC": a link, text, or a photo or file
             {
                 var item = JsonNode.Parse(body)?.AsObject() ?? new JsonObject();
