@@ -243,6 +243,7 @@ public static class Assistant
                 ["voice"] = new JsonObject { ["type"] = "boolean", ["description"] = "A voice message (their own voice) instead of text" },
                 ["attach"] = Enum("none", "screenshot", "clipboard", "file"),
                 ["file"] = Str("attach = file: the file's name or path"),
+                ["at"] = Str("Only to send it later ('send Alex happy birthday tomorrow at 9'): when, as yyyy-MM-ddTHH:mm (local time); empty = now"),
             }, "to"),
         Tool("read_messages", "Messages from friends in Dave's Social chat: 'any messages?', 'what did Alex say?', 'read my messages'.",
             new JsonObject { ["from"] = Str("A friend's name, or empty for everyone"), ["question"] = Str("The user's question") }, "question"),

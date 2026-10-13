@@ -144,7 +144,9 @@ public static class Groq
     public static string LastHeard { get; private set; } = "";
     public static List<(string word, double start, double end)> LastWords { get; private set; } = new();
 
-    public static async Task<(string text, string language)> TranscribeAsync(Settings settings, byte[] wav)
+    /// <param name="fileName">What the audio is ("speech.wav", "x.m4a"): the service goes by its extension.</param>
+    /// <param name="remember">False for a friend's voice message: then it isn't taken as the last thing you said.</param>
+    public static async Task<(string text, string language)> TranscribeAsync(Settings settings, byte[] wav, string fileName = "speech.wav", bool remember = true)
     {
         var openAi = settings.AiProvider == "openai" && settings.AiKey.Length > 0;
         if (!openAi && settings.GroqKey.Length == 0)
@@ -152,8 +154,8 @@ public static class Groq
                 "Om te verstaan wat je zegt heb ik een gratis Groq-sleutel nodig. Voeg er een toe in mijn instellingen."));
         using var form = new MultipartFormDataContent();
         var file = new ByteArrayContent(wav);
-        file.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        form.Add(file, "file", "speech.wav");
+        file.Headers.ContentType = new MediaTypeHeaderValue(fileName.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase) ? "audio/mp4" : "audio/wav");
+        form.Add(file, "file", fileName);
         form.Add(new StringContent(openAi ? "whisper-1" : "whisper-large-v3-turbo"), "model");
         form.Add(new StringContent("verbose_json"), "response_format");
         form.Add(new StringContent("word"), "timestamp_granularities[]"); // when each word was said ("send Alex a voice message …")
@@ -174,10 +176,13 @@ public static class Groq
         if (status is < 200 or >= 300) throw Failure(settings, status, text, openAi ? "OpenAI" : "Groq");
         var json = JsonNode.Parse(text)!;
         var heard = json["text"]?.GetValue<string>().Trim() ?? "";
-        LastRecording = wav;
-        LastHeard = heard;
-        LastWords = (json["words"] as JsonArray)?.Select(w => (w?["word"]?.ToString()?.Trim() ?? "", w?["start"]?.GetValue<double>() ?? 0, w?["end"]?.GetValue<double>() ?? 0)).ToList()
+        if (remember)
+        {
+            LastRecording = wav;
+            LastHeard = heard;
+            LastWords = (json["words"] as JsonArray)?.Select(w => (w?["word"]?.ToString()?.Trim() ?? "", w?["start"]?.GetValue<double>() ?? 0, w?["end"]?.GetValue<double>() ?? 0)).ToList()
                     ?? new List<(string, double, double)>();
+        }
         var language = json["language"]?.GetValue<string>() ?? "";
         return (IsHallucination(heard) ? "" : heard, language);
     }

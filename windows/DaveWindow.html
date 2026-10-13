@@ -260,6 +260,39 @@
   .replying b { color: var(--text); flex: none; }
   .replying .what { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
   .react-bar .reply-btn { font-size: 15px; color: var(--text); }
+  .react-bar .tool-btn { font-size: 14px; color: var(--text); }
+  .voice-row { display: flex; align-items: center; gap: 8px; }
+  .words-btn { border: 1px solid var(--line); background: transparent; color: var(--dim); font: 700 12px inherit; border-radius: 8px; padding: 3px 7px; cursor: pointer; flex: none; }
+  .words-btn.on, .words-btn:hover { color: var(--text); background: color-mix(in srgb, var(--violet) 30%, transparent); }
+  .transcript, .translation { margin-top: 6px; font-size: 13px; color: var(--dim); white-space: pre-wrap; }
+  .translation { border-top: 1px solid var(--line); padding-top: 5px; }
+  .preview { display: flex; gap: 10px; margin-top: 8px; padding: 8px; border-radius: 10px; background: color-mix(in srgb, var(--text) 7%, transparent); cursor: pointer; max-width: 340px; }
+  .preview:hover { background: color-mix(in srgb, var(--text) 12%, transparent); }
+  .preview img { width: 64px; height: 64px; object-fit: cover; border-radius: 7px; flex: none; }
+  .preview .ptext { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12px; }
+  .preview .ptext b { font-size: 13px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .preview .ptext span { color: var(--dim); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .seen { align-self: flex-end; font-size: 11px; color: var(--dim); margin: -4px 8px 2px 0; }
+  .msg.scheduled { opacity: .6; border-style: dashed; display: flex; align-items: center; gap: 8px; }
+  .msg.scheduled .x { margin-left: 4px; color: #fff; opacity: .85; }
+  .composer .round.on { background: color-mix(in srgb, var(--violet) 45%, transparent); }
+  .dm-head .x.on { color: var(--text); background: color-mix(in srgb, var(--violet) 30%, transparent); }
+  .replying.schedule input { background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font: inherit; color-scheme: dark; }
+  .search { padding: 10px 22px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; max-height: 45%; min-height: 0; }
+  .search-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .search-row > input, .search-row select, .search .date input { background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font: inherit; font-size: 13px; color-scheme: dark; }
+  .search-row > input { flex: 1; min-width: 140px; }
+  .search select option { background: var(--panel); }
+  .search .date { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--dim); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--line); background: transparent; color: var(--dim); border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .chip.on, .chip:hover { color: var(--text); background: color-mix(in srgb, var(--violet) 30%, transparent); }
+  .results { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+  .result { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; min-width: 0; }
+  .result:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .result b { flex: none; } .result span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--dim); }
+  .result small { flex: none; color: var(--dim); font-size: 11px; }
+  .results .none { color: var(--dim); font-size: 13px; padding: 4px 8px; }
   .msg.flash { animation: flash 1.6s ease-out; }
   @keyframes flash { 0%, 30% { box-shadow: 0 0 0 2px var(--cyan), 0 0 26px color-mix(in srgb, var(--cyan) 60%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
   .friends::-webkit-scrollbar, .dm-lines::-webkit-scrollbar { width: 8px; }
@@ -496,6 +529,11 @@ const T = {
     attach: "Send a photo, video or file (or drag it in)", voiceMsg: "Record a voice message", recording: "🎤 Recording… stop talking to send",
     fileGone: "This file couldn't be fetched (files are kept for 3 days)",
     typeMessage: "Message…", removeAsk: "Remove {name} as a friend?", pickFriend: "Pick a friend to chat with", noLines: "No messages yet. Say hi!",
+    edit: "Edit", edited: "edited", editing: "Editing your message", delete: "Delete", deleteAsk: "Delete this message for both of you?",
+    seen: "Seen", showWords: "Show what's said", listening: "Working out the words…", translate: "Translate",
+    search: "Search this chat", searchFor: "Search…", all: "All", photos: "Photos", videos: "Videos", voices: "Voice", files: "Files", links: "Links",
+    anyone: "Anyone", after: "After", before: "Before", nothingFound: "Nothing found",
+    sendLater: "Send later", sendAt: "Send at", schedule: "Schedule", cancelScheduled: "Don't send it",
   },
   nl: {
     chat: "Chat", reminders: "Herinneringen", memories: "Onthouden", screen: "Schermtijd", music: "Muziek", watching: "Opletten",
@@ -520,6 +558,11 @@ const T = {
     attach: "Stuur een foto, video of bestand (of sleep het erin)", voiceMsg: "Spreek een spraakbericht in", recording: "🎤 Opnemen… stop met praten om te versturen",
     fileGone: "Dit bestand kon niet worden opgehaald (bestanden blijven 3 dagen bewaard)",
     typeMessage: "Bericht…", removeAsk: "{name} verwijderen als vriend?", pickFriend: "Kies een vriend om mee te chatten", noLines: "Nog geen berichten. Zeg hoi!",
+    edit: "Bewerken", edited: "bewerkt", editing: "Je bericht bewerken", delete: "Verwijderen", deleteAsk: "Dit bericht voor jullie allebei verwijderen?",
+    seen: "Gezien", showWords: "Laat zien wat er gezegd wordt", listening: "Woorden uitzoeken…", translate: "Vertalen",
+    search: "Zoek in deze chat", searchFor: "Zoeken…", all: "Alles", photos: "Foto's", videos: "Video's", voices: "Spraak", files: "Bestanden", links: "Links",
+    anyone: "Iedereen", after: "Na", before: "Voor", nothingFound: "Niets gevonden",
+    sendLater: "Later versturen", sendAt: "Versturen om", schedule: "Inplannen", cancelScheduled: "Niet versturen",
   },
 };
 /* Errors in this page go to Dave's log (dave.log), so they can be found and fixed */
@@ -701,6 +744,11 @@ function renderSettings(d) {
   const emojiField = field("DoubleClickEmoji", "Emoji for double-click", select("DoubleClickEmoji", REACTIONS.map(e => [e, e])));
   const showEmoji = () => emojiField.style.display = form.DoubleClickAction.value === "react" ? "" : "none"; // only when double-click reacts
   form.DoubleClickAction.addEventListener("change", showEmoji); showEmoji();
+  field("ReadReceipts", "Read receipts", toggle("ReadReceipts"), "Friends see “Seen” when you've read their messages, and you see theirs. Off: neither.");
+  field("Translate", "Translate messages", toggle("Translate"), "Friends' messages in another language, in yours.");
+  const autoField = field("TranslateAutomatically", "Translate automatically", toggle("TranslateAutomatically"), "Off: a 🌐 button on each message from a friend.");
+  const showAuto = () => autoField.style.display = form.Translate.classList.contains("on") ? "" : "none"; // only when translating is on
+  form.Translate.addEventListener("click", () => setTimeout(showAuto)); showAuto();
 
   sec("Calendar");
   field("CalendarLinks", "Calendar link (iCal)", text("CalendarLinks", "https://calendar.google.com/calendar/ical/…/basic.ics"),
@@ -924,7 +972,8 @@ function voicePlayer(url) {
 }
 
 /* Replies: the message you're replying to, a short version of a message, and jumping to one (it flashes) */
-let replying = null;
+let replying = null, editing = null, search = null, scheduling = false;
+const shownWords = new Set(); // voice messages showing their words (Aa)
 const snippet = l => { const s = l.kind ? l.text : l.text; return s.length > 90 ? s.slice(0, 90) + "…" : s; };
 function jumpTo(lines, id) {
   const target = lines.querySelector(`.msg[data-id="${CSS.escape(id)}"]`);
@@ -951,7 +1000,7 @@ function renderSocial() {
   if (!changed("social", [s, friendSel, chatting])) return;
 
   // What you were typing stays, also when a message comes in
-  const keep = { add: $("addCode") ? $("addCode").value : "", msg: $("dmInput") ? $("dmInput").value : "", focus: document.activeElement ? document.activeElement.id : "" };
+  const keep = { add: $("addCode") ? $("addCode").value : "", msg: $("dmInput") ? $("dmInput").value : "", scheduleAt: $("scheduleAt") ? $("scheduleAt").value : "", focus: document.activeElement ? document.activeElement.id : "" };
   $("social").classList.toggle("chatting", chatting && !!sel);
 
   const L = $("friends"); L.textContent = "";
@@ -993,20 +1042,31 @@ function renderSocial() {
     L.append(card);
   }
 
-  const R = $("dm"); R.textContent = "";
+  const R = $("dm");
+  // Where you were in the chat: new things only scroll it down when you were at the bottom
+  const before = R.querySelector(".dm-lines");
+  const atBottom = !before || R.dataset.code !== (sel ? sel.code : "") || before.scrollHeight - before.scrollTop - before.clientHeight < 80, oldTop = before ? before.scrollTop : 0;
+  R.textContent = "";
   if (!sel) { R.append(empty("💬", t("pickFriend"))); return; }
+  if (replying && replying.code !== sel.code) replying = null; // (another chat)
+  if (editing && editing.code !== sel.code) editing = null;
+  if (search && search.code !== sel.code) search = null;
+  R.dataset.code = sel.code;
   const head = el("div", "dm-head"), back = el("button", "btn dm-back", "←");
   back.onclick = () => { chatting = false; rendered.social = null; renderSocial(); };
+  const find = el("button", "x" + (search ? " on" : ""), "🔍"); find.title = t("search");
+  find.onclick = () => { search = search ? null : { code: sel.code, q: "", kind: "", from: "", after: "", before: "" }; rendered.social = null; renderSocial(); if (search) $("searchBox").focus(); };
   const remove = el("button", "x", "✕"); remove.title = "Remove";
   remove.onclick = () => { if (confirm(t("removeAsk").replace("{name}", sel.name))) send({ type: "socialRemove", code: sel.code }); };
   const title = el("div", "main"); title.append(el("b", null, sel.name));
   if (!sel.secure) title.append(el("div", "sub", t("notSecure"))); // only a warning; encrypted is simply how it is
-  head.append(back, avatar(sel.name), title, remove);
+  head.append(back, avatar(sel.name), title, find, remove);
   const lines = el("div", "dm-lines");
   if (!sel.lines.length) lines.append(empty("👋", t("noLines")));
   const open = l => send({ type: "socialOpenFile", text: l.url });
-  if (replying && replying.code !== sel.code) replying = null; // (another chat)
-  const startReply = l => { replying = { code: sel.code, id: l.id, who: l.mine ? t("you") : sel.name, what: snippet(l) }; rendered.social = null; renderSocial(); $("dmInput").focus(); };
+  const startReply = l => { editing = null; replying = { code: sel.code, id: l.id, who: l.mine ? t("you") : sel.name, what: snippet(l) }; rendered.social = null; renderSocial(); $("dmInput").focus(); };
+  const startEdit = l => { replying = null; editing = { code: sel.code, id: l.id, text: l.text, fresh: true }; rendered.social = null; renderSocial(); $("dmInput").focus(); };
+  const canTranslate = state.social.translate && !state.social.translateAuto;
   for (const l of sel.lines) {
     const m = el("div", "msg " + (l.mine ? "you" : "dave") + (l.kind && l.kind !== "file" ? " media" : ""));
     m.dataset.id = l.id || "";
@@ -1022,24 +1082,49 @@ function renderSocial() {
       if (state.social.doubleClick === "react") send({ type: "socialReact", code: sel.code, id: l.id, text: state.social.doubleClickEmoji || "❤️" });
       else startReply(l);
     };
-    if (l.kind === "photo" && l.url) { const img = el("img", "dm-img"); img.src = l.url; img.onclick = () => open(l); img.onload = () => lines.scrollTop = lines.scrollHeight; m.append(img); }
+    if (l.kind === "photo" && l.url) { const img = el("img", "dm-img"); img.src = l.url; img.onclick = () => open(l); img.onload = () => { if (atBottom) lines.scrollTop = lines.scrollHeight; }; m.append(img); }
     else if (l.kind === "video" && l.url) {
-      const v = el("video", "dm-video"); v.src = l.url; v.controls = true; v.preload = "metadata"; v.onloadedmetadata = () => lines.scrollTop = lines.scrollHeight;
+      const v = el("video", "dm-video"); v.src = l.url; v.controls = true; v.preload = "metadata"; v.onloadedmetadata = () => { if (atBottom) lines.scrollTop = lines.scrollHeight; };
       v.onplay = () => playing.add(v); v.onpause = v.onended = () => { playing.delete(v); };
       m.append(v);
     }
-    else if (l.kind === "voice" && l.url) m.append(voicePlayer(l.url));
+    else if (l.kind === "voice" && l.url) {
+      // the player, and "Aa" to show or hide what's said in it (worked out the first time)
+      const row = el("div", "voice-row"), words = el("button", "words-btn" + (shownWords.has(l.id) ? " on" : ""), "Aa");
+      words.title = t("showWords");
+      words.onclick = ev => {
+        ev.stopPropagation();
+        if (shownWords.has(l.id)) shownWords.delete(l.id); else { shownWords.add(l.id); if (!l.transcript) send({ type: "socialTranscribe", code: sel.code, id: l.id }); }
+        rendered.social = null; renderSocial();
+      };
+      row.append(voicePlayer(l.url), words);
+      m.append(row);
+      if (shownWords.has(l.id)) m.append(el("div", "transcript", l.transcript === "…" || !l.transcript ? t("listening") : l.transcript));
+    }
     else if (l.kind && l.url) { const f = el("div", "dm-file", "📎 " + l.name); f.onclick = () => open(l); m.append(f); }
     else if (l.kind) m.append(el("div", "dm-file", l.failed ? "⚠️ " + t("fileGone") : "⏳ " + l.text)); // still coming in
     else m.append(document.createTextNode(l.text));
-    m.append(el("span", "time", l.at));
+    if (!l.mine && !l.kind && l.translation && l.translation !== "=") // in your language
+      m.append(el("div", "translation", l.translation === "…" ? "🌐 …" : "🌐 " + l.translation));
+    if (l.preview) { // a link: its page's title, text and picture; click to open it
+      const card = el("div", "preview");
+      if (l.preview.image) { const pic = el("img"); pic.src = l.preview.image; pic.onerror = () => pic.remove(); card.append(pic); }
+      const words = el("div", "ptext"); words.append(el("b", null, l.preview.title)); if (l.preview.text) words.append(el("span", null, l.preview.text));
+      card.append(words);
+      card.onclick = ev => { ev.stopPropagation(); send({ type: "socialOpenLink", text: l.preview.url }); };
+      m.append(card);
+    }
+    const time = el("span", "time", l.at + (l.edited ? " · " + t("edited") : ""));
+    m.append(time);
     const reactions = [...new Set([l.their_reaction, l.mine_reaction].filter(Boolean))];
     if (reactions.length) { const r = el("div", "reacts"); for (const e of reactions) r.append(el("span", null, e)); m.append(r); }
-    if (l.id && sel.secure) { // hover a message: reply to it, or react
-      const bar = el("div", "react-bar"), reply = el("button", "reply-btn", "↩");
-      reply.title = t("reply");
-      reply.onclick = ev => { ev.stopPropagation(); startReply(l); };
-      bar.append(reply);
+    if (l.id && sel.secure) { // hover a message: reply, edit or delete yours, translate theirs, react
+      const bar = el("div", "react-bar");
+      const button = (label, tip, onclick, cls = "tool-btn") => { const b = el("button", cls, label); b.title = tip; b.onclick = ev => { ev.stopPropagation(); onclick(); }; bar.append(b); };
+      button("↩", t("reply"), () => startReply(l));
+      if (l.mine && !l.kind) button("✏️", t("edit"), () => startEdit(l));
+      if (l.mine) button("🗑", t("delete"), () => { if (confirm(t("deleteAsk"))) send({ type: "socialUnsend", code: sel.code, id: l.id }); });
+      if (!l.mine && !l.kind && canTranslate && !l.translation) button("🌐", t("translate"), () => send({ type: "socialTranslate", code: sel.code, id: l.id }));
       for (const e of REACTIONS) {
         const b = el("button", e === l.mine_reaction ? "on" : "", e);
         b.onclick = ev => { ev.stopPropagation(); send({ type: "socialReact", code: sel.code, id: l.id, text: e }); };
@@ -1050,20 +1135,41 @@ function renderSocial() {
       m.append(bar);
     }
     lines.append(m);
+    if (l.mine && l.id && l.id === sel.seenId) lines.append(el("div", "seen", `${t("seen")} ${sel.seenAt}`)); // they've read up to here
+  }
+  for (const later of sel.scheduled || []) { // messages waiting to be sent, with ✕ to cancel
+    const m = el("div", "msg you scheduled"), cancel = el("button", "x", "✕");
+    m.append(document.createTextNode(later.text), el("span", "time", "⏰ " + later.at));
+    cancel.title = t("cancelScheduled");
+    cancel.onclick = () => send({ type: "socialUnschedule", code: sel.code, id: later.id });
+    m.append(cancel);
+    lines.append(m);
   }
   if (sel.typing) { const dots = el("div", "msg dave typing-dots"); dots.append(el("i"), el("i"), el("i")); lines.append(dots); } // they're typing
+
   const compose = el("div", "composer show"), box = el("input"), go = el("button", "round", "➤");
   const attach = el("button", "round alt", "📎"), mic = el("button", "round alt" + (recordingVoice ? " listening" : ""), "🎤");
-  attach.title = t("attach"); mic.title = t("voiceMsg");
+  const later = el("button", "round alt" + (scheduling ? " on" : ""), "⏰");
+  attach.title = t("attach"); mic.title = t("voiceMsg"); later.title = t("sendLater");
   // What you send next replies to this message (then it's done)
   const reply = () => { const id = replying ? replying.id : ""; if (replying) { replying = null; rendered.social = null; } return id; };
   attach.onclick = () => send({ type: "socialAttach", code: sel.code, reply: reply() });
   mic.onclick = () => { if (!recordingVoice) send({ type: "socialRecord", code: sel.code, reply: reply() }); };
-  box.id = "dmInput"; box.placeholder = recordingVoice ? t("recording") : t("typeMessage"); box.value = keep.msg; box.maxLength = 1000;
-  const sendIt = () => { if (box.value.trim()) { send({ type: "socialSend", code: sel.code, text: box.value.trim(), reply: reply() }); box.value = ""; renderSocial(); } };
+  later.onclick = () => { scheduling = !scheduling; rendered.social = null; renderSocial(); };
+  box.id = "dmInput"; box.maxLength = 1000;
+  box.placeholder = recordingVoice ? t("recording") : editing ? t("editing") : t("typeMessage");
+  box.value = editing && editing.fresh ? editing.text : keep.msg;
+  if (editing) editing.fresh = false;
+  const sendIt = () => {
+    const text = box.value.trim();
+    if (!text) return;
+    if (editing) send({ type: "socialEdit", code: sel.code, id: editing.id, text }), editing = null;
+    else send({ type: "socialSend", code: sel.code, text, reply: reply() });
+    box.value = ""; rendered.social = null; renderSocial();
+  };
   go.onclick = sendIt; box.onkeydown = e => { if (e.key === "Enter") sendIt(); };
-  box.oninput = () => send({ type: "socialTyping", code: sel.code }); // (Dave sends it at most every few seconds)
-  compose.append(attach, mic, box, go);
+  box.oninput = () => { if (!editing) send({ type: "socialTyping", code: sel.code }); }; // (Dave sends it at most every few seconds)
+  compose.append(attach, mic, later, box, go);
   // Drag a photo, video or file into the chat to send it
   R.ondragover = e => { e.preventDefault(); R.classList.add("dropping"); };
   R.ondragleave = () => R.classList.remove("dropping");
@@ -1077,17 +1183,83 @@ function renderSocial() {
       reader.readAsDataURL(file);
     }
   };
-  R.append(head, lines);
-  if (replying) { // "Replying to Alex: …" above the box, with ✕
+
+  R.append(head);
+  if (search) R.append(searchPanel(sel, lines));
+  R.append(lines);
+  const strip = (icon, text, who, what, cancel) => { // "Replying to / Editing …" above the box, with ✕
     const bar = el("div", "replying"), close = el("button", "x", "✕");
-    bar.append(el("span", "qarrow", "↩"), el("span", null, t("replyingTo") + " "), el("b", null, replying.who), el("span", "what", replying.what));
-    close.onclick = () => { replying = null; rendered.social = null; renderSocial(); };
+    bar.append(el("span", "qarrow", icon), el("span", null, text + " "));
+    if (who) bar.append(el("b", null, who));
+    if (what) bar.append(el("span", "what", what));
+    close.onclick = () => { cancel(); rendered.social = null; renderSocial(); };
     bar.append(close);
     R.append(bar);
+  };
+  if (replying) strip("↩", t("replyingTo"), replying.who, replying.what, () => replying = null);
+  if (editing) strip("✏️", t("editing"), "", "", () => { editing = null; box.value = ""; });
+  if (scheduling) { // ⏰: when to send what you type
+    const row = el("div", "replying schedule"), when = el("input"), set = el("button", "btn", t("schedule"));
+    when.type = "datetime-local"; when.id = "scheduleAt";
+    const soon = new Date(Date.now() + 60 * 60 * 1000); soon.setSeconds(0, 0);
+    when.value = keep.scheduleAt || new Date(soon - soon.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    set.onclick = () => {
+      if (!box.value.trim() || !when.value) { box.focus(); return; }
+      send({ type: "socialSchedule", code: sel.code, text: box.value.trim(), at: when.value, reply: reply() });
+      box.value = ""; scheduling = false; rendered.social = null; renderSocial();
+    };
+    row.append(el("span", "qarrow", "⏰"), el("span", null, t("sendAt")), when, set);
+    R.append(row);
   }
   R.append(compose);
-  lines.scrollTop = lines.scrollHeight;
-  if (keep.focus === "dmInput" || keep.focus === "addCode") $(keep.focus).focus();
+  lines.scrollTop = atBottom ? lines.scrollHeight : oldTop;
+  if (keep.focus === "dmInput" || keep.focus === "addCode" || keep.focus === "searchBox") $(keep.focus).focus();
+}
+
+/* Search a chat: words, what kind, who sent it, and between which dates; click a result to see it there */
+function searchPanel(sel, lines) {
+  const panel = el("div", "search"), row = el("div", "search-row"), box = el("input");
+  box.id = "searchBox"; box.placeholder = t("searchFor"); box.value = search.q;
+  box.oninput = () => { search.q = box.value; showResults(); };
+  const kinds = el("div", "chips");
+  for (const [kind, label] of [["", t("all")], ["photo", "📷 " + t("photos")], ["video", "🎬 " + t("videos")], ["voice", "🎤 " + t("voices")], ["file", "📎 " + t("files")], ["link", "🔗 " + t("links")]]) {
+    const chip = el("button", "chip" + (search.kind === kind ? " on" : ""), label);
+    chip.onclick = () => { search.kind = kind; kinds.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === chip)); showResults(); };
+    kinds.append(chip);
+  }
+  const from = el("select");
+  options(from, [["", t("anyone")], ["me", t("you")], ["them", sel.name]], search.from);
+  from.onchange = () => { search.from = from.value; showResults(); };
+  const date = (key, label) => {
+    const wrap = el("label", "date"), input = el("input");
+    input.type = "date"; input.value = search[key];
+    input.onchange = () => { search[key] = input.value; showResults(); };
+    wrap.append(el("span", null, label), input);
+    return wrap;
+  };
+  row.append(box, from, date("after", t("after")), date("before", t("before")));
+  const results = el("div", "results");
+  panel.append(row, kinds, results);
+  function showResults() {
+    results.textContent = "";
+    const q = search.q.trim().toLowerCase();
+    const found = sel.lines.filter(l => {
+      if (search.kind === "link" ? !/https?:\/\//i.test(l.text) : search.kind && l.kind !== search.kind) return false;
+      if (search.from === "me" && !l.mine || search.from === "them" && l.mine) return false;
+      if (search.after && l.ts < search.after || search.before && l.ts > search.before) return false;
+      return !q || [l.text, l.name, l.transcript, l.translation].some(x => x && x.toLowerCase().includes(q));
+    }).reverse().slice(0, 60);
+    if (!q && !search.kind && !search.from && !search.after && !search.before) return;
+    if (!found.length) { results.append(el("div", "none", t("nothingFound"))); return; }
+    for (const l of found) {
+      const r = el("div", "result");
+      r.append(el("b", null, l.mine ? t("you") : sel.name), el("span", null, snippet(l)), el("small", null, l.ts + " " + l.at.split(" ").pop()));
+      r.onclick = () => jumpTo(lines, l.id);
+      results.append(r);
+    }
+  }
+  showResults();
+  return panel;
 }
 
 function count(id, n) { $(id).textContent = n || ""; $(id).style.display = n ? "" : "none"; }

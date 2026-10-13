@@ -163,7 +163,7 @@ public class DaveApp : ApplicationContext
         windowHotkey = new HotkeyWindow(ToggleWindow);
         ApplySettings();
 
-        reminderTimer.Tick += (_, _) => { AnnounceDueReminders(); timerOverlay.Sync(); };
+        reminderTimer.Tick += (_, _) => { AnnounceDueReminders(); timerOverlay.Sync(); _ = Social.SendDueAsync(settings); }; // (and scheduled messages)
         reminderTimer.Start();
         AnnounceDueReminders(); // ones that came due while the PC was off
 

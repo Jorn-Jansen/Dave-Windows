@@ -43,6 +43,15 @@ public static class Social
         public string TheirReaction { get; set; } = "";
         /// <summary>The id of the message this one replies to ("" = none).</summary>
         public string ReplyTo { get; set; } = "";
+        public bool Edited { get; set; }
+        /// <summary>A voice message's words (made the first time you ask for them), and a friend's message in your language ("" = not yet, "=" = it already was).</summary>
+        public string Transcript { get; set; } = "";
+        public string Translation { get; set; } = "";
+        /// <summary>A link in it: the page's title, description and picture (looked up once; Url "" = none, "-" = no preview).</summary>
+        public string PreviewUrl { get; set; } = "";
+        public string PreviewTitle { get; set; } = "";
+        public string PreviewText { get; set; } = "";
+        public string PreviewImage { get; set; } = "";
     }
 
     /// <summary>A message from a friend: who, and what they said.</summary>
@@ -145,13 +154,28 @@ public static class Social
         if (from == null) return;
         if (from == MyCode(s))
         {
-            // A copy of a message you sent from your iPhone (sealed with your own key): in the chat here too
-            if (m["c"] == null || Open(s, Self(s), m) is not { } echo || echo["type"]?.ToString() != "sent" || echo["by"]?.ToString() == "pc") return;
+            // What you did on your iPhone (sealed with your own key): a message you sent, edited or deleted there
+            if (m["c"] == null || Open(s, Self(s), m) is not { } echo || echo["by"]?.ToString() == "pc") return;
             var echoId = echo["id"]?.ToString() ?? "";
-            if (echoId.Length == 0 || !Seen.Add(echoId) || Normalise(echo["to"]?.ToString() ?? "") is not { } to) return;
-            var sent = Clean(echo["text"]?.ToString() ?? "", 1000);
-            if (sent.Length == 0 || s.Friends.All(f => f.Code != to)) return;
-            Add(to, new Line { At = DateTimeOffset.Now, Mine = true, Text = sent, Id = echo["msgid"]?.ToString() ?? "", ReplyTo = ReplyOf(echo) });
+            if (echoId.Length == 0 || !Seen.Add(echoId) || Normalise(echo["to"]?.ToString() ?? "") is not { } to || s.Friends.All(f => f.Code != to)) return;
+            var target = echo["target"]?.ToString() ?? "";
+            switch (echo["type"]?.ToString())
+            {
+                case "sent":
+                    var sent = Clean(echo["text"]?.ToString() ?? "", 1000);
+                    if (sent.Length == 0) return;
+                    Add(to, new Line { At = DateTimeOffset.Now, Mine = true, Text = sent, Id = echo["msgid"]?.ToString() ?? "", ReplyTo = ReplyOf(echo) });
+                    break;
+                case "edit" when Lines(to).LastOrDefault(l => l.Mine && l.Id.Length > 0 && l.Id == target) is { } mineEdited:
+                    (mineEdited.Text, mineEdited.Edited, mineEdited.PreviewUrl) = (Clean(echo["text"]?.ToString() ?? "", 1000), true, "");
+                    SaveChats();
+                    break;
+                case "unsend":
+                    RemoveLine(to, target, mine: true);
+                    break;
+                default:
+                    return;
+            }
             Changed?.Invoke();
             return;
         }
@@ -171,7 +195,10 @@ public static class Social
                     var text = Clean(inner["text"]?.ToString() ?? "", 1000);
                     if (text.Length == 0) return;
                     Typing.Remove(friend.Code);
-                    Add(friend.Code, new Line { At = DateTimeOffset.Now, Mine = false, Text = text, Id = id, ReplyTo = ReplyOf(inner) });
+                    var received = new Line { At = DateTimeOffset.Now, Mine = false, Text = text, Id = id, ReplyTo = ReplyOf(inner) };
+                    Add(friend.Code, received);
+                    _ = PreviewAsync(friend.Code, received);
+                    if (s.Translate && s.TranslateAutomatically) _ = TranslateAsync(s, friend.Code, id);
                     friend.Unread++;
                     s.Save();
                     Changed?.Invoke();
@@ -194,6 +221,23 @@ public static class Social
                     if (target == null) return;
                     target.TheirReaction = Clean(inner["emoji"]?.ToString() ?? "", 8);
                     SaveChats();
+                    Changed?.Invoke();
+                    return;
+                case "edit": // they changed a message they sent
+                    var edited = Lines(friend.Code).LastOrDefault(l => !l.Mine && l.Id.Length > 0 && l.Id == inner["target"]?.ToString());
+                    if (edited == null || edited.Kind.Length > 0) return;
+                    edited.Text = Clean(inner["text"]?.ToString() ?? "", 1000);
+                    (edited.Edited, edited.Translation, edited.PreviewUrl) = (true, "", "");
+                    SaveChats();
+                    Changed?.Invoke();
+                    return;
+                case "unsend": // they deleted a message they sent
+                    if (RemoveLine(friend.Code, inner["target"]?.ToString() ?? "", mine: false)) Changed?.Invoke();
+                    return;
+                case "seen": // they've read your messages up to this one
+                    if (!s.ReadReceipts || inner["target"]?.ToString() is not { Length: > 0 } seenId) return;
+                    (friend.SeenId, friend.SeenAt) = (seenId, DateTimeOffset.Now);
+                    s.Save();
                     Changed?.Invoke();
                     return;
                 case "typing":
@@ -321,7 +365,9 @@ public static class Social
         var id = Guid.NewGuid().ToString("N");
         var why = await SealAsync(s, friend, new JsonObject { ["type"] = "msg", ["text"] = text, ["id"] = id, ["reply"] = reply });
         if (why != null) return why;
-        Add(code, new Line { At = DateTimeOffset.Now, Mine = true, Text = text, Id = id, ReplyTo = reply });
+        var sentLine = new Line { At = DateTimeOffset.Now, Mine = true, Text = text, Id = id, ReplyTo = reply };
+        Add(code, sentLine);
+        _ = PreviewAsync(code, sentLine);
         TypingSent.Remove(code); // the next "typing…" goes right away
         // A copy, sealed with your own key, so the iPhone app shows it in the chat too
         if (s.PhoneEnabled) _ = SealAsync(s, Self(s), new JsonObject { ["type"] = "sent", ["to"] = code, ["text"] = text, ["by"] = "pc", ["msgid"] = id, ["reply"] = reply }); // (ntfy allows 250 a day)
@@ -447,6 +493,209 @@ public static class Social
         }
     }
 
+    // --- Editing and deleting your messages ---
+
+    /// <summary>Change a message you sent (text only); it changes on your friend's side too, marked "(edited)".</summary>
+    public static async Task<string?> EditAsync(Settings s, string code, string id, string text)
+    {
+        text = Clean(text, 1000);
+        var line = Lines(code).LastOrDefault(l => l.Mine && l.Id.Length > 0 && l.Id == id);
+        var friend = s.Friends.FirstOrDefault(f => f.Code == code);
+        if (line == null || line.Kind.Length > 0 || text.Length == 0 || friend is not { Status: "friend", PublicKey.Length: > 0 }) return null;
+        var why = await SealAsync(s, friend, new JsonObject { ["type"] = "edit", ["target"] = id, ["text"] = text });
+        if (why != null) return why;
+        (line.Text, line.Edited, line.PreviewUrl) = (text, true, "");
+        SaveChats();
+        Changed?.Invoke();
+        if (s.PhoneEnabled) _ = SealAsync(s, Self(s), new JsonObject { ["type"] = "edit", ["to"] = code, ["target"] = id, ["text"] = text, ["by"] = "pc" });
+        _ = PreviewAsync(code, line);
+        return null;
+    }
+
+    /// <summary>Delete a message you sent: gone on your friend's side too.</summary>
+    public static async Task<string?> UnsendAsync(Settings s, string code, string id)
+    {
+        var friend = s.Friends.FirstOrDefault(f => f.Code == code);
+        if (friend is not { Status: "friend", PublicKey.Length: > 0 } || Lines(code).All(l => !(l.Mine && l.Id == id && id.Length > 0))) return null;
+        var why = await SealAsync(s, friend, new JsonObject { ["type"] = "unsend", ["target"] = id });
+        if (why != null) return why;
+        RemoveLine(code, id, mine: true);
+        Changed?.Invoke();
+        if (s.PhoneEnabled) _ = SealAsync(s, Self(s), new JsonObject { ["type"] = "unsend", ["to"] = code, ["target"] = id, ["by"] = "pc" });
+        return null;
+    }
+
+    /// <summary>Takes a message out of a chat (and its file off this PC). True when there was one.</summary>
+    private static bool RemoveLine(string code, string id, bool mine)
+    {
+        Line? gone = null;
+        lock (Sync)
+        {
+            if (id.Length == 0 || !Chats().TryGetValue(code, out var lines)) return false;
+            gone = lines.LastOrDefault(l => l.Id == id && l.Mine == mine);
+            if (gone != null) lines.Remove(gone);
+        }
+        if (gone == null) return false;
+        if (gone.File.Length > 0) try { File.Delete(gone.File); } catch { /* in use: it goes next time */ }
+        SaveChats();
+        return true;
+    }
+
+    // --- "Seen" ---
+
+    private static readonly Dictionary<string, string> SeenSent = new();
+
+    /// <summary>You're looking at the chat: tells your friend you've seen their messages (unless read receipts are off).</summary>
+    private static void SendSeen(Settings s, Settings.Friend friend)
+    {
+        if (!s.ReadReceipts || friend.PublicKey.Length == 0) return;
+        var last = Lines(friend.Code).LastOrDefault(l => !l.Mine && l.Id.Length > 0);
+        if (last == null || SeenSent.GetValueOrDefault(friend.Code) == last.Id) return;
+        SeenSent[friend.Code] = last.Id;
+        _ = SealAsync(s, friend, new JsonObject { ["type"] = "seen", ["target"] = last.Id });
+    }
+
+    // --- Voice message text, translations and link previews (worked out when needed) ---
+
+    /// <summary>The words of a voice message (Groq's speech-to-text), made once and kept.</summary>
+    public static async Task TranscribeAsync(Settings s, string code, string id)
+    {
+        var line = Lines(code).LastOrDefault(l => l.Id == id && l.Kind == "voice");
+        if (line == null || line.Transcript.Length > 0 || !File.Exists(line.File)) return;
+        line.Transcript = "…";
+        Changed?.Invoke();
+        try
+        {
+            var (text, _) = await Groq.TranscribeAsync(s, await File.ReadAllBytesAsync(line.File), Path.GetFileName(line.File), remember: false);
+            line.Transcript = text.Length > 0 ? text : s.Say("(nothing I could make out)", "(niets wat ik kon verstaan)");
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Social: transcribing a voice message failed ({e.Message})");
+            line.Transcript = "";
+        }
+        SaveChats();
+        Changed?.Invoke();
+    }
+
+    /// <summary>A friend's message in your language (Groq), made once and kept; "=" when it already was.</summary>
+    public static async Task TranslateAsync(Settings s, string code, string id)
+    {
+        var line = Lines(code).LastOrDefault(l => l.Id == id && !l.Mine && l.Kind.Length == 0);
+        if (line == null || line.Translation.Length > 0 || !s.Translate) return;
+        line.Translation = "…";
+        Changed?.Invoke();
+        try
+        {
+            var language = System.Globalization.CultureInfo.GetCultureInfo(s.Language).EnglishName.Split(' ')[0];
+            var body = new JsonObject
+            {
+                ["model"] = Groq.Model,
+                ["reasoning_effort"] = "low",
+                ["messages"] = new JsonArray
+                {
+                    new JsonObject { ["role"] = "system", ["content"] = $"Translate the user's chat message into {language}, keeping its tone, slang and emojis. " +
+                        $"If it's already in {language} (or has no words to translate), reply with exactly =. Reply with only the translation." },
+                    new JsonObject { ["role"] = "user", ["content"] = line.Text },
+                },
+            };
+            var reply = (await Groq.ChatAsync(s, body))["content"]?.GetValue<string>()?.Trim() ?? "";
+            line.Translation = reply.Length == 0 || reply == "=" || reply.Equals(line.Text, StringComparison.OrdinalIgnoreCase) ? "=" : reply;
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Social: translating failed ({e.Message})");
+            line.Translation = "";
+        }
+        SaveChats();
+        Changed?.Invoke();
+    }
+
+    private static readonly HttpClient Pages = new() { Timeout = TimeSpan.FromSeconds(8) };
+
+    /// <summary>The first link in a message: its page's title, description and picture, for a preview under it.</summary>
+    private static async Task PreviewAsync(string code, Line line)
+    {
+        if (line.Kind.Length > 0 || line.PreviewUrl.Length > 0) return;
+        var match = System.Text.RegularExpressions.Regex.Match(line.Text, @"https?://[^\s<>""]+");
+        if (!match.Success) return;
+        var url = match.Value.TrimEnd('.', ',', ')', '!', '?');
+        line.PreviewUrl = "-"; // (looking it up, or none)
+        try
+        {
+            string title = "", text = "", image = "";
+            if (System.Text.RegularExpressions.Regex.IsMatch(url, @"^https?://(www\.|m\.)?(youtube\.com|youtu\.be)/"))
+            {
+                // YouTube asks for cookie consent instead of showing the page: its own little info service works
+                var info = JsonNode.Parse(await Pages.GetStringAsync("https://www.youtube.com/oembed?format=json&url=" + Uri.EscapeDataString(url)));
+                (title, text, image) = (info?["title"]?.ToString() ?? "", info?["author_name"]?.ToString() ?? "", info?["thumbnail_url"]?.ToString() ?? "");
+            }
+            else
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (compatible; Dave link preview)");
+                using var response = await Pages.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                if (response.IsSuccessStatusCode && response.Content.Headers.ContentType?.MediaType == "text/html")
+                {
+                    using var stream = await response.Content.ReadAsStreamAsync();
+                    var buffer = new char[200_000];
+                    var read = await new StreamReader(stream).ReadBlockAsync(buffer, 0, buffer.Length);
+                    var html = new string(buffer, 0, read);
+                    string Meta(string name) => System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Match(html,
+                        $@"<meta[^>]+(?:property|name)=[""']{name}[""'][^>]+content=[""']([^""']*)|<meta[^>]+content=[""']([^""']*)[""'][^>]+(?:property|name)=[""']{name}[""']",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } m ? (m.Groups[1].Value + m.Groups[2].Value) : "").Trim();
+                    title = Meta("og:title") is { Length: > 0 } t ? t : System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Match(html, @"<title[^>]*>([^<]*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Groups[1].Value).Trim();
+                    text = Meta("og:description") is { Length: > 0 } d ? d : Meta("description");
+                    image = Meta("og:image");
+                    if (image.StartsWith("/")) image = new Uri(new Uri(url), image).ToString();
+                }
+            }
+            if (title.Length > 0)
+            {
+                (line.PreviewUrl, line.PreviewTitle, line.PreviewText) = (url, Clean(title, 120), Clean(text, 200));
+                line.PreviewImage = image.StartsWith("https://") ? image : "";
+            }
+        }
+        catch (Exception e) { Log.Write($"Social: no preview for a link ({e.GetType().Name})"); }
+        void Done() { SaveChats(); Changed?.Invoke(); }
+        if (ui != null) ui.Post(_ => Done(), null); else Done();
+    }
+
+    // --- Scheduled messages ---
+
+    /// <summary>"Send Alex happy birthday tomorrow at 9": kept, and sent then (see <see cref="SendDueAsync"/>).</summary>
+    public static string Schedule(Settings s, string code, string text, DateTimeOffset at, string reply = "")
+    {
+        var friend = s.Friends.FirstOrDefault(f => f.Code == code && f.Status == "friend");
+        text = Clean(text, 1000);
+        if (friend == null || text.Length == 0) return s.Say("I couldn't schedule that.", "Dat kon ik niet inplannen.");
+        if (at <= DateTimeOffset.Now.AddSeconds(5)) at = DateTimeOffset.Now.AddSeconds(5);
+        s.ScheduledMessages.Add(new Settings.ScheduledMessage { Id = Guid.NewGuid().ToString("N"), Code = code, Text = text, Reply = reply, At = at });
+        s.Save();
+        Changed?.Invoke();
+        var when = at.Date == DateTime.Today ? at.ToString("HH:mm") : at.ToString("ddd d MMM HH:mm", System.Globalization.CultureInfo.GetCultureInfo(s.IsDutch ? "nl-NL" : "en-GB"));
+        return "⏰ " + s.Say($"I'll send it to {friend.Name} at {when}.", $"Ik stuur het om {when} naar {friend.Name}.");
+    }
+
+    public static void Unschedule(Settings s, string id)
+    {
+        if (s.ScheduledMessages.RemoveAll(m => m.Id == id) > 0) { s.Save(); Changed?.Invoke(); }
+    }
+
+    /// <summary>Every second (with the reminders): sends the scheduled messages whose time has come.</summary>
+    public static async Task SendDueAsync(Settings s)
+    {
+        var due = s.ScheduledMessages.Where(m => m.At <= DateTimeOffset.Now).ToList();
+        if (due.Count == 0) return;
+        s.ScheduledMessages.RemoveAll(due.Contains);
+        s.Save();
+        foreach (var m in due)
+        {
+            var why = await SendAsync(s, m.Code, m.Text, m.Reply);
+            if (why != null) Log.Write($"Social: a scheduled message couldn't be sent ({why})");
+        }
+    }
+
     // --- Reactions and "typing…" ---
 
     /// <summary>When each friend last said they're typing (shown for a few seconds).</summary>
@@ -477,7 +726,9 @@ public static class Social
 
     public static void MarkRead(Settings s, string code)
     {
-        if (s.Friends.FirstOrDefault(f => f.Code == code) is { Unread: > 0 } friend) { friend.Unread = 0; s.Save(); }
+        if (s.Friends.FirstOrDefault(f => f.Code == code) is not { } friend) return;
+        if (friend.Unread > 0) { friend.Unread = 0; s.Save(); }
+        SendSeen(s, friend); // "Seen" on their side
     }
 
     /// <summary>The friend [name] is about ("Alex", "alex", "Al"): exact first, then the start of a name. Null when none.</summary>
@@ -557,13 +808,22 @@ public static class Social
                 ["code"] = f.Code, ["name"] = f.Name, ["status"] = f.Status, ["unread"] = f.Unread, ["secure"] = f.PublicKey.Length > 0,
                 ["typing"] = Typing.TryGetValue(f.Code, out var typed) && DateTime.Now - typed < TimeSpan.FromSeconds(10),
                 ["last"] = lines.Count > 0 ? (lines[^1].Mine ? s.Say("You: ", "Jij: ") : "") + lines[^1].Text : "",
-                ["lines"] = new JsonArray(lines.TakeLast(100).Select(l => (JsonNode)new JsonObject
+                ["seenId"] = s.ReadReceipts ? f.SeenId : "", ["seenAt"] = f.SeenAt.ToString("HH:mm"),
+                ["scheduled"] = new JsonArray(s.ScheduledMessages.Where(m => m.Code == f.Code).OrderBy(m => m.At).Select(m => (JsonNode)new JsonObject
+                {
+                    ["id"] = m.Id, ["text"] = m.Text,
+                    ["at"] = m.At.ToString(m.At.Date == DateTime.Today ? "HH:mm" : "ddd d MMM HH:mm", System.Globalization.CultureInfo.GetCultureInfo(s.IsDutch ? "nl-NL" : "en-GB")),
+                }).ToArray()),
+                ["lines"] = new JsonArray(lines.Select(l => (JsonNode)new JsonObject
                 {
                     ["mine"] = l.Mine, ["text"] = l.Text, ["id"] = l.Id, ["kind"] = l.Kind, ["name"] = l.Name, ["failed"] = l.Failed,
                     // the file, through the window's own address for Dave's files (see DaveWindow); "" while it's coming in
                     ["url"] = l.File.Length > 0 ? "https://dave-files.example/" + Uri.EscapeDataString(Path.GetFileName(l.File)) : "",
                     ["mine_reaction"] = l.MyReaction, ["their_reaction"] = l.TheirReaction,
                     ["reply"] = l.ReplyTo,
+                    ["edited"] = l.Edited, ["transcript"] = l.Transcript, ["translation"] = l.Translation,
+                    ["preview"] = l.PreviewUrl.Length > 1 ? new JsonObject { ["url"] = l.PreviewUrl, ["title"] = l.PreviewTitle, ["text"] = l.PreviewText, ["image"] = l.PreviewImage } : null,
+                    ["ts"] = l.At.ToString("yyyy-MM-dd"), // (for searching by date)
                     ["at"] = l.At.ToString(l.At.Date == DateTime.Today ? "HH:mm" : "d MMM HH:mm"),
                 }).ToArray()),
             });
@@ -572,6 +832,7 @@ public static class Social
         {
             ["code"] = MyCode(s), ["name"] = MyName(s), ["friends"] = friends,
             ["doubleClick"] = s.DoubleClickAction, ["doubleClickEmoji"] = s.DoubleClickEmoji, // what double-clicking a message does
+            ["translate"] = s.Translate, ["translateAuto"] = s.TranslateAutomatically,
         };
     }
 

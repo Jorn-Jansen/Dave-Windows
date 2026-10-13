@@ -227,11 +227,24 @@ public sealed partial class DaveWindow : Form
                     note = await RecordVoiceMessageAsync(code, Str("reply"));
                     break;
                 case "socialReact": await Social.ReactAsync(settings, code, m["id"]?.ToString() ?? "", text); break;
+                case "socialEdit": note = await Social.EditAsync(settings, code, Str("id"), text); break;
+                case "socialUnsend": note = await Social.UnsendAsync(settings, code, Str("id")); break;
+                case "socialTranscribe": await Social.TranscribeAsync(settings, code, Str("id")); return;
+                case "socialTranslate": await Social.TranslateAsync(settings, code, Str("id")); return;
+                case "socialSchedule":
+                    if (DateTimeOffset.TryParse(Str("at"), out var at)) note = Social.Schedule(settings, code, text, at, Str("reply"));
+                    break;
+                case "socialUnschedule": Social.Unschedule(settings, Str("id")); break;
                 case "socialTyping": await Social.TypingAsync(settings, code); return;
                 case "socialOpenFile":
                     // Only Dave's own copies of chat files (from the address the page shows them at)
                     var path = Path.Combine(Social.FilesFolder, Path.GetFileName(Uri.UnescapeDataString(text)));
                     if (File.Exists(path)) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+                    return;
+                case "socialOpenLink":
+                    // A link preview: only web pages, in the browser
+                    if (Uri.TryCreate(text, UriKind.Absolute, out var link) && (link.Scheme == Uri.UriSchemeHttps || link.Scheme == Uri.UriSchemeHttp))
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(link.AbsoluteUri) { UseShellExecute = true });
                     return;
                 default:
                     note = await SocialActionAsync(settings, type, code, text, Str("reply"));

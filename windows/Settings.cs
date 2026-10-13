@@ -119,6 +119,22 @@ public class Settings
     /// <summary>What double-clicking a chat message does: "reply" or "react" (with <see cref="DoubleClickEmoji"/>).</summary>
     public string DoubleClickAction { get; set; } = "reply";
     public string DoubleClickEmoji { get; set; } = "❤️";
+    /// <summary>Let friends see when you've read their messages ("Seen"), and see theirs. Off: neither.</summary>
+    public bool ReadReceipts { get; set; } = true;
+    /// <summary>Translating friends' messages into your language: at all, and by itself (otherwise with a button on each message).</summary>
+    public bool Translate { get; set; } = true;
+    public bool TranslateAutomatically { get; set; } = false;
+    /// <summary>Messages to send later ("send Alex happy birthday tomorrow at 9").</summary>
+    public List<ScheduledMessage> ScheduledMessages { get; set; } = new();
+
+    public class ScheduledMessage
+    {
+        public string Id { get; set; } = "";
+        public string Code { get; set; } = "";
+        public string Text { get; set; } = "";
+        public string Reply { get; set; } = "";
+        public DateTimeOffset At { get; set; }
+    }
     public List<Friend> Friends { get; set; } = new();
 
     public class Friend
@@ -129,6 +145,9 @@ public class Settings
         public string Status { get; set; } = "";
         public DateTimeOffset Since { get; set; }
         public int Unread { get; set; }
+        /// <summary>The last of your messages they've seen, and when.</summary>
+        public string SeenId { get; set; } = "";
+        public DateTimeOffset SeenAt { get; set; }
         /// <summary>Their public key (from their request or accept): messages to and from them are locked with it.</summary>
         public string PublicKey { get; set; } = "";
     }
