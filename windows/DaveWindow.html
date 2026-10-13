@@ -260,6 +260,10 @@
   .replying b { color: var(--text); flex: none; }
   .replying .what { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
   .react-bar .reply-btn { font-size: 15px; color: var(--text); }
+  .msg.dave { backdrop-filter: none;
+    background: linear-gradient(color-mix(in srgb, var(--panel2) 82%, transparent), color-mix(in srgb, var(--panel2) 82%, transparent)) padding-box,
+                linear-gradient(135deg, color-mix(in srgb, var(--purple) 65%, transparent), rgba(255, 255, 255, .08) 40%, color-mix(in srgb, var(--cyan) 55%, transparent)) border-box; }
+  .dm-lines { contain: content; }
   .react-bar .tool-btn { font-size: 14px; color: var(--text); }
   .voice-row { display: flex; align-items: center; gap: 8px; }
   .words-btn { border: 1px solid var(--line); background: transparent; color: var(--dim); font: 700 12px inherit; border-radius: 8px; padding: 3px 7px; cursor: pointer; flex: none; }
@@ -413,8 +417,8 @@
   body:not(.legacy) .card:hover { box-shadow: 0 12px 40px rgba(0, 0, 0, .35), 0 0 30px color-mix(in srgb, var(--purple) 22%, transparent); border-color: transparent; }
   body:not(.legacy) .card::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none; opacity: 0; transition: opacity .25s;
     background: conic-gradient(from var(--spin), transparent 0 55%, var(--cyan), var(--pink), transparent 85% 100%);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: turn 2.6s linear infinite; }
-  body:not(.legacy) .card:hover::after { opacity: 1; }
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+  body:not(.legacy) .card:hover::after { opacity: 1; animation: turn 2.6s linear infinite; }
 
   /* Messages: Dave's arrive with a soft flash of light, yours slide in */
   body:not(.legacy) .msg.dave.new { animation: arrivedave .6s cubic-bezier(.2, .9, .3, 1.15); }
@@ -973,6 +977,7 @@ function voicePlayer(url) {
 
 /* Replies: the message you're replying to, a short version of a message, and jumping to one (it flashes) */
 let replying = null, editing = null, search = null, scheduling = false;
+const media = new Map(); // url → its <img> / <video>, kept between redraws
 const shownWords = new Set(); // voice messages showing their words (Aa)
 const snippet = l => { const s = l.kind ? l.text : l.text; return s.length > 90 ? s.slice(0, 90) + "…" : s; };
 function jumpTo(lines, id) {
@@ -1082,10 +1087,19 @@ function renderSocial() {
       if (state.social.doubleClick === "react") send({ type: "socialReact", code: sel.code, id: l.id, text: state.social.doubleClickEmoji || "❤️" });
       else startReply(l);
     };
-    if (l.kind === "photo" && l.url) { const img = el("img", "dm-img"); img.src = l.url; img.onclick = () => open(l); img.onload = () => { if (atBottom) lines.scrollTop = lines.scrollHeight; }; m.append(img); }
+    if (l.kind === "photo" && l.url) {
+      let img = media.get(l.url);
+      if (!img) { img = el("img", "dm-img"); img.src = l.url; img.onload = () => { const now = $("dm").querySelector(".dm-lines"); if (now) now.scrollTop = now.scrollHeight; }; media.set(l.url, img); }
+      img.onclick = () => open(l);
+      m.append(img);
+    }
     else if (l.kind === "video" && l.url) {
-      const v = el("video", "dm-video"); v.src = l.url; v.controls = true; v.preload = "metadata"; v.onloadedmetadata = () => { if (atBottom) lines.scrollTop = lines.scrollHeight; };
-      v.onplay = () => playing.add(v); v.onpause = v.onended = () => { playing.delete(v); };
+      let v = media.get(l.url);
+      if (!v) {
+        v = el("video", "dm-video"); v.src = l.url; v.controls = true; v.preload = "metadata";
+        v.onplay = () => playing.add(v); v.onpause = v.onended = () => { playing.delete(v); };
+        media.set(l.url, v);
+      }
       m.append(v);
     }
     else if (l.kind === "voice" && l.url) {
