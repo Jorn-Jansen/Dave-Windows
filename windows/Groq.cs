@@ -139,6 +139,11 @@ public static class Groq
 
     /// <summary>Speech to text. Returns the text and the language Whisper heard (e.g. "dutch", "english").</summary>
     /// <remarks>Uses OpenAI when that's the AI provider; otherwise Groq (other providers don't do speech), so it needs a Groq key.</remarks>
+    /// <summary>The last recording that was understood, and when each of its words was said (in seconds): for voice messages.</summary>
+    public static byte[]? LastRecording { get; private set; }
+    public static string LastHeard { get; private set; } = "";
+    public static List<(string word, double start, double end)> LastWords { get; private set; } = new();
+
     public static async Task<(string text, string language)> TranscribeAsync(Settings settings, byte[] wav)
     {
         var openAi = settings.AiProvider == "openai" && settings.AiKey.Length > 0;
@@ -151,6 +156,8 @@ public static class Groq
         form.Add(file, "file", "speech.wav");
         form.Add(new StringContent(openAi ? "whisper-1" : "whisper-large-v3-turbo"), "model");
         form.Add(new StringContent("verbose_json"), "response_format");
+        form.Add(new StringContent("word"), "timestamp_granularities[]"); // when each word was said ("send Alex a voice message …")
+        form.Add(new StringContent("segment"), "timestamp_granularities[]");
         // A hint helps Whisper spell Dave's name and common commands right.
         form.Add(new StringContent($"Hé {settings.Name}, zet de muziek harder. Hey {settings.Name}, play the next song."), "prompt");
 
@@ -167,6 +174,10 @@ public static class Groq
         if (status is < 200 or >= 300) throw Failure(settings, status, text, openAi ? "OpenAI" : "Groq");
         var json = JsonNode.Parse(text)!;
         var heard = json["text"]?.GetValue<string>().Trim() ?? "";
+        LastRecording = wav;
+        LastHeard = heard;
+        LastWords = (json["words"] as JsonArray)?.Select(w => (w?["word"]?.ToString()?.Trim() ?? "", w?["start"]?.GetValue<double>() ?? 0, w?["end"]?.GetValue<double>() ?? 0)).ToList()
+                    ?? new List<(string, double, double)>();
         var language = json["language"]?.GetValue<string>() ?? "";
         return (IsHallucination(heard) ? "" : heard, language);
     }

@@ -890,6 +890,17 @@ public class DaveApp : ApplicationContext
                     await Speaker.SpeakAsync(settings, summary, language, cancel);
                     return;
                 }
+                if (command.Name == "send_message" && (command.Args["voice"] is System.Text.Json.Nodes.JsonValue voice && voice.TryGetValue<bool>(out var isVoice) && isVoice
+                                                       || command.Args["attach"]?.ToString() is "screenshot" or "clipboard" or "file"))
+                {
+                    // A voice message or a file for a friend
+                    Watchdog.Step = "sending to a friend";
+                    var sent = await SendToFriendAsync(command.Args, text, cancel);
+                    ConversationLog.Add(text, $"(send_message) {sent}");
+                    bubble.ShowText(sent, spoken: true);
+                    await Speaker.SpeakAsync(settings, sent, settings.Language, cancel);
+                    return;
+                }
                 Watchdog.Step = $"command {command.Name}";
                 var outcome = await Commands.RunAsync(settings, command.Name, command.Args, text);
                 if (command.Name == "change_setting") { ApplySettings(); window?.Push(); } // the new theme, wake word, autostart… right away
@@ -1180,19 +1191,38 @@ public class DaveApp : ApplicationContext
         var inWindow = WindowOpen();
         try
         {
-            Log.Write($"Message from {message.Name}");
+            Log.Write($"Message from {message.Name}{(message.Kind.Length > 0 ? $" ({message.Kind})" : "")}");
             if (settings.MessageSound) ThemeSounds.Play(settings, ThemeSounds.Cue.Message);
-            var shown = $"💬 {message.Name}: {message.Text}";
+            // A file says what it is: "🎤 Alex sent a voice message", "📷 Alex sent a photo"
+            var what = message.Kind switch
+            {
+                "voice" => T("sent a voice message", "stuurde een spraakbericht"),
+                "photo" => T("sent a photo", "stuurde een foto"),
+                "video" => T("sent a video", "stuurde een video"),
+                "file" => T("sent a file: ", "stuurde een bestand: ") + message.Text.Replace("📎", "").Trim(),
+                _ => "",
+            };
+            var icon = message.Kind switch { "voice" => "🎤", "photo" => "📷", "video" => "🎬", "file" => "📎", _ => "💬" };
+            var shown = what.Length > 0 ? $"{icon} {message.Name} {what}" : $"💬 {message.Name}: {message.Text}";
             var aloud = settings.ReadMessagesAloud && !settings.IsQuiet && !inWindow; // in his window you can read it yourself
             if (inWindow) window!.Notify(shown);
             else bubble.ShowText(shown, spoken: aloud);
-            PhoneNotify.Send(settings, "💬 " + message.Name, message.Text); // (only when you've been away from the PC)
+            PhoneNotify.Send(settings, "💬 " + message.Name, what.Length > 0 ? what : message.Text); // (only when you've been away from the PC)
             if (aloud)
             {
                 await Task.Delay(450, cancel); // the sound first
                 var language = LanguageOf(null, message.Text);
                 using (new Ducker(settings.DuckTo))
-                    await Speaker.SpeakAsync(settings, language.StartsWith("nl") ? $"{message.Name} zegt: {message.Text}" : $"{message.Name} says: {message.Text}", language, cancel);
+                {
+                    if (message.Kind == "voice" && File.Exists(message.File))
+                    {
+                        // A voice message: say who it's from, then play it
+                        await Speaker.SpeakAsync(settings, T($"Voice message from {message.Name}.", $"Spraakbericht van {message.Name}."), settings.Language, cancel);
+                        await PlayFileAsync(message.File, cancel);
+                    }
+                    else if (what.Length > 0) await Speaker.SpeakAsync(settings, $"{message.Name} {what}", settings.Language, cancel);
+                    else await Speaker.SpeakAsync(settings, language.StartsWith("nl") ? $"{message.Name} zegt: {message.Text}" : $"{message.Name} says: {message.Text}", language, cancel);
+                }
             }
             else if (!inWindow) await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(message.Text.Length / 15.0, 4, 12)), cancel); // long enough to read
         }
@@ -1204,6 +1234,118 @@ public class DaveApp : ApplicationContext
             EndSession();
             if (wakeWord != null) wakeWord.Paused = false;
         }
+    }
+
+    /// <summary>
+    /// "Send Alex a voice message I'll be late": the part of what you just said after "voice message", in your own voice
+    /// (or, when you didn't say it yet, a new recording). "Send this screenshot / what I copied / report.pdf to Sam": that file.
+    /// Returns what to say.
+    /// </summary>
+    private async Task<string> SendToFriendAsync(System.Text.Json.Nodes.JsonObject args, string said, CancellationToken cancel)
+    {
+        var friend = Social.NamedIn(settings, said) ?? Social.Find(settings, args["to"]?.ToString() ?? "");
+        if (friend == null) return T("I don't know which friend you mean.", "Ik weet niet welke vriend je bedoelt.");
+        byte[] data;
+        string name, kind = "";
+        switch (args["attach"]?.ToString())
+        {
+            case "screenshot":
+                data = Convert.FromBase64String(Vision.CaptureMainScreen());
+                name = $"Screenshot {DateTime.Now:yyyy-MM-dd HH.mm}.jpg";
+                break;
+            case "clipboard":
+                if (Clipboard.ContainsFileDropList() && Clipboard.GetFileDropList() is { Count: > 0 } files && File.Exists(files[0]))
+                    (data, name) = (await File.ReadAllBytesAsync(files[0]!, cancel), Path.GetFileName(files[0]!));
+                else if (Clipboard.ContainsImage() && Clipboard.GetImage() is { } image)
+                    (data, name) = (Vision.ToJpeg(image), "Copied picture.jpg");
+                else return T("You haven't copied a picture or file.", "Je hebt geen foto of bestand gekopieerd.");
+                break;
+            case "file":
+                if (FindFileToSend(args["file"]?.ToString() ?? "") is not { } path) return T("I couldn't find that file.", "Ik kon dat bestand niet vinden.");
+                (data, name) = (await File.ReadAllBytesAsync(path, cancel), Path.GetFileName(path));
+                break;
+            default: // a voice message
+                kind = "voice";
+                name = "Voice message.wav";
+                var inline = (args["text"]?.ToString() ?? "").Trim().Length > 0 && Groq.LastHeard == said ? VoicePartOf(Groq.LastRecording, Groq.LastWords) : null;
+                if (inline != null) data = inline;
+                else
+                {
+                    bubble.ShowListening();
+                    bubble.ShowText("🎤 " + T($"Talk now: your voice message for {friend.Name}", $"Praat nu: je spraakbericht voor {friend.Name}"));
+                    var sound = ThemeSounds.Play(settings, ThemeSounds.Cue.Listen);
+                    await Task.Delay(Math.Max(150, (int)sound.TotalMilliseconds), cancel);
+                    var recorded = await Recorder.RecordAsync(cancel, waitMs: 6000, maxMs: 60_000);
+                    ThemeSounds.Play(settings, ThemeSounds.Cue.Heard);
+                    if (recorded == null) return T("I didn't hear anything, so I didn't send it.", "Ik hoorde niets, dus ik heb niets gestuurd.");
+                    data = recorded;
+                }
+                break;
+        }
+        bubble.ShowText("⏳ " + T($"Sending to {friend.Name}…", $"Versturen naar {friend.Name}…"));
+        var why = await Social.SendFileAsync(settings, friend.Code, data, name, kind);
+        if (why != null) return why;
+        return kind == "voice" ? "🎤 " + T($"Sent your voice message to {friend.Name}.", $"Je spraakbericht is naar {friend.Name} gestuurd.")
+                               : "📎 " + T($"Sent {name} to {friend.Name}.", $"{name} is naar {friend.Name} gestuurd.");
+    }
+
+    /// <summary>The recording from just after the words "voice message" (or "spraakbericht") to the end; null when there's nothing after them.</summary>
+    private static byte[]? VoicePartOf(byte[]? wav, List<(string word, double start, double end)> words)
+    {
+        if (wav == null || words.Count == 0) return null;
+        static string Plain(string w) => new string(w.ToLowerInvariant().Where(char.IsLetter).ToArray());
+        var at = words.FindLastIndex(w => Plain(w.word) is "message" or "bericht" or "spraakbericht" or "voicemessage" or "memo" or "note" or "voicemail" or "spraakmemo");
+        if (at < 0 || at == words.Count - 1) return null;
+        var from = Math.Max(words[at].end, words[at + 1].start - 0.15);
+        try
+        {
+            using var reader = new NAudio.Wave.WaveFileReader(new MemoryStream(wav));
+            var format = reader.WaveFormat;
+            long skip = (long)(from * format.AverageBytesPerSecond) / format.BlockAlign * format.BlockAlign;
+            if (reader.Length - skip < format.AverageBytesPerSecond / 2) return null; // less than half a second left
+            reader.Position = skip;
+            using var output = new MemoryStream();
+            using (var writer = new NAudio.Wave.WaveFileWriter(output, format)) reader.CopyTo(writer);
+            return output.ToArray();
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Cutting out the voice message failed: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>A file to send by its path, or by its name in Desktop, Downloads, Documents, Pictures or Videos (newest first).</summary>
+    private static string? FindFileToSend(string name)
+    {
+        name = name.Trim().Trim('"');
+        if (name.Length == 0) return null;
+        if (Path.IsPathRooted(name)) return File.Exists(name) ? name : null;
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var folders = new[] { "Desktop", "Downloads", "Documents", "Pictures", "Videos" }.Select(f => Path.Combine(home, f)).Where(Directory.Exists);
+        IEnumerable<FileInfo> Matches(string folder)
+        {
+            try { return new DirectoryInfo(folder).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 2, IgnoreInaccessible = true }); }
+            catch { return Enumerable.Empty<FileInfo>(); }
+        }
+        var all = folders.SelectMany(Matches).Where(f => f.Name.Contains(name, StringComparison.OrdinalIgnoreCase)).OrderByDescending(f => f.LastWriteTime);
+        return all.FirstOrDefault(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.FullName ?? all.FirstOrDefault()?.FullName;
+    }
+
+    /// <summary>Plays a sound file (a friend's voice message) to the end, or until cancelled.</summary>
+    private static async Task PlayFileAsync(string path, CancellationToken cancel)
+    {
+        try
+        {
+            using var reader = new NAudio.Wave.AudioFileReader(path);
+            using var output = new NAudio.Wave.WaveOutEvent();
+            var finished = new TaskCompletionSource<bool>();
+            output.PlaybackStopped += (_, _) => finished.TrySetResult(true);
+            output.Init(reader);
+            output.Play();
+            using (cancel.Register(() => output.Stop())) await finished.Task;
+        }
+        catch (Exception e) { Log.Write($"Playing a voice message failed: {e.Message}"); }
     }
 
     // --- Reminders ---

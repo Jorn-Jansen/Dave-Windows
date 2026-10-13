@@ -233,8 +233,17 @@ public static class Assistant
         Tool("send_message", "Send a chat message to a friend who uses Dave too: 'tell Alex I'm online', 'ask Sam if he's coming to play', " +
             "'reply: on my way' (to = 'last' for whoever messaged last), 'send that to Alex' (text = your previous answer, word for word). " +
             "Otherwise write the message as the user would send it, in their own words " +
-            "and language ('tell Alex I'm online' -> text 'I'm online').",
-            new JsonObject { ["to"] = Str("The friend's name, or 'last'"), ["text"] = Str("The message itself") }, "to", "text"),
+            "and language ('tell Alex I'm online' -> text 'I'm online'). " +
+            "Also a voice message ('send Alex a voice message', 'send Sam a voice message I'll be late': voice = true, text = what they say in it) " +
+            "or a file ('send this screenshot to Alex': attach = screenshot; 'send what I copied to Sam': clipboard; 'send report.pdf to Alex': file).",
+            new JsonObject
+            {
+                ["to"] = Str("The friend's name, or 'last'"),
+                ["text"] = Str("The message itself (for a voice message: what they say in it, if they said it already; else empty)"),
+                ["voice"] = new JsonObject { ["type"] = "boolean", ["description"] = "A voice message (their own voice) instead of text" },
+                ["attach"] = Enum("none", "screenshot", "clipboard", "file"),
+                ["file"] = Str("attach = file: the file's name or path"),
+            }, "to"),
         Tool("read_messages", "Messages from friends in Dave's Social chat: 'any messages?', 'what did Alex say?', 'read my messages'.",
             new JsonObject { ["from"] = Str("A friend's name, or empty for everyone"), ["question"] = Str("The user's question") }, "question"),
         Tool("change_setting", "Change one of your own settings when the user asks: 'switch to the ember theme', 'use the midnight theme', " +

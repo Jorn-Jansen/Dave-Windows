@@ -84,6 +84,9 @@ public sealed partial class DaveWindow : Form
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.IsZoomControlEnabled = false;
             core.WebMessageReceived += (_, e) => OnMessage(e.WebMessageAsJson);
+            // Photos, videos and voice messages from chats: shown and played straight from Dave's folder for them
+            Directory.CreateDirectory(Social.FilesFolder);
+            core.SetVirtualHostNameToFolderMapping("dave-files.example", Social.FilesFolder, CoreWebView2HostResourceAccessKind.Allow);
             core.NavigationCompleted += (_, _) =>
             {
                 ready = true;
@@ -143,8 +146,8 @@ public sealed partial class DaveWindow : Form
                         Send(new JsonObject { ["type"] = "toast", ["text"] = settings.Say("I'm still busy, one moment.", "Ik ben nog bezig, momentje.") });
                     break;
                 case "listen": listen(); break;
-                case "socialAdd" or "socialAccept" or "socialRemove" or "socialSend" or "socialRead" or "socialCopy":
-                    _ = OnSocialMessageAsync(Str("type"), Str("code"), Str("text"));
+                case var social when social.StartsWith("social"):
+                    _ = OnSocialMessageAsync(Str("type"), Str("code"), Str("text"), m);
                     return;
                 case "getSettings" or "voices" or "azureVoices" or "preview" or "spotifyConnect" or "saveSettings":
                     _ = OnSettingsMessageAsync(Str("type"), m);
@@ -188,22 +191,72 @@ public sealed partial class DaveWindow : Form
         }
     }
 
-    /// <summary>The Social panel: add a friend, accept or decline, remove, send a message, mark a chat read, copy your code.</summary>
-    private async Task OnSocialMessageAsync(string type, string code, string text)
+    /// <summary>
+    /// The Social panel: add a friend, accept or decline, remove, send a message, mark a chat read, copy your code, send a
+    /// file (picked or dropped) or a voice message, react, "typing", open a file.
+    /// </summary>
+    private async Task OnSocialMessageAsync(string type, string code, string text, JsonObject m)
     {
         try
         {
-            string? note;
-            if (type == "socialCopy")
+            string? note = null;
+            switch (type)
             {
-                Clipboard.SetText(Social.MyCode(settings));
-                note = settings.Say("Your friend code is copied. Send it to a friend!", "Je vriendcode is gekopieerd. Stuur hem naar een vriend!");
+                case "socialCopy":
+                    Clipboard.SetText(Social.MyCode(settings));
+                    note = settings.Say("Your friend code is copied. Send it to a friend!", "Je vriendcode is gekopieerd. Stuur hem naar een vriend!");
+                    break;
+                case "socialAttach":
+                    using (var pick = new OpenFileDialog { Multiselect = true, Title = settings.Say("Send to your friend", "Sturen naar je vriend") })
+                    {
+                        if (pick.ShowDialog(this) != DialogResult.OK) return;
+                        foreach (var file in pick.FileNames)
+                        {
+                            if (new FileInfo(file).Length > 200_000_000) { note = settings.Say("That's too big to send (200 MB at most).", "Dat is te groot om te versturen (hooguit 200 MB)."); continue; }
+                            Send(new JsonObject { ["type"] = "socialNote", ["text"] = "⏳ " + settings.Say("Sending ", "Versturen: ") + Path.GetFileName(file) });
+                            note = await Social.SendFileAsync(settings, code, await File.ReadAllBytesAsync(file), Path.GetFileName(file)) ?? note;
+                        }
+                    }
+                    break;
+                case "socialDrop": // dragged into the chat
+                    Send(new JsonObject { ["type"] = "socialNote", ["text"] = "⏳ " + settings.Say("Sending ", "Versturen: ") + text });
+                    note = await Social.SendFileAsync(settings, code, Convert.FromBase64String(m["data"]?.ToString() ?? ""), text);
+                    break;
+                case "socialRecord":
+                    note = await RecordVoiceMessageAsync(code);
+                    break;
+                case "socialReact": await Social.ReactAsync(settings, code, m["id"]?.ToString() ?? "", text); break;
+                case "socialTyping": await Social.TypingAsync(settings, code); return;
+                case "socialOpenFile":
+                    // Only Dave's own copies of chat files (from the address the page shows them at)
+                    var path = Path.Combine(Social.FilesFolder, Path.GetFileName(Uri.UnescapeDataString(text)));
+                    if (File.Exists(path)) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+                    return;
+                default:
+                    note = await SocialActionAsync(settings, type, code, text);
+                    break;
             }
-            else note = await SocialActionAsync(settings, type, code, text);
             if (note != null) Send(new JsonObject { ["type"] = "socialNote", ["text"] = note });
             Push();
         }
         catch (Exception e) { Log.Write($"Social action failed: {e.Message}"); }
+    }
+
+    /// <summary>The 🎤 button in a chat: records until you stop talking (up to a minute), then sends it as a voice message.</summary>
+    private async Task<string?> RecordVoiceMessageAsync(string code)
+    {
+        if (busy()) return settings.Say("I'm busy right now; try again in a moment.", "Ik ben nu bezig; probeer het zo nog eens.");
+        Send(new JsonObject { ["type"] = "socialRecording", ["on"] = true });
+        try
+        {
+            var sound = ThemeSounds.Play(settings, ThemeSounds.Cue.Listen);
+            await Task.Delay(Math.Max(150, (int)sound.TotalMilliseconds)); // so the sound isn't recorded
+            var wav = await Recorder.RecordAsync(CancellationToken.None, waitMs: 6000, maxMs: 60_000);
+            ThemeSounds.Play(settings, ThemeSounds.Cue.Heard);
+            if (wav == null) return settings.Say("I didn't hear anything.", "Ik hoorde niets.");
+            return await Social.SendFileAsync(settings, code, wav, "Voice message.wav", "voice");
+        }
+        finally { Send(new JsonObject { ["type"] = "socialRecording", ["on"] = false }); }
     }
 
     /// <summary>A change in the Social tab (here or in the iPhone app's): add, accept, remove, send, mark read. Returns what to tell the user, if anything.</summary>
