@@ -58,7 +58,7 @@ public static class Commands
                 "timers_on_screen" => TimersOnScreen(s, Bool(args, "show")),
                 "set_personality" => SetPersonality(s, Str(args, "personality")),
                 "change_setting" => ChangeSetting(s, Str(args, "setting"), Str(args, "value")),
-                "send_message" => await SendMessageAsync(s, Str(args, "to"), Str(args, "text"), Str(args, "at")),
+                "send_message" => await SendMessageAsync(s, Str(args, "to"), Str(args, "text"), Str(args, "at"), Str(args, "poll")),
                 "watch_for" => new Outcome(Watchers.Add(s, Str(args, "what"), Str(args, "program"),
                     args["number"] is JsonValue n && n.TryGetValue<double>(out var limit) ? limit : 0, Str(args, "message")), true),
                 "stop_watching" => new Outcome(Watchers.CancelAll() is var stopped and > 0
@@ -438,7 +438,7 @@ public static class Commands
     }
 
     /// <summary>"Tell Alex I'm online": a message to a friend who uses Dave too (see Social).</summary>
-    private static async Task<Outcome> SendMessageAsync(Settings s, string to, string text, string at = "")
+    private static async Task<Outcome> SendMessageAsync(Settings s, string to, string text, string at = "", string poll = "")
     {
         var friend = Social.Find(s, to);
         if (friend == null)
@@ -447,6 +447,10 @@ public static class Commands
                         $"Je hebt geen vriend die {to} heet in Dave. Je vrienden: {string.Join(", ", s.Friends.Where(f => f.Status == "friend").Select(f => f.Name))}.")
                 : s.Say("You haven't added any friends yet: open the Social tab in my window and add their friend code.",
                         "Je hebt nog geen vrienden toegevoegd: open het tabblad Sociaal in mijn venster en voeg hun vriendcode toe."), true);
+        var answers = poll.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (answers.Length >= 2) // a poll
+            return new Outcome(await Social.SendPollAsync(s, friend.Code, text, answers)
+                ?? "📊 " + s.Say($"Poll sent to {friend.Name}: {text} ({string.Join(" / ", answers)})", $"Poll verstuurd naar {friend.Name}: {text} ({string.Join(" / ", answers)})"), true);
         if (at.Length > 0 && DateTimeOffset.TryParse(at, out var later) && later > DateTimeOffset.Now.AddSeconds(30))
             return new Outcome(Social.Schedule(s, friend.Code, text, later), true); // for later: kept until then
         var why = await Social.SendAsync(s, friend.Code, text);

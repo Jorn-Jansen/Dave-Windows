@@ -227,6 +227,10 @@ public sealed partial class DaveWindow : Form
                     note = await RecordVoiceMessageAsync(code, Str("reply"));
                     break;
                 case "socialReact": await Social.ReactAsync(settings, code, m["id"]?.ToString() ?? "", text); break;
+                case "socialPoll":
+                    note = await Social.SendPollAsync(settings, code, text, (m["options"] as JsonArray)?.Select(o => o?.ToString() ?? "") ?? [], Str("reply"));
+                    break;
+                case "socialVote": await Social.VoteAsync(settings, code, Str("id"), m["choice"]?.GetValue<int>() ?? -1); break;
                 case "socialEdit": note = await Social.EditAsync(settings, code, Str("id"), text); break;
                 case "socialUnsend": note = await Social.UnsendAsync(settings, code, Str("id")); break;
                 case "socialTranscribe": await Social.TranscribeAsync(settings, code, Str("id")); return;

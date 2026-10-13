@@ -52,6 +52,10 @@ public static class Social
         public string PreviewTitle { get; set; } = "";
         public string PreviewText { get; set; } = "";
         public string PreviewImage { get; set; } = "";
+        /// <summary>A poll (Kind "poll", the question in Text): its answers, and which one you and your friend picked (-1 = none yet).</summary>
+        public List<string> Options { get; set; } = new();
+        public int MyVote { get; set; } = -1;
+        public int TheirVote { get; set; } = -1;
     }
 
     /// <summary>A message from a friend: who, and what they said.</summary>
@@ -175,6 +179,15 @@ public static class Social
                     Add(to, mine);
                     _ = DownloadAsync(s.Friends.First(f => f.Code == to), mine, echo, announce: false);
                     break;
+                case "sentpoll": // a poll you sent from your iPhone
+                    var myQuestion = Clean(echo["text"]?.ToString() ?? "", 200);
+                    if (myQuestion.Length == 0 || PollOptions(echo) is not { } myAnswers) return;
+                    Add(to, new Line { At = DateTimeOffset.Now, Mine = true, Text = myQuestion, Id = echo["msgid"]?.ToString() ?? "", Kind = "poll", Options = myAnswers, ReplyTo = ReplyOf(echo) });
+                    break;
+                case "vote" when Lines(to).LastOrDefault(l => l.Kind == "poll" && l.Id.Length > 0 && l.Id == target) is { } myPoll && TryChoice(echo, myPoll, out var myChoice):
+                    myPoll.MyVote = myChoice; // what you picked on your iPhone
+                    SaveChats();
+                    break;
                 case "edit" when Lines(to).LastOrDefault(l => l.Mine && l.Id.Length > 0 && l.Id == target) is { } mineEdited:
                     (mineEdited.Text, mineEdited.Edited, mineEdited.PreviewUrl) = (Clean(echo["text"]?.ToString() ?? "", 1000), true, "");
                     SaveChats();
@@ -224,6 +237,24 @@ public static class Social
                     s.Save();
                     Changed?.Invoke();
                     _ = DownloadAsync(friend, incoming, inner);
+                    return;
+                case "poll": // a question with answers to pick from
+                    var question = Clean(inner["text"]?.ToString() ?? "", 200);
+                    var answers = PollOptions(inner);
+                    if (question.Length == 0 || answers == null) return;
+                    Typing.Remove(friend.Code);
+                    Add(friend.Code, new Line { At = DateTimeOffset.Now, Mine = false, Text = question, Id = id, Kind = "poll", Options = answers, ReplyTo = ReplyOf(inner) });
+                    friend.Unread++;
+                    s.Save();
+                    Changed?.Invoke();
+                    Received?.Invoke(new Incoming(friend.Code, friend.Name, "📊 " + question + " " + string.Join(" / ", answers)));
+                    return;
+                case "vote": // they picked an answer in a poll (-1: took their vote back)
+                    var voted = Lines(friend.Code).LastOrDefault(l => l.Kind == "poll" && l.Id.Length > 0 && l.Id == inner["target"]?.ToString());
+                    if (voted == null || !TryChoice(inner, voted, out var theirChoice)) return;
+                    voted.TheirVote = theirChoice;
+                    SaveChats();
+                    Changed?.Invoke();
                     return;
                 case "react":
                     var target = Lines(friend.Code).LastOrDefault(l => l.Id == inner["target"]?.ToString() && l.Id.Length > 0);
@@ -382,6 +413,56 @@ public static class Social
         if (s.PhoneEnabled) _ = SealAsync(s, Self(s), new JsonObject { ["type"] = "sent", ["to"] = code, ["text"] = text, ["by"] = "pc", ["msgid"] = id, ["reply"] = reply }); // (ntfy allows 250 a day)
         Changed?.Invoke();
         return null;
+    }
+
+    // --- Polls ---
+
+    /// <summary>A poll's answers from a message: 2 to 6 short ones (null if it isn't a proper poll).</summary>
+    private static List<string>? PollOptions(JsonNode inner)
+    {
+        var list = (inner["options"] as JsonArray)?.Select(o => Clean(o?.ToString() ?? "", 80)).Where(o => o.Length > 0).ToList();
+        return list is { Count: >= 2 and <= 6 } ? list : null;
+    }
+
+    private static bool TryChoice(JsonNode inner, Line poll, out int choice)
+    {
+        choice = -1;
+        try { choice = inner["choice"]?.GetValue<int>() ?? -1; } catch { return false; }
+        return choice >= -1 && choice < poll.Options.Count;
+    }
+
+    /// <summary>"Ask Alex: Roblox or Minecraft tonight?": a question with 2 to 6 answers they (and you) can pick from.</summary>
+    public static async Task<string?> SendPollAsync(Settings s, string code, string question, IEnumerable<string> options, string reply = "")
+    {
+        question = Clean(question, 200);
+        var answers = options.Select(o => Clean(o, 80)).Where(o => o.Length > 0).Distinct().Take(6).ToList();
+        if (question.Length == 0 || answers.Count < 2) return s.Say("A poll needs a question and at least two answers.", "Een poll heeft een vraag en minstens twee antwoorden nodig.");
+        var friend = s.Friends.FirstOrDefault(f => f.Code == code);
+        if (friend is not { Status: "friend" }) return s.Say("You can only send polls to friends who accepted you.", "Je kunt alleen polls sturen naar vrienden die je hebben geaccepteerd.");
+        if (friend.PublicKey.Length == 0) return s.Say($"{friend.Name}'s Dave needs the latest update first.", $"De Dave van {friend.Name} heeft eerst de nieuwste update nodig.");
+        var id = Guid.NewGuid().ToString("N");
+        var why = await SealAsync(s, friend, new JsonObject { ["type"] = "poll", ["text"] = question, ["options"] = new JsonArray(answers.Select(a => (JsonNode)a).ToArray()), ["id"] = id, ["reply"] = reply });
+        if (why != null) return why;
+        Add(code, new Line { At = DateTimeOffset.Now, Mine = true, Text = question, Id = id, Kind = "poll", Options = answers, ReplyTo = reply });
+        if (s.PhoneEnabled) _ = SealAsync(s, Self(s), new JsonObject
+        {
+            ["type"] = "sentpoll", ["to"] = code, ["text"] = question, ["options"] = new JsonArray(answers.Select(a => (JsonNode)a).ToArray()), ["by"] = "pc", ["msgid"] = id, ["reply"] = reply,
+        });
+        Changed?.Invoke();
+        return null;
+    }
+
+    /// <summary>Pick an answer in a poll (the same one again takes your vote back).</summary>
+    public static async Task VoteAsync(Settings s, string code, string id, int choice)
+    {
+        var poll = Lines(code).LastOrDefault(l => l.Kind == "poll" && l.Id.Length > 0 && l.Id == id);
+        var friend = s.Friends.FirstOrDefault(f => f.Code == code);
+        if (poll == null || choice < 0 || choice >= poll.Options.Count || friend is not { Status: "friend", PublicKey.Length: > 0 }) return;
+        poll.MyVote = poll.MyVote == choice ? -1 : choice;
+        SaveChats();
+        Changed?.Invoke();
+        await SealAsync(s, friend, new JsonObject { ["type"] = "vote", ["target"] = id, ["choice"] = poll.MyVote });
+        if (s.PhoneEnabled) _ = SealAsync(s, Self(s), new JsonObject { ["type"] = "vote", ["to"] = code, ["target"] = id, ["choice"] = poll.MyVote, ["by"] = "pc" });
     }
 
     // --- Voice messages, photos, videos and files ---
@@ -823,7 +904,7 @@ public static class Social
             {
                 ["code"] = f.Code, ["name"] = f.Name, ["status"] = f.Status, ["unread"] = f.Unread, ["secure"] = f.PublicKey.Length > 0,
                 ["typing"] = Typing.TryGetValue(f.Code, out var typed) && DateTime.Now - typed < TimeSpan.FromSeconds(10),
-                ["last"] = lines.Count > 0 ? (lines[^1].Mine ? s.Say("You: ", "Jij: ") : "") + lines[^1].Text : "",
+                ["last"] = lines.Count > 0 ? (lines[^1].Mine ? s.Say("You: ", "Jij: ") : "") + (lines[^1].Kind == "poll" ? "📊 " : "") + lines[^1].Text : "",
                 ["seenId"] = s.ReadReceipts ? f.SeenId : "", ["seenAt"] = f.SeenAt.ToString("HH:mm"),
                 ["scheduled"] = new JsonArray(s.ScheduledMessages.Where(m => m.Code == f.Code).OrderBy(m => m.At).Select(m => (JsonNode)new JsonObject
                 {
@@ -840,6 +921,8 @@ public static class Social
                     ["edited"] = l.Edited, ["transcript"] = l.Transcript, ["translation"] = l.Translation,
                     ["preview"] = l.PreviewUrl.Length > 1 ? new JsonObject { ["url"] = l.PreviewUrl, ["title"] = l.PreviewTitle, ["text"] = l.PreviewText, ["image"] = l.PreviewImage } : null,
                     ["ts"] = l.At.ToString("yyyy-MM-dd"), // (for searching by date)
+                    ["options"] = l.Kind == "poll" ? new JsonArray(l.Options.Select(o => (JsonNode)o).ToArray()) : null,
+                    ["myVote"] = l.MyVote, ["theirVote"] = l.TheirVote,
                     ["at"] = l.At.ToString(l.At.Date == DateTime.Today ? "HH:mm" : "d MMM HH:mm"),
                 }).ToArray()),
             });

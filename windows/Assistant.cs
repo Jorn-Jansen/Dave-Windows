@@ -235,7 +235,8 @@ public static class Assistant
             "Otherwise write the message as the user would send it, in their own words " +
             "and language ('tell Alex I'm online' -> text 'I'm online'). " +
             "Also a voice message ('send Alex a voice message', 'send Sam a voice message I'll be late': voice = true, text = what they say in it) " +
-            "or a file ('send this screenshot to Alex': attach = screenshot; 'send what I copied to Sam': clipboard; 'send report.pdf to Alex': file).",
+            "or a file ('send this screenshot to Alex': attach = screenshot; 'send what I copied to Sam': clipboard; 'send report.pdf to Alex': file), " +
+            "or a poll ('ask Alex: Roblox or Minecraft tonight?', 'make a poll for Sam: pizza, burgers or sushi': text = the question, poll = the answers).",
             new JsonObject
             {
                 ["to"] = Str("The friend's name, or 'last'"),
@@ -244,6 +245,7 @@ public static class Assistant
                 ["attach"] = Enum("none", "screenshot", "clipboard", "file"),
                 ["file"] = Str("attach = file: the file's name or path"),
                 ["at"] = Str("Only to send it later ('send Alex happy birthday tomorrow at 9'): when, as yyyy-MM-ddTHH:mm (local time); empty = now"),
+                ["poll"] = Str("Only for a poll: its answers (2 to 6), separated by |, e.g. 'Roblox|Minecraft'"),
             }, "to"),
         Tool("read_messages", "Messages from friends in Dave's Social chat: 'any messages?', 'what did Alex say?', 'read my messages'.",
             new JsonObject { ["from"] = Str("A friend's name, or empty for everyone"), ["question"] = Str("The user's question") }, "question"),

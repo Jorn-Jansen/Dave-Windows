@@ -268,6 +268,25 @@
     background: linear-gradient(color-mix(in srgb, var(--panel2) 82%, transparent), color-mix(in srgb, var(--panel2) 82%, transparent)) padding-box,
                 linear-gradient(135deg, color-mix(in srgb, var(--purple) 65%, transparent), rgba(255, 255, 255, .08) 40%, color-mix(in srgb, var(--cyan) 55%, transparent)) border-box; }
   .dm-lines { contain: content; }
+  .msg.poll { min-width: 260px; max-width: 360px; }
+  .poll-box { display: flex; flex-direction: column; gap: 6px; }
+  .poll-q { margin-bottom: 2px; }
+  .poll-option { position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; text-align: left; border: 1px solid rgba(255, 255, 255, .18);
+    background: rgba(255, 255, 255, .06); color: var(--text); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 14px; cursor: pointer; transition: border-color .15s; }
+  .poll-option:hover:not(:disabled) { border-color: rgba(255, 255, 255, .45); }
+  .poll-option.mine { border-color: var(--cyan); }
+  .poll-option i { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--cyan) 30%, transparent); transition: width .3s; }
+  .poll-option .answer { position: relative; flex: 1; min-width: 0; }
+  .poll-option .who { position: relative; display: flex; gap: 4px; flex: none; }
+  .voter { font-size: 11px; padding: 1px 7px; border-radius: 8px; background: rgba(255, 255, 255, .16); }
+  .voter.you { background: color-mix(in srgb, var(--violet) 55%, transparent); }
+  .poll-count { font-size: 12px; opacity: .7; }
+  .poll-maker { display: flex; flex-direction: column; gap: 6px; padding: 10px 22px 0; }
+  .poll-maker input { background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; flex: 1; min-width: 0; }
+  .poll-maker #pollQ { font-weight: 600; }
+  .poll-maker .row, .poll-answers .row { display: flex; gap: 6px; align-items: center; margin-bottom: 0; }
+  .btn.primary { background: var(--grad); border-color: transparent; color: #fff; }
+  .poll-answers { display: flex; flex-direction: column; gap: 6px; }
   .react-bar .tool-btn { font-size: 14px; color: var(--text); }
   .voice-row { display: flex; align-items: center; gap: 8px; }
   .words-btn { border: 1px solid var(--line); background: transparent; color: var(--dim); font: 700 12px inherit; border-radius: 8px; padding: 3px 7px; cursor: pointer; flex: none; }
@@ -543,6 +562,8 @@ const T = {
     search: "Search this chat", searchFor: "Search…", all: "All", photos: "Photos", videos: "Videos", voices: "Voice", files: "Files", links: "Links",
     anyone: "Anyone", after: "After", before: "Before", nothingFound: "Nothing found",
     sendLater: "Send later", sendAt: "Send at", schedule: "Schedule", cancelScheduled: "Don't send it",
+    makePoll: "Make a poll", polls: "Polls", pollQuestion: "Ask a question…", pollAnswer: "Answer", pollAddAnswer: "Answer", pollSend: "Send poll",
+    noVotes: "No votes yet", bothVoted: "You both voted", waitingVote: "Waiting for {name} to vote", theyVoted: "{name} voted — your turn",
   },
   nl: {
     chat: "Chat", reminders: "Herinneringen", memories: "Onthouden", screen: "Schermtijd", music: "Muziek", watching: "Opletten",
@@ -572,6 +593,8 @@ const T = {
     search: "Zoek in deze chat", searchFor: "Zoeken…", all: "Alles", photos: "Foto's", videos: "Video's", voices: "Spraak", files: "Bestanden", links: "Links",
     anyone: "Iedereen", after: "Na", before: "Voor", nothingFound: "Niets gevonden",
     sendLater: "Later versturen", sendAt: "Versturen om", schedule: "Inplannen", cancelScheduled: "Niet versturen",
+    makePoll: "Maak een poll", polls: "Polls", pollQuestion: "Stel een vraag…", pollAnswer: "Antwoord", pollAddAnswer: "Antwoord", pollSend: "Poll versturen",
+    noVotes: "Nog geen stemmen", bothVoted: "Jullie hebben allebei gestemd", waitingVote: "Wacht tot {name} stemt", theyVoted: "{name} heeft gestemd — jij bent",
   },
 };
 /* Errors in this page go to Dave's log (dave.log), so they can be found and fixed */
@@ -981,10 +1004,10 @@ function voicePlayer(url) {
 }
 
 /* Replies: the message you're replying to, a short version of a message, and jumping to one (it flashes) */
-let replying = null, editing = null, search = null, scheduling = false;
+let replying = null, editing = null, search = null, scheduling = false, polling = null; // polling: the poll you're making ({ code, q, options })
 const media = new Map(); // url → its <img> / <video>, kept between redraws
 const shownWords = new Set(); // voice messages showing their words (Aa)
-const snippet = l => { const s = l.kind ? l.text : l.text; return s.length > 90 ? s.slice(0, 90) + "…" : s; };
+const snippet = l => { const s = l.kind === "poll" ? "📊 " + l.text : l.text; return s.length > 90 ? s.slice(0, 90) + "…" : s; };
 function jumpTo(lines, id) {
   const target = lines.querySelector(`.msg[data-id="${CSS.escape(id)}"]`);
   if (!target) return;
@@ -1078,7 +1101,7 @@ function renderSocial() {
   const startEdit = l => { replying = null; editing = { code: sel.code, id: l.id, text: l.text, fresh: true }; rendered.social = null; renderSocial(); $("dmInput").focus(); };
   const canTranslate = state.social.translate && !state.social.translateAuto;
   for (const l of sel.lines) {
-    const m = el("div", "msg " + (l.mine ? "you" : "dave") + (l.kind && l.kind !== "file" ? " media" : ""));
+    const m = el("div", "msg " + (l.mine ? "you" : "dave") + (l.kind && l.kind !== "file" && l.kind !== "poll" ? " media" : "") + (l.kind === "poll" ? " poll" : ""));
     m.dataset.id = l.id || "";
     if (l.reply) { // a reply: a small version of the message it's about, above it; click it to see that one
       const target = sel.lines.find(x => x.id === l.reply);
@@ -1120,6 +1143,7 @@ function renderSocial() {
       m.append(row);
       if (shownWords.has(l.id)) m.append(el("div", "transcript", l.transcript === "…" || !l.transcript ? t("listening") : l.transcript));
     }
+    else if (l.kind === "poll") m.append(pollView(l, sel));
     else if (l.kind && l.url) { const f = el("div", "dm-file", "📎 " + l.name); f.onclick = () => open(l); m.append(f); }
     else if (l.kind) m.append(el("div", "dm-file", l.failed ? "⚠️ " + t("fileGone") : "⏳ " + l.text)); // still coming in
     else m.append(document.createTextNode(l.text));
@@ -1169,7 +1193,9 @@ function renderSocial() {
   const compose = el("div", "composer show"), box = el("input"), go = el("button", "round", "➤");
   const attach = el("button", "round alt", "📎"), mic = el("button", "round alt" + (recordingVoice ? " listening" : ""), "🎤");
   const later = el("button", "round alt" + (scheduling ? " on" : ""), "⏰");
-  attach.title = t("attach"); mic.title = t("voiceMsg"); later.title = t("sendLater");
+  const ask = el("button", "round alt" + (polling ? " on" : ""), "📊");
+  attach.title = t("attach"); mic.title = t("voiceMsg"); later.title = t("sendLater"); ask.title = t("makePoll");
+  ask.onclick = () => { polling = polling ? null : { code: sel.code, q: "", options: ["", ""] }; rendered.social = null; renderSocial(); if (polling) $("pollQ").focus(); };
   // What you send next replies to this message (then it's done)
   const reply = () => { const id = replying ? replying.id : ""; if (replying) { replying = null; rendered.social = null; } return id; };
   attach.onclick = () => send({ type: "socialAttach", code: sel.code, reply: reply() });
@@ -1188,7 +1214,7 @@ function renderSocial() {
   };
   go.onclick = sendIt; box.onkeydown = e => { if (e.key === "Enter") sendIt(); };
   box.oninput = () => { if (!editing) send({ type: "socialTyping", code: sel.code }); }; // (Dave sends it at most every few seconds)
-  compose.append(attach, mic, later, box, go);
+  compose.append(attach, mic, later, ask, box, go);
   // Drag a photo, video or file into the chat to send it
   R.ondragover = e => { e.preventDefault(); R.classList.add("dropping"); };
   R.ondragleave = () => R.classList.remove("dropping");
@@ -1217,6 +1243,8 @@ function renderSocial() {
   };
   if (replying) strip("↩", t("replyingTo"), replying.who, replying.what, () => replying = null);
   if (editing) strip("✏️", t("editing"), "", "", () => { editing = null; box.value = ""; });
+  if (polling && polling.code !== sel.code) polling = null;
+  if (polling) R.append(pollMaker(sel, reply));
   if (scheduling) { // ⏰: when to send what you type
     const row = el("div", "replying schedule"), when = el("input"), set = el("button", "btn", t("schedule"));
     when.type = "datetime-local"; when.id = "scheduleAt";
@@ -1232,7 +1260,63 @@ function renderSocial() {
   }
   R.append(compose);
   lines.scrollTop = atBottom ? lines.scrollHeight : oldTop;
-  if (keep.focus === "dmInput" || keep.focus === "addCode" || keep.focus === "searchBox") $(keep.focus).focus();
+  if (keep.focus === "dmInput" || keep.focus === "addCode" || keep.focus === "searchBox" || keep.focus.startsWith("poll") && $(keep.focus)) {
+    const f = $(keep.focus); f.focus(); if (f.value) f.setSelectionRange(f.value.length, f.value.length);
+  }
+}
+
+/* A poll in the chat: each answer with a bar for its votes and who picked it; click one to vote (again: take it back) */
+function pollView(l, sel) {
+  const box = el("div", "poll-box"), votes = [l.myVote, l.theirVote].filter(v => v >= 0).length;
+  box.append(el("b", "poll-q", "📊 " + l.text));
+  (l.options || []).forEach((answer, i) => {
+    const row = el("button", "poll-option" + (l.myVote === i ? " mine" : "")), fill = el("i");
+    const count = (l.myVote === i ? 1 : 0) + (l.theirVote === i ? 1 : 0);
+    fill.style.width = (votes ? count / 2 * 100 : 0) + "%";
+    const who = el("span", "who");
+    if (l.myVote === i) who.append(el("span", "voter you", t("you")));
+    if (l.theirVote === i) who.append(el("span", "voter", sel.name));
+    row.append(fill, el("span", "answer", answer), who);
+    row.disabled = !sel.secure;
+    row.onclick = ev => { ev.stopPropagation(); send({ type: "socialVote", code: sel.code, id: l.id, choice: i }); };
+    box.append(row);
+  });
+  box.append(el("span", "poll-count", votes === 2 ? t("bothVoted") : votes ? (l.myVote >= 0 ? t("waitingVote").replace("{name}", sel.name) : t("theyVoted").replace("{name}", sel.name)) : t("noVotes")));
+  return box;
+}
+
+/* 📊: making a poll (a question and 2 to 6 answers), above the message box */
+function pollMaker(sel, reply) {
+  const panel = el("div", "poll-maker"), q = el("input"), list = el("div", "poll-answers");
+  q.id = "pollQ"; q.placeholder = t("pollQuestion"); q.maxLength = 200; q.value = polling.q;
+  q.oninput = () => polling.q = q.value;
+  polling.options.forEach((answer, i) => {
+    const row = el("div", "row"), input = el("input");
+    input.id = "pollA" + i; input.placeholder = t("pollAnswer") + " " + (i + 1); input.maxLength = 80; input.value = answer;
+    input.oninput = () => polling.options[i] = input.value;
+    input.onkeydown = e => { if (e.key === "Enter") { if (i === polling.options.length - 1 && polling.options.length < 6) more.click(); else if ($("pollA" + (i + 1))) $("pollA" + (i + 1)).focus(); } };
+    row.append(input);
+    if (polling.options.length > 2) {
+      const drop = el("button", "x", "✕");
+      drop.onclick = () => { polling.options.splice(i, 1); rendered.social = null; renderSocial(); };
+      row.append(drop);
+    }
+    list.append(row);
+  });
+  const buttons = el("div", "row"), more = el("button", "btn", "+ " + t("pollAddAnswer")), go = el("button", "btn primary", t("pollSend")), close = el("button", "x", "✕");
+  more.disabled = polling.options.length >= 6;
+  more.onclick = () => { polling.options.push(""); rendered.social = null; renderSocial(); $("pollA" + (polling.options.length - 1)).focus(); };
+  go.onclick = () => {
+    const options = polling.options.map(o => o.trim()).filter(Boolean);
+    if (!polling.q.trim()) { q.focus(); return; }
+    if (options.length < 2) { $("pollA" + options.length).focus(); return; }
+    send({ type: "socialPoll", code: sel.code, text: polling.q.trim(), options, reply: reply() });
+    polling = null; rendered.social = null; renderSocial();
+  };
+  close.onclick = () => { polling = null; rendered.social = null; renderSocial(); };
+  buttons.append(more, go, close);
+  panel.append(q, list, buttons);
+  return panel;
 }
 
 /* Search a chat: words, what kind, who sent it, and between which dates; click a result to see it there */
@@ -1241,7 +1325,7 @@ function searchPanel(sel, lines) {
   box.id = "searchBox"; box.placeholder = t("searchFor"); box.value = search.q;
   box.oninput = () => { search.q = box.value; showResults(); };
   const kinds = el("div", "chips");
-  for (const [kind, label] of [["", t("all")], ["photo", "📷 " + t("photos")], ["video", "🎬 " + t("videos")], ["voice", "🎤 " + t("voices")], ["file", "📎 " + t("files")], ["link", "🔗 " + t("links")]]) {
+  for (const [kind, label] of [["", t("all")], ["photo", "📷 " + t("photos")], ["video", "🎬 " + t("videos")], ["voice", "🎤 " + t("voices")], ["file", "📎 " + t("files")], ["link", "🔗 " + t("links")], ["poll", "📊 " + t("polls")]]) {
     const chip = el("button", "chip" + (search.kind === kind ? " on" : ""), label);
     chip.onclick = () => { search.kind = kind; kinds.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === chip)); showResults(); };
     kinds.append(chip);
