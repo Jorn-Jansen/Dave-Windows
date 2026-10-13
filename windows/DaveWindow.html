@@ -25,8 +25,12 @@
   html { background: var(--bg); } /* only here: a background on body would cover the light layer below */
 
   /* Slowly drifting coloured light behind everything; the panels on top are frosted glass */
-  .aurora { position: fixed; inset: -20%; z-index: -1; filter: blur(80px); opacity: .9; pointer-events: none; }
-  .aurora i { position: absolute; width: 46vmax; height: 46vmax; border-radius: 50%; mix-blend-mode: screen; }
+  /* (soft-edged blobs, not a live blur of the whole layer: that made the window slow) */
+  .aurora { position: fixed; inset: -20%; z-index: -1; opacity: .9; pointer-events: none; }
+  .aurora i { position: absolute; width: 46vmax; height: 46vmax; border-radius: 50%; mix-blend-mode: screen; will-change: transform; --c: var(--purple);
+    margin: -6vmax; width: 58vmax; height: 58vmax;
+    background: radial-gradient(circle closest-side, var(--c) 0 30%, color-mix(in srgb, var(--c) 72%, transparent) 55%, color-mix(in srgb, var(--c) 28%, transparent) 78%, transparent 100%) !important; }
+  .aurora i:nth-child(2) { --c: var(--cyan); } .aurora i:nth-child(3) { --c: var(--pink); }
   .aurora i:nth-child(1) { background: var(--purple); top: 0; left: 5%; animation: drift1 26s ease-in-out infinite alternate; }
   .aurora i:nth-child(2) { background: var(--cyan); bottom: 0; right: 0; animation: drift2 31s ease-in-out infinite alternate; }
   .aurora i:nth-child(3) { background: var(--pink); top: 35%; left: 40%; width: 30vmax; height: 30vmax; opacity: .7; animation: drift3 22s ease-in-out infinite alternate; }
@@ -372,8 +376,9 @@
 
   /* ===== Effects (not in Legacy) ===== */
   /* Stars and drifting sparks, drawn on a canvas between the light and the glass; faster and brighter while Dave works */
-  #fx { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+  #fx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
   body.legacy #fx, body.legacy .edgeglow { display: none; }
+  body[data-theme="aurora"] #fx { filter: blur(5px); } /* one soft pass over the whole curtain (much cheaper than blurring every line) */
   /* While listening or thinking, the window's own edges glow, like the glow around the screen */
   .edgeglow { position: fixed; inset: 0; z-index: 50; pointer-events: none; opacity: 0; transition: opacity .5s;
     box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--cyan) 60%, transparent), inset 0 0 40px color-mix(in srgb, var(--purple) 55%, transparent),
@@ -1329,17 +1334,19 @@ send({ type: "ready" });
 
 // Each theme's own effect behind the glass: northern lights (Aurora), fire and embers (Ember), dripping slime (Toxic),
 // light rays and waves (Ocean), falling petals (Sakura), stars and shooting stars (Midnight). Stronger while Dave listens
-// or thinks; the mouse moves it a little (depth). Only drawn while the window is visible.
+// or thinks; the mouse moves it a little (depth). Only drawn while the window is visible, 30 times a second, and at a
+// fraction of the window's resolution (it's soft light anyway; drawing it sharp at 60 a second made the whole window slow).
 (() => {
   const canvas = $("fx"), g = canvas.getContext("2d");
-  let w = 0, h = 0, mx = 0, my = 0, energy = 0, last = 0;
+  let w = 0, h = 0, mx = 0, my = 0, energy = 0, last = 0, scale = 0, colours = null, coloursAt = 0;
+  const SCALE = { aurora: .3, ember: .5, toxic: .5, ocean: .4, sakura: .6, midnight: 1 };
   const parts = [], stars = [];
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#9646ff";
   const rnd = (a, b) => a + Math.random() * (b - a);
   function size() {
-    const r = devicePixelRatio || 1;
+    const r = scale = SCALE[document.body.dataset.theme] || .5;
     w = innerWidth; h = innerHeight;
-    canvas.width = w * r; canvas.height = h * r; g.setTransform(r, 0, 0, r, 0, 0);
+    canvas.width = Math.ceil(w * r); canvas.height = Math.ceil(h * r); g.setTransform(r, 0, 0, r, 0, 0);
     stars.length = 0;
     for (let i = 0; i < Math.round(w * h / 7000); i++) stars.push({ x: Math.random() * w, y: Math.random() * h, z: .3 + Math.random() * .7, s: .4 + Math.random() * 1.2, p: Math.random() * 6.28 });
   }
@@ -1350,21 +1357,20 @@ send({ type: "ready" });
   const effects = {
     // Curtains of light hanging from the top, waving and shifting colour
     aurora(t, c) {
-      g.globalCompositeOperation = "lighter";
-      g.filter = "blur(10px)";
+      g.globalCompositeOperation = "lighter"; // (soft without a blur filter: it's drawn small and stretched)
       for (const [colour, speed, phase, reach] of [[c.purple, .5, 0, .55], [c.cyan, -.38, 2, .45], [c.pink, .27, 4, .38]]) {
-        for (let x = -20; x < w + 20; x += 6) {
+        for (let x = -20; x < w + 20; x += 10) {
           const u = x / w;
           const wave = .5 + .5 * Math.sin(u * 9 + t * speed + phase) * Math.sin(u * 23 - t * speed * 1.7 + phase);
           const height = h * reach * (.25 + .75 * wave) * (1 + energy * .4);
           const sway = Math.sin(t * .8 + u * 6 + phase) * 30 - mx * 40;
           const grad = g.createLinearGradient(0, 0, 0, height);
-          grad.addColorStop(0, colour + "00"); grad.addColorStop(.22, colour + "90"); grad.addColorStop(1, colour + "00");
-          g.strokeStyle = grad; g.lineWidth = 9;
+          grad.addColorStop(0, colour + "00"); grad.addColorStop(.22, colour + "b8"); grad.addColorStop(1, colour + "00");
+          g.strokeStyle = grad; g.lineWidth = 12;
           g.beginPath(); g.moveTo(x + sway, 0); g.lineTo(x + sway * .4, height); g.stroke();
         }
       }
-      g.filter = "none"; g.globalCompositeOperation = "source-over";
+      g.globalCompositeOperation = "source-over";
     },
     // A fire glow along the bottom, and embers rising from it, flickering and cooling from gold to red
     ember(t, c) {
@@ -1373,7 +1379,7 @@ send({ type: "ready" });
       glow.addColorStop(0, c.pink + Math.min(255, Math.round(140 * flicker * (1 + energy * .5))).toString(16).padStart(2, "0"));
       glow.addColorStop(1, c.purple + "00");
       g.fillStyle = glow; g.fillRect(0, 0, w, h);
-      if (Math.random() < .35 + energy * .9) parts.push({ k: "e", x: rnd(0, w), y: h + 5, vx: rnd(-.3, .3), vy: -rnd(.8, 2) * (1 + energy), life: 0, max: rnd(3, 6), r: rnd(1, 2.4) });
+      for (let n = 0; n < 2; n++) if (Math.random() < .35 + energy * .9) parts.push({ k: "e", x: rnd(0, w), y: h + 5, vx: rnd(-.3, .3), vy: -rnd(.8, 2) * (1 + energy), life: 0, max: rnd(3, 6), r: rnd(1, 2.4) });
     },
     // Slime along the top edge with drops forming and falling, and a faint glow at the bottom
     toxic(t, c) {
@@ -1384,7 +1390,7 @@ send({ type: "ready" });
       const fog = g.createLinearGradient(0, h, 0, h * .7);
       fog.addColorStop(0, c.purple + "40"); fog.addColorStop(1, c.purple + "00");
       g.fillStyle = fog; g.fillRect(0, 0, w, h);
-      if (Math.random() < .025 + energy * .06) parts.push({ k: "d", x: rnd(10, w - 10), y: 8, vy: 0, life: 0, max: 8, r: rnd(3, 5.5) });
+      if (Math.random() < .05 + energy * .12) parts.push({ k: "d", x: rnd(10, w - 10), y: 8, vy: 0, life: 0, max: 8, r: rnd(3, 5.5) });
     },
     // Light rays falling in from the top, slowly moving, and waves rolling along the bottom
     ocean(t, c) {
@@ -1404,7 +1410,7 @@ send({ type: "ready" });
     },
     // Cherry blossom petals drifting down, turning
     sakura(t, c) {
-      if (Math.random() < .07 + energy * .2) parts.push({ k: "p", x: rnd(-60, w), y: -20, vx: rnd(.4, 1.1), vy: rnd(.5, 1.2), life: 0, max: 30, r: rnd(4, 7), a: rnd(0, 6.28), spin: rnd(-.04, .04) });
+      if (Math.random() < .14 + energy * .4) parts.push({ k: "p", x: rnd(-60, w), y: -20, vx: rnd(.4, 1.1), vy: rnd(.5, 1.2), life: 0, max: 30, r: rnd(4, 7), a: rnd(0, 6.28), spin: rnd(-.04, .04) });
     },
     // Twinkling stars at different depths, and now and then a shooting star
     midnight(t, c) {
@@ -1414,18 +1420,18 @@ send({ type: "ready" });
         g.fillStyle = "#fff"; g.beginPath(); g.arc(s.x - mx * 30 * s.z, s.y - my * 30 * s.z, s.s, 0, 6.28); g.fill();
       }
       g.globalAlpha = 1;
-      if (Math.random() < .006 + energy * .02) parts.push({ k: "s", x: rnd(0, w * .7), y: rnd(0, h * .4), vx: rnd(9, 14), vy: rnd(2.5, 5), life: 0, max: .7 });
+      if (Math.random() < .012 + energy * .04) parts.push({ k: "s", x: rnd(0, w * .7), y: rnd(0, h * .4), vx: rnd(9, 14), vy: rnd(2.5, 5), life: 0, max: .7 });
     },
   };
 
   function particles(t, c) {
     for (let i = parts.length - 1; i >= 0; i--) {
       const p = parts[i];
-      p.life += 1 / 60;
+      p.life += 1 / 30;
       if (p.life > p.max || p.y > h + 30 || p.x > w + 60) { parts.splice(i, 1); continue; }
       const fade = Math.min(1, p.life * 2) * (1 - p.life / p.max);
       if (p.k === "e") { // ember
-        p.x += p.vx + Math.sin(p.life * 4 + i) * .4; p.y += p.vy;
+        p.x += (p.vx + Math.sin(p.life * 4 + i) * .4) * 2; p.y += p.vy * 2; // (×2: 30 frames a second)
         const age = p.life / p.max, colour = age < .35 ? "#ffeaa8" : age < .7 ? c.pink : c.purple;
         g.globalAlpha = fade * (.6 + .4 * Math.sin(p.life * 30 + i));
         const glow = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 5);
@@ -1433,14 +1439,14 @@ send({ type: "ready" });
         g.fillStyle = glow; g.beginPath(); g.arc(p.x, p.y, p.r * 5, 0, 6.28); g.fill();
         g.fillStyle = colour; g.beginPath(); g.ellipse(p.x, p.y, p.r * .6, p.r * 1.6, 0, 0, 6.28); g.fill();
       } else if (p.k === "d") { // a drop of slime: swells, then falls
-        if (p.life > 1.2) { p.vy += .25; p.y += p.vy; }
-        const grow = Math.min(1, p.life / 1.2), r = p.r * (.4 + .6 * grow), stretch = 1 + Math.min(.9, p.vy * .05);
+        if (p.life > 1.2) { p.vy += .5; p.y += p.vy * 2; }
+        const grow = Math.min(1, p.life / 1.2), r = p.r * (.4 + .6 * grow), stretch = 1 + Math.min(.9, p.vy * .025);
         g.globalAlpha = .9;
-        if (p.vy < 4) { g.strokeStyle = c.pink + "aa"; g.lineWidth = r * .6; g.beginPath(); g.moveTo(p.x, 6); g.lineTo(p.x, p.y); g.stroke(); }
+        if (p.vy < 8) { g.strokeStyle = c.pink + "aa"; g.lineWidth = r * .6; g.beginPath(); g.moveTo(p.x, 6); g.lineTo(p.x, p.y); g.stroke(); }
         g.fillStyle = c.pink; g.beginPath(); g.ellipse(p.x, p.y, r, r * stretch, 0, 0, 6.28); g.fill();
         g.fillStyle = "#ffffffaa"; g.beginPath(); g.arc(p.x - r * .3, p.y - r * .35, r * .3, 0, 6.28); g.fill();
       } else if (p.k === "p") { // a petal
-        p.x += p.vx + Math.sin(p.life * 1.6 + i) * .6; p.y += p.vy; p.a += p.spin;
+        p.x += (p.vx + Math.sin(p.life * 1.6 + i) * .6) * 2; p.y += p.vy * 2; p.a += p.spin * 2;
         g.globalAlpha = fade * .85;
         g.save(); g.translate(p.x, p.y); g.rotate(p.a); g.scale(1, .6 + .4 * Math.sin(p.life * 3 + i));
         const fill = g.createLinearGradient(0, -p.r, 0, p.r); fill.addColorStop(0, c.cyan); fill.addColorStop(1, c.purple);
@@ -1448,7 +1454,7 @@ send({ type: "ready" });
         g.bezierCurveTo(p.r, -p.r * .6, p.r, p.r * .6, 0, p.r * 1.5); g.bezierCurveTo(-p.r, p.r * .6, -p.r, -p.r * .6, 0, -p.r * 1.5); g.fill();
         g.restore();
       } else if (p.k === "s") { // a shooting star
-        p.x += p.vx; p.y += p.vy;
+        p.x += p.vx * 2; p.y += p.vy * 2;
         g.globalAlpha = Math.sin(Math.PI * p.life / p.max);
         const tail = g.createLinearGradient(p.x, p.y, p.x - p.vx * 10, p.y - p.vy * 10);
         tail.addColorStop(0, "#fff"); tail.addColorStop(1, "#fff0");
@@ -1461,11 +1467,13 @@ send({ type: "ready" });
   function frame(now) {
     requestAnimationFrame(frame);
     if (document.hidden || document.body.classList.contains("legacy")) return;
-    if (now - last < 15) return; // about 60 per second, also on fast screens
+    if (now - last < 32) return; // about 30 per second
+    if ((SCALE[document.body.dataset.theme] || .5) !== scale) size(); // another theme: its own resolution
     last = now;
     const t = now / 1000, status = document.body.dataset.status || "";
     energy += ((status === "listening" ? 1 : status === "thinking" ? .65 : status === "busy" ? .4 : 0) - energy) * .04;
-    const c = { purple: css("--purple"), cyan: css("--cyan"), pink: css("--pink") };
+    if (!colours || now - coloursAt > 500) { colours = { purple: css("--purple"), cyan: css("--cyan"), pink: css("--pink") }; coloursAt = now; } // (reading styles is slow)
+    const c = colours;
     g.clearRect(0, 0, w, h);
     (effects[document.body.dataset.theme] || effects.aurora)(t, c);
     particles(t, c);
