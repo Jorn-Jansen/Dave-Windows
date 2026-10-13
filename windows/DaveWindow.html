@@ -245,11 +245,16 @@
   @keyframes typingDot { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-5px); opacity: 1; } }
   .dm.dropping { outline: 2px dashed color-mix(in srgb, var(--cyan) 70%, transparent); outline-offset: -10px; }
   /* Replies: the small version of the message replied to, the bar above the box, and the flash when you jump to one */
-  .quote { display: flex; align-items: baseline; gap: 6px; font-size: 12px; opacity: .8; margin: -2px 0 6px; padding: 3px 8px; border-radius: 8px;
-    background: rgba(0, 0, 0, .18); border-left: 2px solid color-mix(in srgb, var(--cyan) 70%, transparent); cursor: pointer; max-width: 320px; overflow: hidden; }
-  .quote span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .quote:hover { opacity: 1; }
-  .msg.media .quote { margin: 2px 2px 6px; }
+  /* the small version floats just above the bubble, with a curved line down to it (like Discord) */
+  .quote { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); cursor: pointer; max-width: 70%; min-width: 0;
+    align-self: flex-start; margin: 0 0 -6px 26px; position: relative; }
+  .quote.you { align-self: flex-end; margin: 0 26px -6px 0; }
+  .quote::before { content: ""; position: absolute; left: -18px; top: 8px; width: 14px; height: 9px; border: 2px solid var(--line);
+    border-right: 0; border-bottom: 0; border-top-left-radius: 7px; }
+  .quote.you::before { left: auto; right: -18px; border-left: 0; border-right: 2px solid var(--line); border-top-left-radius: 0; border-top-right-radius: 7px; }
+  .quote b { color: var(--text); opacity: .85; flex: none; }
+  .quote span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .quote:hover, .quote:hover b { color: var(--text); opacity: 1; }
   .qarrow { opacity: .7; flex: none; }
   .replying { display: flex; align-items: center; gap: 6px; padding: 8px 22px 0; font-size: 13px; color: var(--dim); min-width: 0; }
   .replying b { color: var(--text); flex: none; }
@@ -1007,10 +1012,10 @@ function renderSocial() {
     m.dataset.id = l.id || "";
     if (l.reply) { // a reply: a small version of the message it's about, above it; click it to see that one
       const target = sel.lines.find(x => x.id === l.reply);
-      const quote = el("div", "quote");
-      quote.append(el("span", "qarrow", "↱"), el("b", null, target ? (target.mine ? t("you") : sel.name) : ""), el("span", null, target ? snippet(target) : t("replyGone")));
+      const quote = el("div", "quote " + (l.mine ? "you" : "dave")); // above the bubble, on its side
+      quote.append(el("b", null, target ? (target.mine ? t("you") : sel.name) : ""), el("span", null, target ? snippet(target) : t("replyGone")));
       if (target) quote.onclick = ev => { ev.stopPropagation(); jumpTo(lines, l.reply); };
-      m.append(quote);
+      lines.append(quote);
     }
     if (l.id && sel.secure) m.ondblclick = () => { // double-click: reply, or react (Settings → Social)
       window.getSelection().removeAllRanges();
