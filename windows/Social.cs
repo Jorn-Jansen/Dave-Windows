@@ -166,6 +166,15 @@ public static class Social
                     if (sent.Length == 0) return;
                     Add(to, new Line { At = DateTimeOffset.Now, Mine = true, Text = sent, Id = echo["msgid"]?.ToString() ?? "", ReplyTo = ReplyOf(echo) });
                     break;
+                case "sentfile": // a photo, video, voice message or file you sent from your iPhone: fetched here too
+                    var myId = echo["msgid"]?.ToString() ?? "";
+                    if (myId.Length == 0 || myId.Length > 64) return;
+                    var myKind = echo["kind"]?.ToString() is "voice" or "photo" or "video" ? echo["kind"]!.ToString() : "file";
+                    var myName = SafeName(echo["filename"]?.ToString() ?? "file");
+                    var mine = new Line { At = DateTimeOffset.Now, Mine = true, Id = myId, Kind = myKind, Name = myName, Text = Label(myKind, myName), ReplyTo = ReplyOf(echo) };
+                    Add(to, mine);
+                    _ = DownloadAsync(s.Friends.First(f => f.Code == to), mine, echo, announce: false);
+                    break;
                 case "edit" when Lines(to).LastOrDefault(l => l.Mine && l.Id.Length > 0 && l.Id == target) is { } mineEdited:
                     (mineEdited.Text, mineEdited.Edited, mineEdited.PreviewUrl) = (Clean(echo["text"]?.ToString() ?? "", 1000), true, "");
                     SaveChats();
@@ -457,11 +466,18 @@ public static class Social
         try { Directory.CreateDirectory(FilesFolder); await File.WriteAllBytesAsync(kept, data); } catch (Exception e) { Log.Write($"Social: couldn't keep the file: {e.Message}"); kept = ""; }
         Add(code, new Line { At = DateTimeOffset.Now, Mine = true, Id = id, Kind = kind, Name = name, File = kept, Text = Label(kind, name), ReplyTo = reply });
         Changed?.Invoke();
+        // A copy for your iPhone (sealed with your own key): where the file is and how to unlock it, so it's in the chat there too
+        if (s.PhoneEnabled) _ = SealAsync(s, Self(s), new JsonObject
+        {
+            ["type"] = "sentfile", ["to"] = code, ["by"] = "pc", ["msgid"] = id, ["kind"] = kind, ["filename"] = name, ["size"] = data.Length,
+            ["url"] = url, ["k"] = Convert.ToBase64String(key), ["fn"] = Convert.ToBase64String(nonce), ["reply"] = reply,
+        });
         return null;
     }
 
-    /// <summary>Fetches and unlocks a file a friend sent; then it's in the chat, and announced like a message.</summary>
-    private static async Task DownloadAsync(Settings.Friend friend, Line line, JsonNode inner)
+    /// <summary>Fetches and unlocks a file a friend sent (or you sent from your iPhone); then it's in the chat, and a friend's
+    /// is announced like a message.</summary>
+    private static async Task DownloadAsync(Settings.Friend friend, Line line, JsonNode inner, bool announce = true)
     {
         try
         {
@@ -481,7 +497,7 @@ public static class Social
                 line.File = kept;
                 SaveChats();
                 Changed?.Invoke();
-                Received?.Invoke(new Incoming(friend.Code, friend.Name, line.Text, line.Kind, kept));
+                if (announce) Received?.Invoke(new Incoming(friend.Code, friend.Name, line.Text, line.Kind, kept));
             }
             if (ui != null) ui.Post(_ => Done(), null); else Done();
         }
