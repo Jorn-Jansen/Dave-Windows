@@ -116,7 +116,7 @@ public sealed partial class DaveWindow
             ["Hotkey"] = settings.Hotkey, ["WindowHotkey"] = settings.WindowHotkey,
             ["WakeWord"] = settings.WakeWord, ["CarefulWakeWord"] = settings.CarefulWakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
             ["CalendarLinks"] = settings.CalendarLinks, ["SpotifyClientId"] = settings.SpotifyClientId,
-            ["Theme"] = settings.Theme, ["TimersOnScreen"] = settings.TimersOnScreen, ["KeepOffGames"] = settings.KeepOffGames, ["ThemeSounds"] = settings.ThemeSounds, ["SocialName"] = settings.SocialName, ["ReadMessagesAloud"] = settings.ReadMessagesAloud, ["MessageSound"] = settings.MessageSound, ["Personality"] = settings.Personality, ["PhoneEnabled"] = settings.PhoneEnabled, ["PhoneNotify"] = settings.PhoneNotify,
+            ["Theme"] = settings.Theme, ["TimersOnScreen"] = settings.TimersOnScreen, ["KeepOffGames"] = settings.KeepOffGames, ["ThemeSounds"] = settings.ThemeSounds, ["SocialName"] = settings.SocialName, ["ReadMessagesAloud"] = settings.ReadMessagesAloud, ["MessageSound"] = settings.MessageSound, ["DoubleClickAction"] = settings.DoubleClickAction, ["DoubleClickEmoji"] = settings.DoubleClickEmoji, ["Personality"] = settings.Personality, ["PhoneEnabled"] = settings.PhoneEnabled, ["PhoneNotify"] = settings.PhoneNotify,
         },
         ["phone"] = new JsonObject
         {
@@ -192,6 +192,8 @@ public sealed partial class DaveWindow
         s.SocialName = Str("SocialName");
         s.ReadMessagesAloud = Bool("ReadMessagesAloud");
         s.MessageSound = Bool("MessageSound");
+        s.DoubleClickAction = Str("DoubleClickAction") == "react" ? "react" : "reply";
+        if (Str("DoubleClickEmoji") is { Length: > 0 and <= 8 } emoji) s.DoubleClickEmoji = emoji;
         s.Personality = Personalities.Get(Str("Personality")).Id;
         s.CalendarLinks = Str("CalendarLinks");
         if (Str("Theme") is { Length: > 0 } theme) s.Theme = Themes.Get(theme).Id;

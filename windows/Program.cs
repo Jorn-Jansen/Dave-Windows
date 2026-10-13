@@ -553,7 +553,7 @@ public class DaveApp : ApplicationContext
         string? note = null;
         if (change?["type"]?.ToString() is { } type && type.StartsWith("social")) // the Social tab: friends and chats
         {
-            note = await DaveWindow.SocialActionAsync(settings, type, change["code"]?.ToString() ?? "", change["text"]?.ToString() ?? "");
+            note = await DaveWindow.SocialActionAsync(settings, type, change["code"]?.ToString() ?? "", change["text"]?.ToString() ?? "", change["reply"]?.ToString() ?? "");
             window?.Push();
         }
         else if (change != null && DaveWindow.ApplyAction(settings, change)) window?.Push();

@@ -116,6 +116,9 @@ public class Settings
     public bool ReadMessagesAloud { get; set; } = true;
     /// <summary>A notification sound for messages (in the theme's style when theme sounds are on).</summary>
     public bool MessageSound { get; set; } = true;
+    /// <summary>What double-clicking a chat message does: "reply" or "react" (with <see cref="DoubleClickEmoji"/>).</summary>
+    public string DoubleClickAction { get; set; } = "reply";
+    public string DoubleClickEmoji { get; set; } = "❤️";
     public List<Friend> Friends { get; set; } = new();
 
     public class Friend

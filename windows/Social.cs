@@ -41,6 +41,8 @@ public static class Social
         /// <summary>Emoji reactions to it: yours and your friend's ("" = none).</summary>
         public string MyReaction { get; set; } = "";
         public string TheirReaction { get; set; } = "";
+        /// <summary>The id of the message this one replies to ("" = none).</summary>
+        public string ReplyTo { get; set; } = "";
     }
 
     /// <summary>A message from a friend: who, and what they said.</summary>
@@ -149,7 +151,7 @@ public static class Social
             if (echoId.Length == 0 || !Seen.Add(echoId) || Normalise(echo["to"]?.ToString() ?? "") is not { } to) return;
             var sent = Clean(echo["text"]?.ToString() ?? "", 1000);
             if (sent.Length == 0 || s.Friends.All(f => f.Code != to)) return;
-            Add(to, new Line { At = DateTimeOffset.Now, Mine = true, Text = sent });
+            Add(to, new Line { At = DateTimeOffset.Now, Mine = true, Text = sent, Id = echo["msgid"]?.ToString() ?? "", ReplyTo = ReplyOf(echo) });
             Changed?.Invoke();
             return;
         }
@@ -169,7 +171,7 @@ public static class Social
                     var text = Clean(inner["text"]?.ToString() ?? "", 1000);
                     if (text.Length == 0) return;
                     Typing.Remove(friend.Code);
-                    Add(friend.Code, new Line { At = DateTimeOffset.Now, Mine = false, Text = text, Id = id });
+                    Add(friend.Code, new Line { At = DateTimeOffset.Now, Mine = false, Text = text, Id = id, ReplyTo = ReplyOf(inner) });
                     friend.Unread++;
                     s.Save();
                     Changed?.Invoke();
@@ -180,7 +182,7 @@ public static class Social
                     Typing.Remove(friend.Code);
                     var kind = inner["kind"]?.ToString() is "voice" or "photo" or "video" ? inner["kind"]!.ToString() : "file";
                     var fileName = SafeName(inner["filename"]?.ToString() ?? "file");
-                    var incoming = new Line { At = DateTimeOffset.Now, Mine = false, Id = id, Kind = kind, Name = fileName, Text = Label(kind, fileName) };
+                    var incoming = new Line { At = DateTimeOffset.Now, Mine = false, Id = id, Kind = kind, Name = fileName, Text = Label(kind, fileName), ReplyTo = ReplyOf(inner) };
                     Add(friend.Code, incoming);
                     friend.Unread++;
                     s.Save();
@@ -249,6 +251,9 @@ public static class Social
         Changed?.Invoke();
     }
 
+    /// <summary>The id of the message a sealed one replies to ("" for none).</summary>
+    private static string ReplyOf(JsonNode inner) => inner["reply"]?.ToString() is { Length: > 0 and <= 64 } reply ? reply : "";
+
     /// <summary>Ids of sealed messages handled lately, so one sent again (replayed) isn't shown twice.</summary>
     private static readonly HashSet<string> Seen = new();
 
@@ -302,7 +307,7 @@ public static class Social
     }
 
     /// <summary>Send a chat message to a friend. Null when it went, otherwise why not.</summary>
-    public static async Task<string?> SendAsync(Settings s, string code, string text)
+    public static async Task<string?> SendAsync(Settings s, string code, string text, string reply = "")
     {
         text = Clean(text, 1000);
         var friend = s.Friends.FirstOrDefault(f => f.Code == code);
@@ -314,12 +319,12 @@ public static class Social
                           $"De Dave van {friend.Name} heeft eerst de nieuwste update nodig, zodat je berichten versleuteld kunnen worden. Vraag ze Dave te updaten.");
         }
         var id = Guid.NewGuid().ToString("N");
-        var why = await SealAsync(s, friend, new JsonObject { ["type"] = "msg", ["text"] = text, ["id"] = id });
+        var why = await SealAsync(s, friend, new JsonObject { ["type"] = "msg", ["text"] = text, ["id"] = id, ["reply"] = reply });
         if (why != null) return why;
-        Add(code, new Line { At = DateTimeOffset.Now, Mine = true, Text = text, Id = id });
+        Add(code, new Line { At = DateTimeOffset.Now, Mine = true, Text = text, Id = id, ReplyTo = reply });
         TypingSent.Remove(code); // the next "typing…" goes right away
         // A copy, sealed with your own key, so the iPhone app shows it in the chat too
-        if (s.PhoneEnabled) _ = SealAsync(s, Self(s), new JsonObject { ["type"] = "sent", ["to"] = code, ["text"] = text, ["by"] = "pc" }); // (ntfy allows 250 a day)
+        if (s.PhoneEnabled) _ = SealAsync(s, Self(s), new JsonObject { ["type"] = "sent", ["to"] = code, ["text"] = text, ["by"] = "pc", ["msgid"] = id, ["reply"] = reply }); // (ntfy allows 250 a day)
         Changed?.Invoke();
         return null;
     }
@@ -360,7 +365,7 @@ public static class Social
     /// a free file host (litterbox.catbox.moe, kept 3 days), which only ever sees scrambled data; the end-to-end
     /// encrypted message tells your friend where it is and how to unlock it. Null when it went, otherwise why not.
     /// </summary>
-    public static async Task<string?> SendFileAsync(Settings s, string code, byte[] data, string name, string kind = "")
+    public static async Task<string?> SendFileAsync(Settings s, string code, byte[] data, string name, string kind = "", string reply = "")
     {
         var friend = s.Friends.FirstOrDefault(f => f.Code == code);
         if (friend is not { Status: "friend" }) return s.Say("You can only send things to friends who accepted you.", "Je kunt alleen dingen sturen naar vrienden die je hebben geaccepteerd.");
@@ -399,11 +404,12 @@ public static class Social
         {
             ["type"] = "file", ["kind"] = kind, ["filename"] = name, ["size"] = data.Length, ["url"] = url, ["id"] = id,
             ["k"] = Convert.ToBase64String(key), ["fn"] = Convert.ToBase64String(nonce),
+            ["reply"] = reply,
         });
         if (why != null) return why;
         var kept = Path.Combine(FilesFolder, id + Path.GetExtension(name));
         try { Directory.CreateDirectory(FilesFolder); await File.WriteAllBytesAsync(kept, data); } catch (Exception e) { Log.Write($"Social: couldn't keep the file: {e.Message}"); kept = ""; }
-        Add(code, new Line { At = DateTimeOffset.Now, Mine = true, Id = id, Kind = kind, Name = name, File = kept, Text = Label(kind, name) });
+        Add(code, new Line { At = DateTimeOffset.Now, Mine = true, Id = id, Kind = kind, Name = name, File = kept, Text = Label(kind, name), ReplyTo = reply });
         Changed?.Invoke();
         return null;
     }
@@ -557,11 +563,16 @@ public static class Social
                     // the file, through the window's own address for Dave's files (see DaveWindow); "" while it's coming in
                     ["url"] = l.File.Length > 0 ? "https://dave-files.example/" + Uri.EscapeDataString(Path.GetFileName(l.File)) : "",
                     ["mine_reaction"] = l.MyReaction, ["their_reaction"] = l.TheirReaction,
+                    ["reply"] = l.ReplyTo,
                     ["at"] = l.At.ToString(l.At.Date == DateTime.Today ? "HH:mm" : "d MMM HH:mm"),
                 }).ToArray()),
             });
         }
-        return new JsonObject { ["code"] = MyCode(s), ["name"] = MyName(s), ["friends"] = friends };
+        return new JsonObject
+        {
+            ["code"] = MyCode(s), ["name"] = MyName(s), ["friends"] = friends,
+            ["doubleClick"] = s.DoubleClickAction, ["doubleClickEmoji"] = s.DoubleClickEmoji, // what double-clicking a message does
+        };
     }
 
     // --- Sending and keeping the chats ---
