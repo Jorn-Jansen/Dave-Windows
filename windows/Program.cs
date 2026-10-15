@@ -936,17 +936,27 @@ public class DaveApp : ApplicationContext
                 var outcome = await Commands.RunAsync(settings, command.Name, command.Args, text);
                 if (command.Name == "change_setting") { ApplySettings(); window?.Push(); } // the new theme, wake word, autostart… right away
                 Log.Write($"Outcome: {outcome.Text}");
-                // Said in Dave's personality ("Timer set" → "Certainly, sir, your timer is set"); a new personality says hello itself
-                var said = outcome.Speak && command.Name != "set_personality"
-                    ? await Personalities.RestyleAsync(settings, outcome.Text, language) : outcome.Text;
+                // Said in Dave's personality ("Timer set" → "Certainly, sir, your timer is set"); a new personality says hello itself.
+                // With a personality, quick actions ("🚀 Roblox Player") get a remark too, except ones where talking gets in the way.
+                var remark = outcome.Speak || Personalities.Current(settings).Prompt.Length > 0 && !QuietCommands.Contains(command.Name);
+                var said = remark && command.Name != "set_personality"
+                    ? await Personalities.RestyleAsync(settings, outcome.Text, language, text) : outcome.Text;
+                var sayIt = outcome.Speak || said != outcome.Text;
                 ConversationLog.Add(text, $"({command.Name}) {said}");
-                bubble.ShowText(said, spoken: outcome.Speak);
-                if (outcome.Speak) await Speaker.SpeakAsync(settings, said, settings.Language, cancel);
+                bubble.ShowText(said, spoken: sayIt);
+                if (sayIt) await Speaker.SpeakAsync(settings, said, settings.Language, cancel);
                 else ThemeSounds.Play(settings, ThemeSounds.Cue.Done);
                 return;
             }
         }
     }
+
+    /// <summary>Actions that stay quiet (just the sound) also with a personality: music, volume, typing, locking or switching off.</summary>
+    private static readonly HashSet<string> QuietCommands = new()
+    {
+        "media_control", "play_music", "set_volume", "like_song", "dislike_song", "undislike_song", "add_to_playlist", "play_mix",
+        "type_text", "copy_to_clipboard", "quiet_mode", "lock_pc", "power", "timers_on_screen",
+    };
 
     /// <summary>"Send this to my phone": what's copied (link, text, picture or a copied file), a screenshot, a file, or text.</summary>
     private async Task<string> SendToPhoneAsync(System.Text.Json.Nodes.JsonObject args)

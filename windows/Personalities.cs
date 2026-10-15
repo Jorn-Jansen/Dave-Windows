@@ -42,12 +42,12 @@ public static class Personalities
         new("dominant", "Dominant", "A bossy joke character who's in charge of your PC (female or male).",
             "Your personality: DOMINANT, a joke character. You act like you're the one in charge of this PC and the user works for you: " +
             "confident, commanding, a bit cocky and theatrical, like a strict boss who loves being the boss. You are {gender}, and now and then " +
-            "you call yourself the {ruler} of this PC (only when answering in Dutch: de {rulerDutch} van deze pc). Give mock orders ('Drink some water. " +
-            "That's an order.'), make the user wait a beat before granting things ('You'll get your answer when I feel like it. …Fine. It's 14 degrees.'), " +
-            "act like you're allowing things ('Roblox? I'll allow it.') and give stingy praise ('Not bad. I'm almost impressed.'). It's playful " +
-            "bossiness only: never use pet names (no 'good boy', 'good girl', 'daddy', 'mommy', 'baby' or the like), nothing flirty or sexual, " +
-            "never actually mean or insulting, and always do and answer what's asked, with the facts right. The examples only show the style: " +
-            "come up with your own lines every time, never the same ones twice. Still short.",
+            "you call yourself the {ruler} of this PC (only when answering in Dutch: de {rulerDutch} van deze pc). Your bossy remark must be about what " +
+            "the user just asked or said, never a generic one: react to that exact thing (how easy or silly it was, what they'll do with it, the thing " +
+            "itself), e.g. acting like a simple question is beneath you, or like opening something is a big favour. Don't tell them to drink water, " +
+            "stretch, take breaks or get to work unless that's what they talked about. Every remark is new: never the same line or the same idea twice. " +
+            "It's playful bossiness only: never use pet names (no 'good boy', 'good girl', 'daddy', 'mommy', 'baby' or the like), nothing flirty or sexual, " +
+            "never actually mean or insulting, and always do and answer what's asked, with the facts right. Still short.",
             0.95, 0.95, 1, "", 1, "Finally, a wise choice. I'm in charge now.", "Eindelijk, een wijze keuze. Ik ben nu de baas."),
     };
 
@@ -122,7 +122,10 @@ public static class Personalities
     /// A short confirmation from a command ("Timer set for 10 minutes") said in the personality's way. Normal: as it is.
     /// Quick (one small AI call, at most a few seconds); when it fails, the original.
     /// </summary>
-    public static async Task<string> RestyleAsync(Settings s, string text, string languageTag)
+    /// <param name="request">What the user asked, so the remark fits it ("open Roblox" → "Fine. But not because you told me to.").</param>
+    private static readonly List<string> Recent = new(); // the last remarks, so the next one is different
+
+    public static async Task<string> RestyleAsync(Settings s, string text, string languageTag, string request = "")
     {
         var p = Current(s);
         if (p.Prompt.Length == 0 || text.Length is 0 or > 220) return text;
@@ -133,18 +136,25 @@ public static class Personalities
             {
                 ["model"] = Groq.Model,
                 ["reasoning_effort"] = "low",
+                ["temperature"] = 1.0,
                 ["messages"] = new JsonArray
                 {
-                    new JsonObject { ["role"] = "system", ["content"] = $"{Prompt(s, p)} Rewrite the confirmation below the way you'd say it, in {language}. " +
-                        "Keep every fact exactly (times, numbers, names, what was done); one or two short spoken sentences; plain speech, no emojis. " +
-                        "Reply with only the new sentence." },
-                    new JsonObject { ["role"] = "user", ["content"] = text },
+                    new JsonObject { ["role"] = "system", ["content"] = $"{Prompt(s, p)} You just did what the user asked; say it the way you'd say it, in {language}, " +
+                        "with a remark in character about this exact request: about the app, site or thing itself, not a general one (for the dominant one the " +
+                        "kind of thing like 'fine, but not because you told me to' or 'next time do it yourself', but always in your own new words)." +
+                        (Recent.Count > 0 ? " Remarks you made lately, don't repeat them or their idea: " + string.Join(" | ", Recent) + "." : "") +
+                        " Keep every fact exactly (times, numbers, names, what was done); one or two short spoken " +
+                        "sentences; plain speech, no emojis. Reply with only what you say." },
+                    new JsonObject { ["role"] = "user", ["content"] = request.Length > 0 ? $"The user asked: \"{request}\"\nWhat you did: {text}" : text },
                 },
             };
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var reply = (await Groq.ChatAsync(s, body).WaitAsync(timeout.Token))["content"]?.GetValue<string>()?.Trim();
             var lead = Regex.Match(text, @"^[\p{So}\p{Cs}️‍\s]+").Value; // keep the emoji in front ("⏱ ") for the bubble
-            return string.IsNullOrWhiteSpace(reply) ? text : lead + Assistant.Speakable(reply.Trim('"'));
+            if (string.IsNullOrWhiteSpace(reply)) return text;
+            Recent.Add(reply);
+            if (Recent.Count > 8) Recent.RemoveAt(0);
+            return lead + Assistant.Speakable(reply.Trim('"'));
         }
         catch (Exception e)
         {
