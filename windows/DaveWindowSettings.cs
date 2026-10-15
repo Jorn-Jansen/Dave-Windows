@@ -118,6 +118,7 @@ public sealed partial class DaveWindow
         ["values"] = ValuesOf(settings),
         ["presets"] = new JsonArray(settings.Presets.Select(p => (JsonNode)new JsonObject { ["id"] = p.Id, ["name"] = p.Name, ["values"] = p.Values.DeepClone() }).ToArray()),
         ["activePreset"] = settings.ActivePreset,
+        ["azureUsed"] = Azure.UsedThisMonth(settings), ["azureFree"] = Azure.FreeCharacters,
         ["phone"] = new JsonObject
         {
             ["code"] = settings.PhoneEnabled ? PhoneLink.CodeFor(settings) : "",

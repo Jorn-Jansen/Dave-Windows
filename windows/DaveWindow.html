@@ -221,6 +221,9 @@
   .memory .memtext:hover { background: var(--panel2); }
   .memedit { width: 100%; resize: vertical; background: var(--panel2); color: var(--text); border: 1px solid var(--violet); border-radius: 8px; padding: 8px 10px; font: inherit; }
   .memedit:focus { outline: none; }
+  .usage { flex: 1; height: 10px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); overflow: hidden; min-width: 120px; }
+  .usage i { display: block; height: 100%; background: var(--grad); }
+  .usage.high i { background: linear-gradient(90deg, #ff9d42, #ff4f6d); }
   .search-none { color: var(--dim); text-align: center; margin: 40px auto; }
 
   /* Social: friends on the left, the chat with one of them on the right (stacked on a narrow window) */
@@ -917,6 +920,13 @@ function renderSettings(d) {
   }, null, "azure");
   field("AzureVoice", "Main-language voice", c => { const s = el("select"); options(s, [], v.AzureVoice); c.append(button("▶", () => preview("azure", "main"))); return s; }, null, "azure");
   field("AzureSecondVoice", "Second-language voice", c => { const s = el("select"); options(s, [], v.AzureSecondVoice); c.append(button("▶", () => preview("azure", "second"))); return s; }, null, "azure");
+  field("AzureUsage", "Azure this month", c => {
+    const used = d.azureUsed || 0, free = d.azureFree || 500000, share = Math.min(100, used / free * 100);
+    const bar = el("div", "usage"), fill = el("i"); fill.style.width = share + "%"; if (share > 85) bar.classList.add("high");
+    bar.append(fill);
+    c.append(bar, el("span", "status", `${used.toLocaleString()} / ${free.toLocaleString()} (${Math.round(share)}%)`));
+    return null;
+  }, "Characters Dave had Azure say this month, counted by Dave on this PC; free is 500,000 a month, starting over on the 1st. When it runs out he uses the Windows voice. Also ask \"how much Azure do I have left?\".", "azure");
   field("SpeechRate", "Speaking speed", select("SpeechRate", SPEEDS));
 
   sec("Listening");

@@ -133,6 +133,8 @@ public static class Assistant
             new JsonObject { ["service"] = Enum("spotify", "groq") }, "service"),
         Tool("use_preset", "Switch to one of the user's setting presets (named sets of settings they made): 'switch to my gaming preset', " +
             "'use the study preset', 'gaming mode'.", new JsonObject { ["name"] = Str("The preset's name, as the user said it") }, "name"),
+        Tool("voice_usage", "How much of the free Azure voice the user has used or has left this month: 'how much Azure do I have left?', " +
+            "'how many characters have I used?'."),
         Tool("open_app", "Open a program.", new JsonObject { ["name"] = Str("e.g. 'Roblox Studio'") }, "name"),
         Tool("open_website", "Open a website or web search. To play a specific Roblox game ('open Steal an Egg on Roblox'): its game page " +
             "roblox.com/games/<placeId>/<Name> as url (look it up if needed); Dave then starts that game straight in the Roblox Player.",
@@ -330,6 +332,8 @@ public static class Assistant
         (Words("stopwatch", "stop watch", "stopwatch", "chronometer", "lap", "ronde", "how long has it been", "hoe lang is het", "hoe lang al",
                "how long since", "time it", "time me", "klok het", "carry on", "ga verder", "resume", "pause", "pauze"),
             new[] { "stopwatch", "timers_on_screen" }),
+        (Words("azure", "characters", "tekens", "karakters", "quota", "free voice", "gratis stem", "voice left", "stem over"),
+            new[] { "voice_usage" }),
         (Words("preset", "presets", "profile", "profiel", "mode", "modus"),
             new[] { "use_preset" }),
         (Words("connect", "verbind", "koppel", "set up", "setup", "instellen", "api key", "client id", "sleutel", "groq"),

@@ -56,6 +56,9 @@ public class Settings
     /// <summary>Setting presets (see Presets), and the one last put in use (its Id; "" = none).</summary>
     public List<Preset> Presets { get; set; } = new();
     public string ActivePreset { get; set; } = "";
+    /// <summary>How many characters Dave had Azure say this month (its free plan: 500,000 a month), and which month that is ("2026-10").</summary>
+    public long AzureCharacters { get; set; }
+    public string AzureMonth { get; set; } = "";
     /// <summary>For the dominant personality: "female" or "male" (how it talks about itself, and its voice).</summary>
     public string PersonalityGender { get; set; } = "female";
     public sealed class Preset

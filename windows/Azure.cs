@@ -48,7 +48,36 @@ public static class Azure
         using var response = await Http.SendAsync(request, cancel);
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"Azure said {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync(cancel)}");
+        Count(s, text.Length);
         return await response.Content.ReadAsByteArrayAsync(cancel);
+    }
+
+    /// <summary>The free plan: this many characters a month.</summary>
+    public const long FreeCharacters = 500_000;
+
+    /// <summary>Keeps count of what Azure said this month (a new month starts at 0).</summary>
+    private static void Count(Settings s, int characters)
+    {
+        var month = DateTime.Now.ToString("yyyy-MM");
+        if (s.AzureMonth != month) { s.AzureMonth = month; s.AzureCharacters = 0; }
+        s.AzureCharacters += characters;
+        s.Save();
+    }
+
+    /// <summary>Used this month (0 when the count is from another month).</summary>
+    public static long UsedThisMonth(Settings s) => s.AzureMonth == DateTime.Now.ToString("yyyy-MM") ? s.AzureCharacters : 0;
+
+    /// <summary>"How much Azure do I have left?": the count, for saying it.</summary>
+    public static string Usage(Settings s)
+    {
+        if (!IsConfigured(s)) return s.Say("You're not using the Azure voices: there's no Azure key in my settings.", "Je gebruikt de Azure-stemmen niet: er staat geen Azure-sleutel in mijn instellingen.");
+        var used = UsedThisMonth(s);
+        var left = Math.Max(0, FreeCharacters - used);
+        var nl = System.Globalization.CultureInfo.GetCultureInfo("nl-NL");
+        var en = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+        var percent = (int)Math.Round(100.0 * used / FreeCharacters);
+        return s.Say($"This month I've used about {used.ToString("N0", en)} of the {FreeCharacters.ToString("N0", en)} free Azure characters ({percent}%), so about {left.ToString("N0", en)} are left. That's roughly {left / 100:N0} more answers. It starts over on the 1st.",
+                     $"Deze maand heb ik ongeveer {used.ToString("N0", nl)} van de {FreeCharacters.ToString("N0", nl)} gratis Azure-tekens gebruikt ({percent}%), dus er zijn er nog ongeveer {left.ToString("N0", nl)} over. Dat is grofweg {(left / 100).ToString("N0", nl)} antwoorden. Op de 1e begint het opnieuw.");
     }
 
     private static readonly Dictionary<string, HashSet<string>> Styles = new();
