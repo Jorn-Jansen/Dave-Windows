@@ -145,6 +145,41 @@ public static class Personalities
     /// <param name="request">What the user asked, so the remark fits it ("open Roblox" → "Fine. But not because you told me to.").</param>
     private static readonly List<string> Recent = new(); // the last remarks, so the next one is different
 
+    /// <summary>
+    /// Several things done at once ("Roblox open", "volume 60%", "timer 30 min"): one short sentence about all of them, in
+    /// the personality's way when there is one. When that doesn't work: the confirmations one after the other.
+    /// </summary>
+    public static async Task<string> SayAllAsync(Settings s, List<string> done, string languageTag, string request)
+    {
+        var plain = string.Join(". ", done.Select(d => Speaker.WithoutLinks(System.Text.RegularExpressions.Regex.Replace(d, @"^[\p{So}\p{Cs}\uFE0F\u200D\s]+", "")).TrimEnd('.')))+ ".";
+        try
+        {
+            var language = CultureInfo.GetCultureInfo(languageTag).EnglishName.Split(' ')[0];
+            var p = Current(s);
+            var who = p.Prompt.Length > 0 ? Prompt(s, p) + " " : "You are a friendly voice assistant. ";
+            var body = new JsonObject
+            {
+                ["model"] = Groq.Model, ["reasoning_effort"] = "low", ["temperature"] = 0.9,
+                ["messages"] = new JsonArray
+                {
+                    new JsonObject { ["role"] = "system", ["content"] = $"{who}You just did several things the user asked for in one go. Say in {language}, in one or two " +
+                        "short spoken sentences, that it's all done, mentioning each thing briefly with its facts exactly (times, numbers, names). " +
+                        (p.Prompt.Length > 0 ? "Add a remark in character about this request, in new words. " : "") +
+                        "No web addresses, no emojis. Reply with only what you say." },
+                    new JsonObject { ["role"] = "user", ["content"] = $"The user asked: \"{request}\"\nWhat you did: {plain}" },
+                },
+            };
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var reply = (await Groq.ChatAsync(s, body).WaitAsync(timeout.Token))["content"]?.GetValue<string>()?.Trim();
+            return string.IsNullOrWhiteSpace(reply) ? plain : Assistant.Speakable(reply.Trim('"'));
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Couldn't say it all in one: {e.Message}");
+            return plain;
+        }
+    }
+
     public static async Task<string> RestyleAsync(Settings s, string text, string languageTag, string request = "")
     {
         var p = Current(s);

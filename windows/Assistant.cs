@@ -22,6 +22,8 @@ public static class Assistant
         asks about their notifications or messages, wants something done later ("lock my PC in 10 minutes"), wants help with the game they're playing,
         or tells you something to remember ("onthoud dat…", "remember that…"),
         use the matching command instead of answering.
+        When the user asks for two or more separate things in one go ("open Roblox, turn the music up and set a timer for 30 minutes",
+        "pause the music and lock my pc"), always use do_several with each request on its own, never just one of them. "Undo that" / "doe dat terug" is the undo command.
         Use what you remember about the user naturally when it's relevant.
         When a spoken answer invites a reply (a question back, a quiz question, "shall I…?"), end it with a question mark;
         the app then keeps listening so the user can answer without pressing the shortcut.
@@ -39,7 +41,8 @@ public static class Assistant
 
     public abstract record Result;
     public record Speak(string Text) : Result;
-    public record Command(string Name, JsonObject Args, string Id) : Result;
+    /// <param name="Also">More commands from the same request ("open Roblox and turn the music up"), done after this one.</param>
+    public record Command(string Name, JsonObject Args, string Id, List<Command>? Also = null) : Result;
 
     private static JsonObject Tool(string name, string description, JsonObject? properties = null, params string[] required) => new()
     {
@@ -135,6 +138,12 @@ public static class Assistant
             "'use the study preset', 'gaming mode'.", new JsonObject { ["name"] = Str("The preset's name, as the user said it") }, "name"),
         Tool("voice_usage", "How much of the Azure voice the user has used (and has left, or what it costs on a paid plan) this month: " +
             "'how much Azure do I have left?', 'how many characters have I used?', 'what does Azure cost me?'."),
+        Tool(Several, "The user asks for SEVERAL separate things in one go ('open Roblox, turn the volume to 40 and set a timer for 30 minutes', " +
+            "'pause the music and lock my pc'): split it into the separate requests, each one written as the user would ask it on its own. " +
+            "Not for one request with several details ('a timer for 5 minutes for the pizza' is one).",
+            new JsonObject { ["requests"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "Each request on its own, in the user's language" } },
+            "requests"),
+        Tool("undo", "Take back what you just did (all of it when you did several things): 'undo that', 'revert that', 'doe dat terug', 'zet het terug'."),
         Tool("open_app", "Open a program.", new JsonObject { ["name"] = Str("e.g. 'Roblox Studio'") }, "name"),
         Tool("open_website", "Open a website or web search. To play a specific Roblox game ('open Steal an Egg on Roblox'): its game page " +
             "roblox.com/games/<placeId>/<Name> as url (look it up if needed); Dave then starts that game straight in the Roblox Player.",
@@ -222,11 +231,12 @@ public static class Assistant
                 ["from_days_ago"] = Int("0 = today, 1 = yesterday"),
                 ["to_days_ago"] = Int("0 = today"),
             }, "about", "from_days_ago", "to_days_ago"),
-        Tool("watch_for", "Tell the user when something happens ('tell me when Roblox closes', 'when my download is done', 'if my GPU goes above 80').",
+        Tool("watch_for", "Tell the user when something happens ('tell me when Roblox closes', 'when my download is done' (browser and Steam downloads), " +
+            "'tell me when my Steam game is downloaded', 'if my GPU goes above 80').",
             new JsonObject
             {
                 ["what"] = Enum("program_closes", "program_starts", "download_done", "gpu_temp_above", "gpu_use_above", "cpu_use_above", "ram_use_above", "battery_below"),
-                ["program"] = Str("For program_*: e.g. 'Roblox'"),
+                ["program"] = Str("For program_*: e.g. 'Roblox'. For download_done: 'steam' or 'browser' if they said which, else empty"),
                 ["number"] = new JsonObject { ["type"] = "number", ["description"] = "Degrees for gpu_temp_above, otherwise percent" },
                 ["message"] = Str("What to say then, short, in the user's language"),
             }, "what", "message"),
@@ -334,6 +344,8 @@ public static class Assistant
             new[] { "stopwatch", "timers_on_screen" }),
         (Words("azure", "characters", "tekens", "karakters", "quota", "free voice", "gratis stem", "voice left", "stem over"),
             new[] { "voice_usage" }),
+        (Words("undo", "revert", "take that back", "terugdraaien", "doe dat terug", "zet het terug", "ongedaan", "draai dat terug", "put it back"),
+            new[] { "undo" }),
         (Words("preset", "presets", "profile", "profiel", "mode", "modus"),
             new[] { "use_preset" }),
         (Words("connect", "verbind", "koppel", "set up", "setup", "instellen", "api key", "client id", "sleutel", "groq"),
@@ -408,6 +420,7 @@ public static class Assistant
 
     /// <summary>Not a real command: lets the AI ask for all commands when the ones it got don't fit.</summary>
     private const string MoreCommands = "more_commands";
+    private const string Several = "do_several";
 
     /// <summary>
     /// The commands for [text]: the groups its words fit, the ones used earlier in this conversation (for follow-ups like
@@ -419,6 +432,7 @@ public static class Assistant
         var wanted = new HashSet<string>(Groups.Where(g => g.words.IsMatch(text)).SelectMany(g => g.tools));
         if (Reminders.TryFindLater(text, out _, out _, out _)) wanted.Add("set_reminder"); // "… at 23:00": something for later
         if (Social.Mentioned(text)) { wanted.Add("send_message"); wanted.Add("read_messages"); } // a friend's name
+        if (Regex.IsMatch(text, @"\b(and|en|then|daarna|dan|also|ook|plus)\b|,", RegexOptions.IgnoreCase)) wanted.Add(Several); // maybe more than one thing
         foreach (var turn in History) // (also: the AI may not accept earlier calls to commands it doesn't get now)
             foreach (var m in turn)
                 if (m["tool_calls"] is JsonArray calls)
@@ -509,6 +523,10 @@ public static class Assistant
 
     public static async Task<Result> AskAsync(Settings settings, string text, string answerLanguage, string? position)
     {
+        // "Undo that": always the undo command (the AI sometimes did the opposite itself instead, like "play" after a pause)
+        if (Regex.IsMatch(text.Trim(), @"^(please\s+)?(undo|revert|take (that|it) back|put it back)\b|^(doe|draai|zet|maak)\s+(dat|het|dit)\s+(terug|ongedaan|weer terug)|^ongedaan maken",
+                RegexOptions.IgnoreCase))
+            return new Command("undo", new JsonObject(), $"call_{DateTime.Now.Ticks}");
         if (DateTime.Now - lastActivity > TimeSpan.FromMinutes(10)) History.Clear();
         lastActivity = DateTime.Now;
 
@@ -577,11 +595,29 @@ public static class Assistant
         }
 
         Result result;
-        var call = message["tool_calls"]?[0];
-        if (call?["function"] is JsonObject function)
+        // Every command it picked (several when the user asked for several things at once)
+        var picked = (message["tool_calls"] as JsonArray ?? new JsonArray()).OfType<JsonObject>()
+            .Where(c => c["function"] is JsonObject f && f["name"]?.GetValue<string>() is { } n && n != MoreCommands)
+            .Select((c, i) => new Command(c["function"]!["name"]!.GetValue<string>(), TryParse(c["function"]!["arguments"]?.GetValue<string>()),
+                c["id"]?.GetValue<string>() ?? $"call_{DateTime.Now.Ticks}_{i}"))
+            .Take(6).ToList();
+        if (picked.FirstOrDefault(c => c.Name == Several) is { } several
+            && (several.Args["requests"] as JsonArray)?.Select(r => r?.ToString()?.Trim() ?? "").Where(r => r.Length > 0).Take(6).ToList() is { Count: > 1 } requests)
         {
-            var args = TryParse(function["arguments"]?.GetValue<string>());
-            result = new Command(function["name"]!.GetValue<string>(), args, call["id"]?.GetValue<string>() ?? $"call_{DateTime.Now.Ticks}");
+            Log.Write($"Several things at once: {string.Join(" | ", requests)}");
+            var each = new List<Command>();
+            foreach (var request in requests) // one after the other, as if asked one by one (each remembered for follow-ups)
+                if (await AskAsync(settings, request, answerLanguage, position) is Command c) each.Add(c);
+                else if (History.Count > 0 && History[^1].LastOrDefault(m => m["role"]?.GetValue<string>() == "assistant")?["content"]?.ToString() is { Length: > 0 } said)
+                    each.Add(new Command("say", new JsonObject { ["text"] = said }, $"call_{DateTime.Now.Ticks}"));
+            if (each.Count == 0) return new Speak(settings.Say("Sorry, I didn't get what to do.", "Sorry, ik snapte niet wat ik moest doen."));
+            return each[0] with { Also = each.Count > 1 ? each.Skip(1).ToList() : null }; // (each one is in the history already)
+        }
+        picked.RemoveAll(c => c.Name == Several);
+        if (picked.Count > 0)
+        {
+            result = picked[0] with { Also = picked.Count > 1 ? picked.Skip(1).ToList() : null };
+            if (picked.Count > 1) Log.Write($"Several commands at once: {string.Join(", ", picked.Select(c => c.Name))}");
         }
         else
         {
@@ -594,20 +630,15 @@ public static class Assistant
         History.Add(result switch
         {
             Speak s => new List<JsonObject> { Message("user", text), Message("assistant", s.Text) },
-            Command c => new List<JsonObject>
-            {
-                Message("user", text),
-                new()
+            Command c => new[] { Message("user", text), new JsonObject
                 {
                     ["role"] = "assistant",
-                    ["tool_calls"] = new JsonArray(new JsonObject
+                    ["tool_calls"] = new JsonArray(new[] { c }.Concat(c.Also ?? new()).Select(x => (JsonNode)new JsonObject
                     {
-                        ["id"] = c.Id, ["type"] = "function",
-                        ["function"] = new JsonObject { ["name"] = c.Name, ["arguments"] = c.Args.ToJsonString() },
-                    }),
-                },
-                new() { ["role"] = "tool", ["tool_call_id"] = c.Id, ["content"] = "Done." },
-            },
+                        ["id"] = x.Id, ["type"] = "function",
+                        ["function"] = new JsonObject { ["name"] = x.Name, ["arguments"] = x.Args.ToJsonString() },
+                    }).ToArray()),
+                } }.Concat(new[] { c }.Concat(c.Also ?? new()).Select(x => new JsonObject { ["role"] = "tool", ["tool_call_id"] = x.Id, ["content"] = "Done." })).ToList(),
             _ => new List<JsonObject>(),
         });
         while (History.Count > 10) History.RemoveAt(0);

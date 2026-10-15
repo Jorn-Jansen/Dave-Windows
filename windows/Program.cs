@@ -119,6 +119,7 @@ public class DaveApp : ApplicationContext
         messageCards.Clicked += code => Window().OpenChat(code); // click a message: that chat in Dave's window
         connect = new ConnectHelper(settings);
         Presets.Applied += () => { ApplySettings(); window?.Push(); }; // "switch to my gaming preset"
+        Undo.SettingsUndone += () => { ApplySettings(); window?.Push(); };
         connect.Say += text => _ = TellAsync(text);
         connect.Status += (service, status) => window?.SetupStatus(service, status);
         connect.Filled += (key, value) => { window?.SetupFilled(key, value); if (key == "GroqKey") ApplySettings(); };
@@ -702,6 +703,43 @@ public class DaveApp : ApplicationContext
                 }
 
                 var command = (Assistant.Command)result;
+                var undoSteps = new List<Undo.Step>(); // what "undo that" takes back afterwards
+                // Several things at once: the plain ones done here first; one that answers or needs more (a question about the
+                // PC, the music quiz…) then goes on as usual. All of it shown and said together.
+                if (command.Also is { Count: > 0 } also)
+                {
+                    var everything = new[] { command }.Concat(also).ToList();
+                    var main = everything.FirstOrDefault(c => !Batchable(c));
+                    var done = new List<(Assistant.Command c, Commands.Outcome o)>();
+                    foreach (var c in everything.Where(Batchable))
+                    {
+                        Watchdog.Step = $"command {c.Name}";
+                        if (c.Name == "say") { done.Add((c, new Commands.Outcome(c.Args["text"]?.ToString() ?? "", true))); continue; } // an answer among them
+                        var step = Undo.Before(settings, c.Name, c.Args);
+                        var o = await Commands.RunAsync(settings, c.Name, c.Args, text);
+                        Undo.After(settings, step, c.Args, o);
+                        undoSteps.Add(step);
+                        if (c.Name is "change_setting" or "set_personality" or "use_preset") { ApplySettings(); window?.Push(); }
+                        Log.Write($"Outcome ({c.Name}): {o.Text}");
+                        done.Add((c, o));
+                    }
+                    Undo.Remember(undoSteps);
+                    if (main == null)
+                    {
+                        var all = string.Join("\n", done.Select(d => d.o.Text));
+                        var speakAll = done.Any(d => d.o.Speak) || Personalities.Current(settings).Prompt.Length > 0;
+                        if (speakAll) { bubble.ShowText(all); ThemeSounds.Play(settings, ThemeSounds.Cue.Done); }
+                        // One sentence about all of it (in the personality's way when there is one)
+                        var together = speakAll ? await Personalities.SayAllAsync(settings, done.Select(d => d.o.Text).ToList(), language, text) : all;
+                        ConversationLog.Add(text, $"({string.Join(", ", done.Select(d => d.c.Name))}) {together}");
+                        bubble.ShowText(together, spoken: speakAll);
+                        if (speakAll) await Speaker.SpeakAsync(settings, together, settings.Language, cancel);
+                        else ThemeSounds.Play(settings, ThemeSounds.Cue.Done);
+                        return;
+                    }
+                    if (done.Count > 0) bubble.ShowText(string.Join("\n", done.Select(d => d.o.Text)));
+                    command = main;
+                }
                 // "I copied a picture, extract the text and copy it": the AI sometimes picks "copy this text" with a made-up
                 // placeholder ("<extracted text>") instead of looking at what was copied. Then do the clipboard task properly.
                 if (command.Name == "copy_to_clipboard")
@@ -932,8 +970,21 @@ public class DaveApp : ApplicationContext
                     await Speaker.SpeakAsync(settings, sent, settings.Language, cancel);
                     return;
                 }
+                if (command.Name == "undo") // "undo that": what Dave did last, taken back
+                {
+                    var undone = await Undo.RunAsync(settings);
+                    ApplySettings(); window?.Push();
+                    ConversationLog.Add(text, $"(undo) {undone}");
+                    bubble.ShowText("↩ " + undone, spoken: true);
+                    await Speaker.SpeakAsync(settings, undone, settings.Language, cancel);
+                    return;
+                }
                 Watchdog.Step = $"command {command.Name}";
+                var undoStep = Undo.Before(settings, command.Name, command.Args);
                 var outcome = await Commands.RunAsync(settings, command.Name, command.Args, text);
+                Undo.After(settings, undoStep, command.Args, outcome);
+                undoSteps.Add(undoStep);
+                Undo.Remember(undoSteps);
                 if (command.Name == "change_setting") { ApplySettings(); window?.Push(); } // the new theme, wake word, autostart… right away
                 Log.Write($"Outcome: {outcome.Text}");
                 // Said in Dave's personality ("Timer set" → "Certainly, sir, your timer is set"); a new personality says hello itself.
@@ -951,6 +1002,17 @@ public class DaveApp : ApplicationContext
             }
         }
     }
+
+    /// <summary>
+    /// Commands that can be done together with others in one go (they just do something and say what): not the ones that
+    /// answer a question, look at something, or talk back and forth.
+    /// </summary>
+    private static bool Batchable(Assistant.Command c) =>
+        c.Name is not ("start_music_quiz" or "look_at_screen" or "use_clipboard" or "pc_stats" or "performance_check" or "read_messages" or "update_dave"
+            or "recall_conversation" or "screen_time" or "internet_speed" or "read_file" or "read_page" or "read_notifications" or "game_help"
+            or "where_left_off" or "send_to_phone" or "calendar" or "control_apps" or "undo")
+        && !(c.Name == "send_message" && (c.Args["voice"] is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<bool>(out var isVoice) && isVoice
+                                          || c.Args["attach"]?.ToString() is "screenshot" or "clipboard" or "file"));
 
     /// <summary>Actions that stay quiet (just the sound) also with a personality: music, volume, typing, locking or switching off.</summary>
     private static readonly HashSet<string> QuietCommands = new()

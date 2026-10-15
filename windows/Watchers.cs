@@ -17,7 +17,7 @@ public static class Watchers
         {
             "program_closes" => $"when {Target} closes",
             "program_starts" => $"when {Target} starts",
-            "download_done" => "when the download in Downloads is done",
+            "download_done" => Target == "steam" ? "when the Steam download is done" : Target == "browser" ? "when the download in Downloads is done" : "when your download is done",
             "gpu_temp_above" => $"when the graphics card is above {Threshold:0} °C",
             "gpu_use_above" => $"when the graphics card is over {Threshold:0}% busy",
             "cpu_use_above" => $"when the processor is over {Threshold:0}% busy",
@@ -63,8 +63,17 @@ public static class Watchers
                 return s.Say($"{target} isn't open right now.", $"{target} staat nu niet open.");
             case "program_starts" when IsRunning(target):
                 return s.Say($"{target} is already open.", $"{target} staat al open.");
-            case "download_done" when PartialFiles().Count == 0:
-                return s.Say("I don't see a download in progress in your Downloads folder.", "Ik zie geen download bezig in je Downloads-map.");
+            case "download_done":
+                target = target.ToLowerInvariant().Contains("steam") ? "steam" : target.ToLowerInvariant() is "browser" or "chrome" or "edge" or "brave" or "firefox" ? "browser" : "";
+                var browser = target != "steam" && PartialFiles().Count > 0;
+                var steam = target != "browser" && SteamDownloads().Count > 0;
+                if (!browser && !steam)
+                    return target == "steam" ? s.Say("I don't see a Steam download going on.", "Ik zie geen Steam-download bezig.")
+                         : target == "browser" ? s.Say("I don't see a download in progress in your Downloads folder.", "Ik zie geen download bezig in je Downloads-map.")
+                         : s.Say("I don't see a download going on (in your Downloads folder or Steam).", "Ik zie geen download bezig (in je Downloads-map of Steam).");
+                if (target.Length == 0) target = browser && steam ? "" : browser ? "browser" : "steam"; // just the one that's going on
+                watch = watch with { Target = target };
+                break;
             case "gpu_temp_above" or "gpu_use_above" when Gpu() == null:
                 return s.Say("I can only read NVIDIA graphics cards, and I can't find one.", "Ik kan alleen NVIDIA-videokaarten uitlezen, en die vind ik niet.");
             case "battery_below" when SystemInformation.PowerStatus.BatteryChargeStatus == BatteryChargeStatus.NoSystemBattery:
@@ -118,7 +127,7 @@ public static class Watchers
                     {
                         "program_closes" => !IsRunning(w.Target),
                         "program_starts" => IsRunning(w.Target),
-                        "download_done" => PartialFiles().Count == 0,
+                        "download_done" => (w.Target == "steam" || PartialFiles().Count == 0) && (w.Target == "browser" || SteamDownloads().Count == 0),
                         "gpu_temp_above" => gpu?.temp > w.Threshold,
                         "gpu_use_above" => gpu?.use > w.Threshold,
                         "cpu_use_above" => cpu > w.Threshold,
@@ -136,7 +145,7 @@ public static class Watchers
                 lock (Sync) Active.Remove(w);
                 Streak.Remove(w.Id);
                 Log.Write($"Watch triggered: {w.Describe()}");
-                Triggered?.Invoke(w.Message);
+                Triggered?.Invoke(w.Kind == "download_done" && Finished(w) is { } what ? $"{w.Message} ({what})" : w.Message);
             }
         }
     }
@@ -184,6 +193,63 @@ public static class Watchers
 
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
 
+    /// <summary>Steam games downloading now: the folders in each library's steamapps\downloading (gone when it's done).</summary>
+    private static List<string> SteamDownloads()
+    {
+        var games = new List<string>();
+        foreach (var library in SteamLibraries())
+        {
+            var downloading = Path.Combine(library, "steamapps", "downloading");
+            if (!Directory.Exists(downloading)) continue;
+            foreach (var dir in Directory.EnumerateDirectories(downloading))
+                if (Directory.EnumerateFileSystemEntries(dir).Any()) games.Add(Path.GetFileName(dir)); // the game's app id
+        }
+        return games;
+    }
+
+    /// <summary>Where Steam keeps games: its own folder and the libraries in libraryfolders.vdf.</summary>
+    private static List<string> SteamLibraries()
+    {
+        var libraries = new List<string>();
+        try
+        {
+            if (Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam")?.GetValue("SteamPath") is not string steam) return libraries;
+            steam = steam.Replace('/', '\\');
+            libraries.Add(steam);
+            var vdf = Path.Combine(steam, "steamapps", "libraryfolders.vdf");
+            if (File.Exists(vdf))
+                foreach (Match m in Regex.Matches(File.ReadAllText(vdf), "\"path\"\\s+\"([^\"]+)\""))
+                    libraries.Add(m.Groups[1].Value.Replace(@"\\", @"\"));
+        }
+        catch (Exception e) { Log.Write($"Couldn't find Steam's libraries: {e.Message}"); }
+        return libraries.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>What finished, for the message: the newest file in Downloads since the watch began, or the Steam game's name.</summary>
+    private static string? Finished(Watch w)
+    {
+        try
+        {
+            if (w.Target != "steam")
+            {
+                var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                var file = new DirectoryInfo(downloads).EnumerateFiles()
+                    .Where(f => f.LastWriteTime >= w.Created.AddMinutes(-1) && !PartialDownloads.Contains(f.Extension.ToLowerInvariant()))
+                    .OrderByDescending(f => f.LastWriteTime).FirstOrDefault();
+                if (file != null) return file.Name;
+            }
+            foreach (var library in SteamLibraries())
+            {
+                var manifests = new DirectoryInfo(Path.Combine(library, "steamapps")).EnumerateFiles("appmanifest_*.acf")
+                    .Where(f => f.LastWriteTime >= w.Created).OrderByDescending(f => f.LastWriteTime);
+                foreach (var manifest in manifests)
+                    if (Regex.Match(File.ReadAllText(manifest.FullName), "\"name\"\\s+\"([^\"]+)\"") is { Success: true } name) return name.Groups[1].Value;
+            }
+        }
+        catch (Exception e) { Log.Write($"Couldn't tell what finished downloading: {e.Message}"); }
+        return null;
+    }
+
     private static List<string> PartialFiles()
     {
         var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
@@ -228,7 +294,7 @@ public static class Watchers
     {
         "program_closes" => $"als {w.Target} sluit",
         "program_starts" => $"als {w.Target} opstart",
-        "download_done" => "als de download klaar is",
+        "download_done" => w.Target == "steam" ? "als de Steam-download klaar is" : "als de download klaar is",
         "gpu_temp_above" => $"als je videokaart boven de {w.Threshold:0} graden komt",
         "gpu_use_above" => $"als je videokaart boven de {w.Threshold:0} procent komt",
         "cpu_use_above" => $"als je processor boven de {w.Threshold:0} procent komt",

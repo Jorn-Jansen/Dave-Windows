@@ -1085,6 +1085,9 @@ public static class Social
         return chats ??= new();
     }
 
+    /// <summary>The id of the last message you sent to a friend (for "undo that").</summary>
+    public static string? LastSentId(string code) => Lines(code).LastOrDefault(l => l.Mine && l.Id.Length > 0)?.Id;
+
     private static List<Line> Lines(string code)
     {
         lock (Sync) return Chats().TryGetValue(code, out var lines) ? lines.ToList() : new List<Line>();
