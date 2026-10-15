@@ -195,9 +195,18 @@
   .ov-head { display: flex; align-items: center; gap: 14px; padding: 18px 24px; border-bottom: 1px solid var(--line); flex: none; }
   .ov-head h1 { margin: 0; font-size: 22px; font-weight: 600; flex: 1; white-space: nowrap; }
   .hint-top { color: var(--dim); max-width: 980px; margin: 0 auto 16px; }
-  .stabs { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 3px; }
-  .stabs button { border: 0; background: transparent; color: var(--dim); padding: 7px 16px; border-radius: 8px; font: inherit; cursor: pointer; }
+  .ov-tools { display: flex; align-items: center; gap: 12px; padding: 12px 24px; border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; }
+  .stabs { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 3px; flex-wrap: wrap; }
+  .stabs button { display: flex; gap: 7px; align-items: center; border: 0; background: transparent; color: var(--dim); padding: 7px 14px; border-radius: 8px; font: inherit; cursor: pointer; }
+  .stabs button:hover { color: var(--text); }
   .stabs button.on { background: var(--grad); color: #fff; }
+  .stabs.searching button.on { background: transparent; color: var(--dim); }
+  .ssearch { flex: 1; min-width: 180px; max-width: 320px; margin-left: auto; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font: inherit; }
+  .ssearch:focus { outline: none; border-color: var(--violet); }
+  .pane.hidden, .field.nomatch, .section.nomatch, .pane-themes.nomatch { display: none; }
+  .pane-themes .hint-top { margin: 0 0 12px; font-size: 13px; }
+  .pane-themes .themes { margin-bottom: 8px; }
+  .search-none { color: var(--dim); text-align: center; margin: 40px auto; }
 
   /* Social: friends on the left, the chat with one of them on the right (stacked on a narrow window) */
   .social { flex: 1; min-height: 0; display: flex; }
@@ -527,11 +536,19 @@
 <div class="overlay" id="settingsPanel">
   <div class="ov-head">
     <h1>⚙️ <span data-t="settings"></span></h1>
-    <div class="stabs"><button class="on" data-stab="settingsBody" data-t="general"></button><button data-stab="themeBody" data-t="theme"></button></div>
     <button class="close" id="settingsClose" title="Close without saving">✕</button>
   </div>
+  <div class="ov-tools">
+    <div class="stabs">
+      <button class="on" data-stab="general"><span>⚙️</span><span data-t="general"></span></button>
+      <button data-stab="voice"><span>🎙️</span><span data-t="voiceTab"></span></button>
+      <button data-stab="look"><span>🎨</span><span data-t="look"></span></button>
+      <button data-stab="social"><span>👥</span><span data-t="social"></span></button>
+      <button data-stab="connections"><span>🔗</span><span data-t="connections"></span></button>
+    </div>
+    <input id="settingsSearch" class="ssearch" type="search" spellcheck="false">
+  </div>
   <div class="ov-body" id="settingsBody"></div>
-  <div class="ov-body hidden" id="themeBody"></div>
   <div class="ov-foot"><button class="btn" id="settingsCancel" data-t="cancel"></button><button class="save" id="settingsSave" data-t="save"></button></div>
 </div>
 <div class="overlay" id="socialPanel">
@@ -559,6 +576,7 @@ const T = {
     allow: "Allow again", noHistory: "No songs yet", noWatching: "Dave isn't watching anything",
     noWatchingHint: "Say “tell me when Discord closes”.", stopAll: "Stop watching all", next: "next",
     save: "Save", cancel: "Cancel", general: "General", theme: "Theme", current: "current",
+    voiceTab: "Voice", look: "Look", connections: "Connections", searchSettings: "Search settings…", noSetting: "No setting matches that.",
     themeHint: "Changes the bubble, the orb, the glow around your screen and this window. Click one to try it; Save to keep it.",
     social: "Social", yourCode: "Your friend code", copy: "Copy", addFriend: "Paste a friend's code…", requests: "Friend requests",
     wantsFriends: "wants to be friends", accept: "Accept", decline: "Decline", waiting: "Waiting for them to accept", friends: "Friends",
@@ -590,6 +608,7 @@ const T = {
     allow: "Weer toestaan", noHistory: "Nog geen nummers", noWatching: "Dave let nergens op",
     noWatchingHint: "Zeg “laat het me weten als Discord sluit”.", stopAll: "Overal mee stoppen", next: "volgende",
     save: "Opslaan", cancel: "Annuleren", general: "Algemeen", theme: "Thema", current: "huidig",
+    voiceTab: "Stem", look: "Uiterlijk", connections: "Koppelingen", searchSettings: "Zoek een instelling…", noSetting: "Geen instelling gevonden.",
     themeHint: "Verandert de bubbel, de bol, de gloed rond je scherm en dit venster. Klik er een om te proberen; Opslaan om te houden.",
     social: "Sociaal", yourCode: "Jouw vriendcode", copy: "Kopiëren", addFriend: "Plak de code van een vriend…", requests: "Vriendverzoeken",
     wantsFriends: "wil vrienden worden", accept: "Accepteren", decline: "Weigeren", waiting: "Wacht tot die accepteert", friends: "Vrienden",
@@ -644,16 +663,47 @@ const SPEEDS = [["0.85", "Slow"], ["1", "Normal"], ["1.15", "A bit faster"], ["1
 const MODELS = { openai: "gpt-4.1-mini", openrouter: "openai/gpt-oss-120b", custom: "model name" };
 let sdata = null, form = {};
 
-function openSettings() { $("settingsPanel").classList.add("show"); $("settingsBody").textContent = ""; $("themeBody").textContent = ""; settingsTab("settingsBody"); send({ type: "getSettings" }); }
+let settingsPane = "general"; // the tab you were on (stays while Dave runs)
+function openSettings() { $("settingsPanel").classList.add("show"); $("settingsBody").textContent = ""; $("settingsSearch").value = ""; send({ type: "getSettings" }); }
 function closeSettings() { // ✕ / Cancel: nothing is saved, and a theme you were trying goes back to the saved one
   $("settingsPanel").classList.remove("show"); sdata = null;
   if (state) applyTheme(state.theme);
 }
 function settingsTab(id) {
+  if (id === "themeBody") id = "look"; // (older callers)
+  if (id === "settingsBody") id = "general";
+  settingsPane = id;
+  if ($("settingsSearch").value) { $("settingsSearch").value = ""; searchSettings(); }
   document.querySelectorAll("[data-stab]").forEach(b => b.classList.toggle("on", b.dataset.stab === id));
-  for (const body of ["settingsBody", "themeBody"]) $(body).classList.toggle("hidden", body !== id);
+  document.querySelectorAll("#settingsBody .pane").forEach(p => p.classList.toggle("hidden", p.dataset.pane !== id));
+  $("settingsBody").scrollTop = 0;
 }
 document.querySelectorAll("[data-stab]").forEach(b => b.onclick = () => settingsTab(b.dataset.stab));
+
+/* Search: every setting whose name, explanation or section has the words, from all tabs at once */
+function searchSettings() {
+  const q = $("settingsSearch").value.trim().toLowerCase(), body = $("settingsBody");
+  $("settingsBody").querySelectorAll(".search-none").forEach(x => x.remove());
+  document.querySelector(".stabs").classList.toggle("searching", !!q);
+  let found = 0;
+  for (const pane of body.querySelectorAll(".pane")) {
+    pane.classList.toggle("hidden", q ? false : pane.dataset.pane !== settingsPane);
+    for (const sec of pane.querySelectorAll(".section, .pane-themes")) {
+      const title = ((sec.querySelector("h3") || {}).textContent || "") + " " + (sec.dataset.words || "");
+      const whole = !!q && title.toLowerCase().includes(q);
+      let any = whole;
+      for (const f of sec.querySelectorAll(".field")) {
+        const hit = !q || whole || f.textContent.toLowerCase().includes(q) || (f.dataset.words || "").includes(q);
+        f.classList.toggle("nomatch", !hit);
+        if (hit && !f.classList.contains("hidden")) any = true;
+      }
+      sec.classList.toggle("nomatch", !!q && !any);
+      if (q && any) found++;
+    }
+  }
+  if (q && !found) body.append(el("div", "search-none", t("noSetting")));
+}
+$("settingsSearch").oninput = searchSettings;
 
 /* A theme: its colours for the whole page, and the plain original look for Legacy */
 function applyTheme(th) {
@@ -665,8 +715,9 @@ function applyTheme(th) {
   document.body.dataset.theme = th.id || "aurora"; // each theme has its own effect in the background
 }
 
-function renderThemes(d) {
-  const body = $("themeBody"); body.textContent = "";
+function renderThemes(d, body) {
+  const box = el("div", "section pane-themes"); box.append(el("h3", null, t("theme"))); box.dataset.words = "theme themes thema colour color kleur look uiterlijk aurora ember toxic ocean sakura midnight legacy";
+  body.append(box); body = box;
   body.append(el("div", "hint-top", t("themeHint")));
   const grid = el("div", "themes");
   const hidden = el("input"); hidden.type = "hidden"; hidden.value = d.values.Theme; form.Theme = hidden;
@@ -709,9 +760,12 @@ function options(select, items, chosen) {
 
 function renderSettings(d) {
   sdata = d; form = {};
-  const body = $("settingsBody"); body.textContent = "";
+  const root = $("settingsBody"); root.textContent = "";
   const v = d.values;
-  let section;
+  const panes = {};
+  for (const id of ["general", "voice", "look", "social", "connections"]) { panes[id] = el("div", "pane"); panes[id].dataset.pane = id; root.append(panes[id]); }
+  let section, body = panes.general;
+  const tab = id => body = panes[id];
   const sec = title => { section = el("div", "section"); section.append(el("h3", null, title)); body.append(section); };
   const field = (key, label, make, hint, show) => {
     const f = el("div", "field"), control = el("div", "control"), input = make(control);
@@ -727,23 +781,28 @@ function renderSettings(d) {
   const toggle = key => () => { const s = el("div", "switch" + (v[key] ? " on" : "")); s.type = "switch"; s.onclick = () => s.classList.toggle("on"); return s; };
   const button = (label, onclick) => { const b = el("button", "btn", label); b.onclick = onclick; return b; };
 
-  sec("AI");
-  field("GroqKey", "Groq API key", text("GroqKey", "gsk_…", true), "Free at console.groq.com/keys. Listening always uses this key (or OpenAI).");
-  field("AiProvider", "AI provider", select("AiProvider", PROVIDERS));
-  field("AiKey", "Provider key", text("AiKey", "API key", true), null, "provider");
-  field("AiModel", "Model", text("AiModel", ""), "Empty = the provider's default.", "provider");
-  field("AiBaseUrl", "Provider address", text("AiBaseUrl", "http://localhost:11434/v1 (Ollama)"), null, "custom");
-
-  sec("You");
+  // --- General ---
+  sec("Dave");
   field("AssistantName", "Name", text("AssistantName", "Dave"), "Empty = Dave.");
   field("Personality", "Personality", select("Personality", [["normal", "Normal: friendly and to the point"], ["chill", "Chill: relaxed and laid-back"], ["hyped", "Hyped: super energetic"], ["butler", "Butler: polite and formal"], ["sarcastic", "Sarcastic: dry, teasing humour"]]),
     "How he talks and sounds. Also by voice: \"be a butler\", \"act normal again\".");
-  field("WakePhrase", "Wake phrase", text("WakePhrase", ""), "Empty = “hey” + the name. E.g. hey jarvis, whats up dave, yo computer.");
-  field("Country", "Country", text("Country", "the Netherlands"), "For units, currency and local results.");
+
+  sec("Language and region");
   field("Language", "Main language", text("Language", "nl-NL"), "e.g. nl-NL or en-US");
   field("SecondLanguage", "Second language", text("SecondLanguage", "en-US"), "Empty = none.");
-  field("Browser", "Browser for websites", text("Browser", "Windows default"), "e.g. Brave, Chrome. Empty = Windows' default.");
+  field("Country", "Country", text("Country", "the Netherlands"), "For units, currency and local results.");
 
+  sec("Shortcuts");
+  field("Hotkey", "Talk shortcut", text("Hotkey", "Ctrl+Alt+D"), "Press it to talk to Dave.");
+  field("WindowHotkey", "Window shortcut", text("WindowHotkey", "Ctrl+Alt+W"), "Opens and closes this window.");
+
+  sec("Apps and startup");
+  field("Browser", "Browser for websites", text("Browser", "Windows default"), "e.g. Brave, Chrome. Empty = Windows' default.");
+  field("StartWithWindows", "Start with Windows", toggle("StartWithWindows"));
+  field("AutoUpdate", "Update automatically", toggle("AutoUpdate"), `Now version ${d.version}.`);
+
+  // --- Voice ---
+  tab("voice");
   sec("Voice");
   field("VoiceEngine", "Voice engine", select("VoiceEngine", [["windows", "Windows voices (offline, free)"], ["azure", "Azure voices (online, natural)"]]));
   field("Voice", "Main-language voice", c => { const s = el("select"); options(s, d.voices.main, v.Voice); c.append(button("▶", () => preview("windows", "main"))); return s; }, null, "windows");
@@ -759,16 +818,49 @@ function renderSettings(d) {
   field("AzureSecondVoice", "Second-language voice", c => { const s = el("select"); options(s, [], v.AzureSecondVoice); c.append(button("▶", () => preview("azure", "second"))); return s; }, null, "azure");
   field("SpeechRate", "Speaking speed", select("SpeechRate", SPEEDS));
 
-  sec("Shortcuts and listening");
-  field("Hotkey", "Talk shortcut", text("Hotkey", "Ctrl+Alt+D"));
-  field("WindowHotkey", "Window shortcut", text("WindowHotkey", "Ctrl+Alt+W"), "Opens and closes this window.");
+  sec("Listening");
   field("WakeWord", "Listen for the wake phrase", toggle("WakeWord"), "Offline: nothing is sent anywhere until it hears it.");
+  field("WakePhrase", "Wake phrase", text("WakePhrase", ""), "Empty = “hey” + the name. E.g. hey jarvis, whats up dave, yo computer.");
   field("CarefulWakeWord", "Careful wake word", toggle("CarefulWakeWord"), "Double-checks he really heard it: fewer accidental wake-ups, but he reacts a bit later.");
-  field("StartWithWindows", "Start with Windows", toggle("StartWithWindows"));
-  field("AutoUpdate", "Update automatically", toggle("AutoUpdate"), `Now version ${d.version}.`);
-  field("TimersOnScreen", "Show timers on screen", toggle("TimersOnScreen"), "A small countdown in the top-right corner while a timer runs.");
+
+  sec("Sounds");
   field("ThemeSounds", "Theme sounds", c => { c.append(button("▶ Listen", () => send({ type: "themeSounds", values: readSettings() }))); return toggle("ThemeSounds")(); }, "Soft sounds that fit your theme when Dave starts listening, heard you, is done, or has a reminder. Off: the old beeps.");
-  field("KeepOffGames", "Keep Dave off games", toggle("KeepOffGames"), "Nothing of Dave (his bubble, the glow, timers) over a full-screen game or Roblox: it goes to your other monitor, or stays out of sight if you only have one. You still hear him.");
+
+  // --- Look ---
+  tab("look");
+  renderThemes(d, body);
+  sec("On screen");
+  field("TimersOnScreen", "Timers and stopwatch on screen", toggle("TimersOnScreen"), "Small cards in the top-right corner while a timer or the stopwatch runs.");
+  field("KeepOffGames", "Keep Dave off games", toggle("KeepOffGames"), "Nothing of Dave (his bubble, the glow, timers, message cards) over a full-screen game or Roblox: it goes to your other monitor, or stays out of sight if you only have one. You still hear him.");
+
+  // --- Social ---
+  tab("social");
+  sec("You");
+  field("SocialName", "Your name for friends", text("SocialName", d.social.defaultName), `What friends see when you message them. Your friend code: ${d.social.code} (also in the Social tab, with a copy button).`);
+
+  sec("New messages");
+  field("ReadMessagesAloud", "Read messages out loud", toggle("ReadMessagesAloud"), "Dave says who it's from and what they wrote. Off: only the sound, and a card in the top-left corner.");
+  field("MessageSound", "Message sound", toggle("MessageSound"), "A notification sound when a friend messages you; in your theme's style when Theme sounds are on.");
+
+  sec("Chats");
+  field("DoubleClickAction", "Double-click a message", select("DoubleClickAction", [["reply", "Reply to it"], ["react", "React with an emoji"]]), "In a chat in the Social tab.");
+  const emojiField = field("DoubleClickEmoji", "Emoji for double-click", select("DoubleClickEmoji", REACTIONS.map(e => [e, e])));
+  const showEmoji = () => emojiField.style.display = form.DoubleClickAction.value === "react" ? "" : "none"; // only when double-click reacts
+  form.DoubleClickAction.addEventListener("change", showEmoji); showEmoji();
+  field("ReadReceipts", "Read receipts", toggle("ReadReceipts"), "Friends see “Seen” when you've read their messages, and you see theirs. Off: neither.");
+  field("Translate", "Translate messages", toggle("Translate"), "Friends' messages in another language, in yours.");
+  const autoField = field("TranslateAutomatically", "Translate automatically", toggle("TranslateAutomatically"), "Off: a 🌐 button on each message from a friend.");
+  const showAuto = () => autoField.style.display = form.Translate.classList.contains("on") ? "" : "none"; // only when translating is on
+  form.Translate.addEventListener("click", () => setTimeout(showAuto)); showAuto();
+
+  // --- Connections ---
+  tab("connections");
+  sec("AI");
+  field("GroqKey", "Groq API key", text("GroqKey", "gsk_…", true), "Free at console.groq.com/keys. Listening always uses this key (or OpenAI).");
+  field("AiProvider", "AI provider", select("AiProvider", PROVIDERS));
+  field("AiKey", "Provider key", text("AiKey", "API key", true), null, "provider");
+  field("AiModel", "Model", text("AiModel", ""), "Empty = the provider's default.", "provider");
+  field("AiBaseUrl", "Provider address", text("AiBaseUrl", "http://localhost:11434/v1 (Ollama)"), null, "custom");
 
   sec("iPhone app");
   field("PhoneEnabled", "Let the iPhone app connect", toggle("PhoneEnabled"),
@@ -779,19 +871,6 @@ function renderSettings(d) {
     d.phone.topic ? `Reminders and heads-ups also go to your phone when you're not at the PC. On your phone: install the free app "ntfy" (App Store), tap +, and subscribe to: ${d.phone.topic} (server ntfy.sh). A test notification was sent when you turned this on.`
                   : "Reminders and heads-ups (\"Roblox closed\", \"your download is done\") on your phone too, when you're not at the PC. Through the free ntfy app. Turn on and save to see your channel.");
 
-  sec("Social");
-  field("SocialName", "Your name for friends", text("SocialName", d.social.defaultName), `What friends see when you message them. Your friend code: ${d.social.code} (also in the Social tab, with a copy button).`);
-  field("ReadMessagesAloud", "Read messages out loud", toggle("ReadMessagesAloud"), "Dave says who it's from and what they wrote. Off: only the sound, and the message on screen.");
-  field("MessageSound", "Message sound", toggle("MessageSound"), "A notification sound when a friend messages you; in your theme's style when Theme sounds are on.");
-  field("DoubleClickAction", "Double-click a message", select("DoubleClickAction", [["reply", "Reply to it"], ["react", "React with an emoji"]]), "In a chat in the Social tab.");
-  const emojiField = field("DoubleClickEmoji", "Emoji for double-click", select("DoubleClickEmoji", REACTIONS.map(e => [e, e])));
-  const showEmoji = () => emojiField.style.display = form.DoubleClickAction.value === "react" ? "" : "none"; // only when double-click reacts
-  form.DoubleClickAction.addEventListener("change", showEmoji); showEmoji();
-  field("ReadReceipts", "Read receipts", toggle("ReadReceipts"), "Friends see “Seen” when you've read their messages, and you see theirs. Off: neither.");
-  field("Translate", "Translate messages", toggle("Translate"), "Friends' messages in another language, in yours.");
-  const autoField = field("TranslateAutomatically", "Translate automatically", toggle("TranslateAutomatically"), "Off: a 🌐 button on each message from a friend.");
-  const showAuto = () => autoField.style.display = form.Translate.classList.contains("on") ? "" : "none"; // only when translating is on
-  form.Translate.addEventListener("click", () => setTimeout(showAuto)); showAuto();
 
   sec("Calendar");
   field("CalendarLinks", "Calendar link (iCal)", text("CalendarLinks", "https://calendar.google.com/calendar/ical/…/basic.ics"),
@@ -810,7 +889,10 @@ function renderSettings(d) {
   form.SecondLanguage.onchange = () => send({ type: "voices", field: "SecondVoice", lang: form.SecondLanguage.value });
   form.AiProvider.onchange = form.VoiceEngine.onchange = updateSettingsVisibility;
   updateSettingsVisibility();
-  renderThemes(d);
+  // field names in both languages and other words people search for
+  const words = { GroqKey: "key api groq sleutel", Hotkey: "hotkey keyboard sneltoets toets", WindowHotkey: "hotkey keyboard sneltoets venster", WakeWord: "hey dave wake word wekwoord microphone microfoon", ThemeSounds: "sound geluid beep piep", MessageSound: "sound geluid notification melding", TimersOnScreen: "timer stopwatch countdown overlay", KeepOffGames: "game games roblox fullscreen spel", ReadReceipts: "seen gezien gelezen", Translate: "translate vertalen language taal", PhoneEnabled: "iphone phone telefoon mobiel", PhoneNotify: "notification melding ntfy phone telefoon", SpeechRate: "speed snelheid fast slow", Personality: "persoonlijkheid mood butler", AssistantName: "naam name", SocialName: "naam name friends vrienden" };
+  for (const [key, w] of Object.entries(words)) { const f = form[key] && form[key].closest(".field"); if (f) f.dataset.words = w; }
+  settingsTab(settingsPane);
 }
 
 /* Show only what matters for the chosen provider and voice engine */
@@ -849,6 +931,7 @@ function show(name) {
 }
 
 function labels() {
+  $("settingsSearch").placeholder = t("searchSettings");
   document.querySelectorAll("[data-t]").forEach(x => x.textContent = t(x.dataset.t));
   $("input").placeholder = t("placeholder");
   $("title").textContent = t(view);
