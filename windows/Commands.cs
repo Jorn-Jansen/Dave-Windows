@@ -60,7 +60,7 @@ public static class Commands
                 "use_preset" => new Outcome(Presets.Use(s, Str(args, "name")), true),
                 "connect_service" => new Outcome((Str(args, "service") == "groq" ? ConnectHelper.Current?.StartGroq() : ConnectHelper.Current?.StartSpotify())
                     ?? s.Say("I can't do that right now.", "Dat kan ik nu niet."), true),
-                "set_personality" => SetPersonality(s, Str(args, "personality")),
+                "set_personality" => SetPersonality(s, Str(args, "personality"), Str(args, "gender")),
                 "change_setting" => ChangeSetting(s, Str(args, "setting"), Str(args, "value")),
                 "send_message" => await SendMessageAsync(s, Str(args, "to"), Str(args, "text"), Str(args, "at"), Str(args, "poll")),
                 "watch_for" => new Outcome(Watchers.Add(s, Str(args, "what"), Str(args, "program"),
@@ -463,8 +463,9 @@ public static class Commands
     }
 
     /// <summary>Another personality ("be a butler", "act normal"): said in the new personality's own way.</summary>
-    private static Outcome SetPersonality(Settings s, string id)
+    private static Outcome SetPersonality(Settings s, string id, string gender = "")
     {
+        if (gender is "female" or "male") s.PersonalityGender = gender;
         var p = Personalities.Get(id);
         s.Personality = p.Id;
         s.Save();

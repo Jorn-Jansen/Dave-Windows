@@ -268,8 +268,8 @@ public static class Assistant
                                 "a voice name, a language tag like en-US, a country or a browser"),
             }, "setting", "value"),
         Tool("set_personality", "Change your personality (how you talk and sound): 'be a butler', 'be more chill', 'get hyped', 'be sarcastic', " +
-            "'act normal again'.",
-            new JsonObject { ["personality"] = Enum(Personalities.All.Select(p => p.Id).ToArray()) }, "personality"),
+            "'be dominant' (gender: 'be a dominant woman' = female, 'dominant man' = male; only if they said it), 'act normal again'.",
+            new JsonObject { ["personality"] = Enum(Personalities.All.Select(p => p.Id).ToArray()), ["gender"] = Enum("", "female", "male") }, "personality"),
         Tool("quiet_mode", "Quiet mode: only show answers instead of saying them ('be quiet for a bit', 'I'm in a call'), or talk again.",
             new JsonObject
             {

@@ -164,6 +164,16 @@ public static class Speaker
         var wanted = languageTag == settings.Language ? settings.Voice : settings.SecondVoice;
         var voice = VoicesFor(languageTag).FirstOrDefault(v => v.DisplayName == wanted)
                     ?? VoicesFor(languageTag).FirstOrDefault();
+        // A female or male personality (the dominant one): a voice of that gender if this language has one, else a higher/lower pitch
+        if (Personalities.Gender(settings) is { } gender && voice != null)
+        {
+            var want = gender == "female" ? Windows.Media.SpeechSynthesis.VoiceGender.Female : Windows.Media.SpeechSynthesis.VoiceGender.Male;
+            if (voice.Gender != want)
+            {
+                if (VoicesFor(languageTag).FirstOrDefault(v => v.Gender == want) is { } other) voice = other;
+                else pitch *= want == Windows.Media.SpeechSynthesis.VoiceGender.Female ? 1.25 : 0.8;
+            }
+        }
         if (voice != null) synth.Voice = voice;
         synth.Options.SpeakingRate = Math.Clamp(settings.SpeechRate * rate, 0.5, 3.0);
         synth.Options.AudioPitch = Math.Clamp(pitch, 0, 2);   // 1 = the voice's own

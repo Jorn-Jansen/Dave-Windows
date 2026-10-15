@@ -56,6 +56,8 @@ public class Settings
     /// <summary>Setting presets (see Presets), and the one last put in use (its Id; "" = none).</summary>
     public List<Preset> Presets { get; set; } = new();
     public string ActivePreset { get; set; } = "";
+    /// <summary>For the dominant personality: "female" or "male" (how it talks about itself, and its voice).</summary>
+    public string PersonalityGender { get; set; } = "female";
     public sealed class Preset
     {
         public string Id { get; set; } = "";

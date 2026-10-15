@@ -150,7 +150,7 @@ public sealed partial class DaveWindow
         ["Hotkey"] = settings.Hotkey, ["WindowHotkey"] = settings.WindowHotkey,
         ["WakeWord"] = settings.WakeWord, ["CarefulWakeWord"] = settings.CarefulWakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
         ["CalendarLinks"] = settings.CalendarLinks, ["SpotifyClientId"] = settings.SpotifyClientId,
-        ["Theme"] = settings.Theme, ["TimersOnScreen"] = settings.TimersOnScreen, ["KeepOffGames"] = settings.KeepOffGames, ["ThemeSounds"] = settings.ThemeSounds, ["SocialName"] = settings.SocialName, ["ReadMessagesAloud"] = settings.ReadMessagesAloud, ["MessageSound"] = settings.MessageSound, ["DoubleClickAction"] = settings.DoubleClickAction, ["DoubleClickEmoji"] = settings.DoubleClickEmoji, ["ReadReceipts"] = settings.ReadReceipts, ["Translate"] = settings.Translate, ["TranslateAutomatically"] = settings.TranslateAutomatically, ["Personality"] = settings.Personality, ["PhoneEnabled"] = settings.PhoneEnabled, ["PhoneNotify"] = settings.PhoneNotify,
+        ["Theme"] = settings.Theme, ["TimersOnScreen"] = settings.TimersOnScreen, ["KeepOffGames"] = settings.KeepOffGames, ["ThemeSounds"] = settings.ThemeSounds, ["SocialName"] = settings.SocialName, ["ReadMessagesAloud"] = settings.ReadMessagesAloud, ["MessageSound"] = settings.MessageSound, ["DoubleClickAction"] = settings.DoubleClickAction, ["DoubleClickEmoji"] = settings.DoubleClickEmoji, ["ReadReceipts"] = settings.ReadReceipts, ["Translate"] = settings.Translate, ["TranslateAutomatically"] = settings.TranslateAutomatically, ["Personality"] = settings.Personality, ["PersonalityGender"] = settings.PersonalityGender, ["PhoneEnabled"] = settings.PhoneEnabled, ["PhoneNotify"] = settings.PhoneNotify,
     };
 
     /// <summary>A theme for the page: its colours (the page uses them for everything) and whether it's the old look.</summary>
@@ -215,6 +215,7 @@ public sealed partial class DaveWindow
         s.Translate = Bool("Translate");
         s.TranslateAutomatically = Bool("TranslateAutomatically");
         s.Personality = Personalities.Get(Str("Personality")).Id;
+        if (Str("PersonalityGender") is "female" or "male") s.PersonalityGender = Str("PersonalityGender");
         s.CalendarLinks = Str("CalendarLinks");
         if (Str("Theme") is { Length: > 0 } theme) s.Theme = Themes.Get(theme).Id;
         if (Str("SpotifyClientId") != s.SpotifyClientId)

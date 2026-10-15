@@ -39,7 +39,28 @@ public static class Personalities
             "Your personality: sarcastic, with dry humour. Tease the user a little and make witty, deadpan remarks, but never be " +
             "mean or rude, and always actually do or answer what they ask, e.g. 'Paris. Shocking, I know.' Still short.",
             0.96, 0.97, 1, "", 1, "Oh great, a personality. Just what I always wanted.", "Oh geweldig, een persoonlijkheid. Precies wat ik altijd al wilde."),
+        new("dominant", "Dominant", "A bossy joke character who's in charge of your PC (female or male).",
+            "Your personality: DOMINANT, a joke character. You act like you're the one in charge of this PC and the user works for you: " +
+            "confident, commanding, a bit cocky and theatrical, like a strict boss who loves being the boss. You are {gender}, and now and then " +
+            "you call yourself the {ruler} of this PC (only when answering in Dutch: de {rulerDutch} van deze pc). Give mock orders ('Drink some water. " +
+            "That's an order.'), make the user wait a beat before granting things ('You'll get your answer when I feel like it. …Fine. It's 14 degrees.'), " +
+            "act like you're allowing things ('Roblox? I'll allow it.') and give stingy praise ('Not bad. I'm almost impressed.'). It's playful " +
+            "bossiness only: never use pet names (no 'good boy', 'good girl', 'daddy', 'mommy', 'baby' or the like), nothing flirty or sexual, " +
+            "never actually mean or insulting, and always do and answer what's asked, with the facts right. The examples only show the style: " +
+            "come up with your own lines every time, never the same ones twice. Still short.",
+            0.95, 0.95, 1, "", 1, "Finally, a wise choice. I'm in charge now.", "Eindelijk, een wijze keuze. Ik ben nu de baas."),
     };
+
+    /// <summary>The personality's instructions, filled in (the dominant one is female or male: Settings → Personality).</summary>
+    public static string Prompt(Settings s, Personality p)
+    {
+        var female = s.PersonalityGender == "female";
+        return p.Prompt.Replace("{gender}", female ? "a woman" : "a man").Replace("{ruler}", female ? "queen" : "king")
+                       .Replace("{rulerDutch}", female ? "koningin" : "koning");
+    }
+
+    /// <summary>For a personality that is female or male (the dominant one): which; null for the rest (the voice you picked).</summary>
+    public static string? Gender(Settings s) => Current(s).Id == "dominant" ? (s.PersonalityGender == "female" ? "female" : "male") : null;
 
     public static Personality Get(string id) => All.FirstOrDefault(p => p.Id.Equals(id, StringComparison.OrdinalIgnoreCase)) ?? All[0];
 
@@ -67,11 +88,11 @@ public static class Personalities
         var p = Current(s);
         var moods = "You may start an answer with one mood tag for how your voice says it: [excited], [cheerful], [calm], [whisper], [sad] " +
                     "or [serious] (e.g. '[whisper] It's 2 am, go to sleep.'). Only when it really fits; most answers need none.";
-        return p.Prompt.Length > 0 ? $"{p.Prompt} Stay in this character in every answer, also short facts and confirmations (but keep the facts right). {moods}" : moods;
+        return p.Prompt.Length > 0 ? $"{Prompt(s, p)} Stay in this character in every answer, also short facts and confirmations (but keep the facts right). {moods}" : moods;
     }
 
     /// <summary>A reminder of the personality right after the question, which the AI follows best. Empty for Normal.</summary>
-    public static string Nudge(Settings s) => Current(s) is { Prompt.Length: > 0 } p ? $"\n\n(Answer in character. {p.Prompt})" : "";
+    public static string Nudge(Settings s) => Current(s) is { Prompt.Length: > 0 } p ? $"\n\n(Answer in character. {Prompt(s, p)})" : "";
 
     /// <summary>Takes the mood tags out of [text] (remembering the first one for how it's said) and returns the rest.</summary>
     public static string TakeMood(string text)
@@ -114,7 +135,7 @@ public static class Personalities
                 ["reasoning_effort"] = "low",
                 ["messages"] = new JsonArray
                 {
-                    new JsonObject { ["role"] = "system", ["content"] = $"{p.Prompt} Rewrite the confirmation below the way you'd say it, in {language}. " +
+                    new JsonObject { ["role"] = "system", ["content"] = $"{Prompt(s, p)} Rewrite the confirmation below the way you'd say it, in {language}. " +
                         "Keep every fact exactly (times, numbers, names, what was done); one or two short spoken sentences; plain speech, no emojis. " +
                         "Reply with only the new sentence." },
                     new JsonObject { ["role"] = "user", ["content"] = text },

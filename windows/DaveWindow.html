@@ -877,8 +877,12 @@ function renderSettings(d) {
   // --- General ---
   sec("Dave");
   field("AssistantName", "Name", text("AssistantName", "Dave"), "Empty = Dave.");
-  field("Personality", "Personality", select("Personality", [["normal", "Normal: friendly and to the point"], ["chill", "Chill: relaxed and laid-back"], ["hyped", "Hyped: super energetic"], ["butler", "Butler: polite and formal"], ["sarcastic", "Sarcastic: dry, teasing humour"]]),
+  field("Personality", "Personality", select("Personality", [["normal", "Normal: friendly and to the point"], ["chill", "Chill: relaxed and laid-back"], ["hyped", "Hyped: super energetic"], ["butler", "Butler: polite and formal"], ["sarcastic", "Sarcastic: dry, teasing humour"], ["dominant", "Dominant: bossy, thinks it runs your PC"]]),
     "How he talks and sounds. Also by voice: \"be a butler\", \"act normal again\".");
+  const genderField = field("PersonalityGender", "Dominant as", select("PersonalityGender", [["female", "Female (the queen of your PC)"], ["male", "Male (the king of your PC)"]]),
+    "How it talks about itself, and its voice (a female or male Windows voice, if your language has one).");
+  const showGender = () => genderField.style.display = form.Personality.value === "dominant" ? "" : "none"; // only for the dominant one
+  form.Personality.addEventListener("change", showGender); showGender();
 
   sec("Language and region");
   field("Language", "Main language", text("Language", "nl-NL"), "e.g. nl-NL or en-US");
