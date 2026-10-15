@@ -134,7 +134,8 @@ public static class Assistant
         Tool("use_preset", "Switch to one of the user's setting presets (named sets of settings they made): 'switch to my gaming preset', " +
             "'use the study preset', 'gaming mode'.", new JsonObject { ["name"] = Str("The preset's name, as the user said it") }, "name"),
         Tool("open_app", "Open a program.", new JsonObject { ["name"] = Str("e.g. 'Roblox Studio'") }, "name"),
-        Tool("open_website", "Open a website or web search.",
+        Tool("open_website", "Open a website or web search. To play a specific Roblox game ('open Steal an Egg on Roblox'): its game page " +
+            "roblox.com/games/<placeId>/<Name> as url (look it up if needed); Dave then starts that game straight in the Roblox Player.",
             new JsonObject { ["url"] = Str("Address of a specific site"), ["search"] = Str("Search words"), ["browser"] = Str("Only if the user named one") }),
         Tool("lock_pc", "Lock the PC."),
         Tool("power", "Turn the PC off, restart it or put it to sleep, now or after some minutes ('turn off my PC in 30 minutes'), or cancel that.",

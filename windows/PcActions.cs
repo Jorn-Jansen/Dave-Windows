@@ -121,6 +121,17 @@ public static class PcActions
             Process.Start(new ProcessStartInfo(local) { UseShellExecute = true });
             return local;
         }
+        // A Roblox game's page (roblox.com/games/107778070777162/Steal-An-Egg): straight into the game in the Roblox Player,
+        // through Roblox's own roblox:// link, instead of the page in a browser. Without Roblox installed: the page, as usual.
+        if (!string.IsNullOrWhiteSpace(url)
+            && Regex.Match(url, @"roblox\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(?:games|experiences)/(\d+)(?:/([^/?#]+))?", RegexOptions.IgnoreCase) is { Success: true } game
+            && Microsoft.Win32.Registry.ClassesRoot.OpenSubKey(@"roblox\shell\open\command") != null)
+        {
+            Log.Write($"Roblox game {game.Groups[1].Value}: in the Roblox Player");
+            Process.Start(new ProcessStartInfo($"roblox://experiences/start?placeId={game.Groups[1].Value}") { UseShellExecute = true });
+            var name = Uri.UnescapeDataString(game.Groups[2].Value).Replace('-', ' ').Trim();
+            return "Roblox" + (name.Length > 0 ? ": " + name : "");
+        }
         var target = !string.IsNullOrWhiteSpace(url)
             ? (url.StartsWith("http") ? url : "https://" + url)
             : "https://www.google.com/search?q=" + Uri.EscapeDataString(search ?? "");
