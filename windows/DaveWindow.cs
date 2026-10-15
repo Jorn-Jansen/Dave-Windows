@@ -212,6 +212,14 @@ public sealed partial class DaveWindow : Form
                 settings.Memories.Remove(Str("text"));
                 settings.Save();
                 return true;
+            case "editMemory": // changed the words of one (in the Memories tab, or from the iPhone app)
+            {
+                var at = settings.Memories.IndexOf(Str("text"));
+                var changedTo = Str("newText").Trim();
+                if (at >= 0 && changedTo.Length > 0) { settings.Memories[at] = changedTo; settings.Save(); }
+                else if (at >= 0) { settings.Memories.RemoveAt(at); settings.Save(); } // emptied: gone
+                return true;
+            }
             case "addMemory":
                 if (Str("text").Trim().Length > 0) { settings.Memories.Add(Str("text").Trim()); settings.Save(); }
                 return true;

@@ -217,6 +217,10 @@
   .ov-presets .btn:disabled { opacity: .4; cursor: default; }
   .ov-presets .btn.icon { width: 34px; padding: 7px 0; text-align: center; }
   .ov-presets .pnote { color: var(--dim); margin-left: auto; }
+  .memory .memtext { cursor: text; border-radius: 6px; padding: 2px 4px; margin: -2px -4px; }
+  .memory .memtext:hover { background: var(--panel2); }
+  .memedit { width: 100%; resize: vertical; background: var(--panel2); color: var(--text); border: 1px solid var(--violet); border-radius: 8px; padding: 8px 10px; font: inherit; }
+  .memedit:focus { outline: none; }
   .search-none { color: var(--dim); text-align: center; margin: 40px auto; }
 
   /* Social: friends on the left, the chat with one of them on the right (stacked on a narrow window) */
@@ -592,7 +596,7 @@ const T = {
     presetLoadTip: "Puts this preset's settings in the panel; Save to use them", presetNew: "Save the settings as a new preset", presetUpdate: "Update this preset with the settings as they are now",
     presetClone: "Clone this preset", rename: "Rename", copySuffix: "(copy)", presetDeleteAsk: "Delete the preset \"{name}\"?",
     presetSaved: "Saved as \"{name}\"", presetRenamed: "Renamed", presetUpdated: "\"{name}\" updated", presetLoaded: "\"{name}\" loaded: press Save to use it",
-    voiceTab: "Voice", look: "Look", connections: "Connections", searchSettings: "Search settings…", noSetting: "No setting matches that.",
+    editMemory: "Click to change it", voiceTab: "Voice", look: "Look", connections: "Connections", searchSettings: "Search settings…", noSetting: "No setting matches that.",
     themeHint: "Changes the bubble, the orb, the glow around your screen and this window. Click one to try it; Save to keep it.",
     social: "Social", yourCode: "Your friend code", copy: "Copy", addFriend: "Paste a friend's code…", requests: "Friend requests",
     wantsFriends: "wants to be friends", accept: "Accept", decline: "Decline", waiting: "Waiting for them to accept", friends: "Friends",
@@ -628,7 +632,7 @@ const T = {
     presetLoadTip: "Zet de instellingen van deze preset in het paneel; Opslaan om ze te gebruiken", presetNew: "Instellingen opslaan als nieuwe preset", presetUpdate: "Deze preset bijwerken met de instellingen zoals ze nu zijn",
     presetClone: "Deze preset klonen", rename: "Hernoemen", copySuffix: "(kopie)", presetDeleteAsk: "De preset \"{name}\" verwijderen?",
     presetSaved: "Opgeslagen als \"{name}\"", presetRenamed: "Hernoemd", presetUpdated: "\"{name}\" bijgewerkt", presetLoaded: "\"{name}\" geladen: klik op Opslaan om hem te gebruiken",
-    voiceTab: "Stem", look: "Uiterlijk", connections: "Koppelingen", searchSettings: "Zoek een instelling…", noSetting: "Geen instelling gevonden.",
+    editMemory: "Klik om te veranderen", voiceTab: "Stem", look: "Uiterlijk", connections: "Koppelingen", searchSettings: "Zoek een instelling…", noSetting: "Geen instelling gevonden.",
     themeHint: "Verandert de bubbel, de bol, de gloed rond je scherm en dit venster. Klik er een om te proberen; Opslaan om te houden.",
     social: "Sociaal", yourCode: "Jouw vriendcode", copy: "Kopiëren", addFriend: "Plak de code van een vriend…", requests: "Vriendverzoeken",
     wantsFriends: "wil vrienden worden", accept: "Accepteren", decline: "Weigeren", waiting: "Wacht tot die accepteert", friends: "Vrienden",
@@ -1102,10 +1106,28 @@ function renderMemories() {
   row.append(input, add); v.append(row);
   if (!state.memories.length) { v.append(empty("🧠", t("noMemories"))); return; }
   for (const m of state.memories) {
-    const card = el("div", "card"), main = el("div", "main");
-    main.append(el("div", null, m));
+    const card = el("div", "card memory"), main = el("div", "main");
+    const words = el("div", "memtext", m); words.title = t("editMemory");
+    main.append(words);
+    // ✏️ or a click on it: change the words right there (Enter or click away saves, Esc doesn't)
+    const startEdit = () => {
+      if (main.querySelector("textarea")) return;
+      const box = el("textarea", "memedit"); box.value = m; box.rows = Math.min(6, Math.max(2, Math.ceil(m.length / 70)));
+      let done = false;
+      const finish = keep => {
+        if (done) return; done = true;
+        const text = box.value.trim();
+        if (keep && text !== m) send({ type: "editMemory", text: m, newText: text });
+        else { rendered.memories = null; renderMemories(); }
+      };
+      box.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); finish(true); } if (e.key === "Escape") { e.stopPropagation(); finish(false); } };
+      box.onblur = () => finish(true);
+      words.replaceWith(box); box.focus(); box.setSelectionRange(box.value.length, box.value.length);
+    };
+    words.onclick = startEdit;
+    const pen = el("button", "x", "✏️"); pen.title = t("editMemory"); pen.onclick = startEdit;
     const x = el("button", "x", "✕"); x.onclick = () => send({ type: "deleteMemory", text: m });
-    card.append(el("span", null, "🧠"), main, x); v.append(card);
+    card.append(el("span", null, "🧠"), main, pen, x); v.append(card);
   }
 }
 
