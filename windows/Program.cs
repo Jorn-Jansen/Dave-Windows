@@ -118,6 +118,7 @@ public class DaveApp : ApplicationContext
         timerOverlay = new TimerOverlay(settings);
         messageCards.Clicked += code => Window().OpenChat(code); // click a message: that chat in Dave's window
         connect = new ConnectHelper(settings);
+        Presets.Applied += () => { ApplySettings(); window?.Push(); }; // "switch to my gaming preset"
         connect.Say += text => _ = TellAsync(text);
         connect.Status += (service, status) => window?.SetupStatus(service, status);
         connect.Filled += (key, value) => { window?.SetupFilled(key, value); if (key == "GroqKey") ApplySettings(); };

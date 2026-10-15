@@ -79,6 +79,18 @@ public sealed partial class DaveWindow
                     Send(new JsonObject { ["type"] = "spotify", ["status"] = Spotify.IsConnected(settings) ? "✅ connected" : "not connected" });
                     break;
                 }
+                case "presetsSave": // made, renamed, cloned, updated or deleted a preset in the panel: kept right away
+                {
+                    settings.Presets = (m["presets"] as JsonArray ?? new JsonArray()).OfType<JsonObject>().Take(30).Select(p => new Settings.Preset
+                    {
+                        Id = p["id"]?.ToString() is { Length: > 0 and <= 40 } id ? id : Guid.NewGuid().ToString("N"),
+                        Name = (p["name"]?.ToString() ?? "").Trim() is { Length: > 0 } name ? name[..Math.Min(40, name.Length)] : "Preset",
+                        Values = Presets.Clean(p["values"] as JsonObject),
+                    }).ToList();
+                    if (m["active"]?.ToString() is { } active) settings.ActivePreset = active;
+                    settings.Save();
+                    break;
+                }
                 case "saveSettings":
                     var notifyWasOn = settings.PhoneNotify;
                     Apply(settings, values);
@@ -103,21 +115,9 @@ public sealed partial class DaveWindow
     private JsonObject SettingsData() => new()
     {
         ["type"] = "settingsData",
-        ["values"] = new JsonObject
-        {
-            ["GroqKey"] = settings.GroqKey, ["AiProvider"] = settings.AiProvider, ["AiKey"] = settings.AiKey,
-            ["AiModel"] = settings.AiModel, ["AiBaseUrl"] = settings.AiBaseUrl,
-            ["AssistantName"] = settings.AssistantName, ["WakePhrase"] = settings.WakePhrase, ["Country"] = settings.Country,
-            ["Language"] = settings.Language, ["SecondLanguage"] = settings.SecondLanguage, ["Browser"] = settings.Browser,
-            ["VoiceEngine"] = settings.VoiceEngine, ["Voice"] = settings.Voice, ["SecondVoice"] = settings.SecondVoice,
-            ["AzureKey"] = settings.AzureKey, ["AzureRegion"] = settings.AzureRegion,
-            ["AzureVoice"] = settings.AzureVoice, ["AzureSecondVoice"] = settings.AzureSecondVoice,
-            ["SpeechRate"] = settings.SpeechRate.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["Hotkey"] = settings.Hotkey, ["WindowHotkey"] = settings.WindowHotkey,
-            ["WakeWord"] = settings.WakeWord, ["CarefulWakeWord"] = settings.CarefulWakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
-            ["CalendarLinks"] = settings.CalendarLinks, ["SpotifyClientId"] = settings.SpotifyClientId,
-            ["Theme"] = settings.Theme, ["TimersOnScreen"] = settings.TimersOnScreen, ["KeepOffGames"] = settings.KeepOffGames, ["ThemeSounds"] = settings.ThemeSounds, ["SocialName"] = settings.SocialName, ["ReadMessagesAloud"] = settings.ReadMessagesAloud, ["MessageSound"] = settings.MessageSound, ["DoubleClickAction"] = settings.DoubleClickAction, ["DoubleClickEmoji"] = settings.DoubleClickEmoji, ["ReadReceipts"] = settings.ReadReceipts, ["Translate"] = settings.Translate, ["TranslateAutomatically"] = settings.TranslateAutomatically, ["Personality"] = settings.Personality, ["PhoneEnabled"] = settings.PhoneEnabled, ["PhoneNotify"] = settings.PhoneNotify,
-        },
+        ["values"] = ValuesOf(settings),
+        ["presets"] = new JsonArray(settings.Presets.Select(p => (JsonNode)new JsonObject { ["id"] = p.Id, ["name"] = p.Name, ["values"] = p.Values.DeepClone() }).ToArray()),
+        ["activePreset"] = settings.ActivePreset,
         ["phone"] = new JsonObject
         {
             ["code"] = settings.PhoneEnabled ? PhoneLink.CodeFor(settings) : "",
@@ -134,6 +134,23 @@ public sealed partial class DaveWindow
         ["spotify"] = Spotify.IsConnected(settings) ? "✅ connected" : "not connected",
         ["redirect"] = Spotify.RedirectUri,
         ["version"] = Updater.Display,
+    };
+
+    /// <summary>Every setting the panel has, by name (also what a preset is made from).</summary>
+    public static JsonObject ValuesOf(Settings settings) => new()
+    {
+        ["GroqKey"] = settings.GroqKey, ["AiProvider"] = settings.AiProvider, ["AiKey"] = settings.AiKey,
+        ["AiModel"] = settings.AiModel, ["AiBaseUrl"] = settings.AiBaseUrl,
+        ["AssistantName"] = settings.AssistantName, ["WakePhrase"] = settings.WakePhrase, ["Country"] = settings.Country,
+        ["Language"] = settings.Language, ["SecondLanguage"] = settings.SecondLanguage, ["Browser"] = settings.Browser,
+        ["VoiceEngine"] = settings.VoiceEngine, ["Voice"] = settings.Voice, ["SecondVoice"] = settings.SecondVoice,
+        ["AzureKey"] = settings.AzureKey, ["AzureRegion"] = settings.AzureRegion,
+        ["AzureVoice"] = settings.AzureVoice, ["AzureSecondVoice"] = settings.AzureSecondVoice,
+        ["SpeechRate"] = settings.SpeechRate.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        ["Hotkey"] = settings.Hotkey, ["WindowHotkey"] = settings.WindowHotkey,
+        ["WakeWord"] = settings.WakeWord, ["CarefulWakeWord"] = settings.CarefulWakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
+        ["CalendarLinks"] = settings.CalendarLinks, ["SpotifyClientId"] = settings.SpotifyClientId,
+        ["Theme"] = settings.Theme, ["TimersOnScreen"] = settings.TimersOnScreen, ["KeepOffGames"] = settings.KeepOffGames, ["ThemeSounds"] = settings.ThemeSounds, ["SocialName"] = settings.SocialName, ["ReadMessagesAloud"] = settings.ReadMessagesAloud, ["MessageSound"] = settings.MessageSound, ["DoubleClickAction"] = settings.DoubleClickAction, ["DoubleClickEmoji"] = settings.DoubleClickEmoji, ["ReadReceipts"] = settings.ReadReceipts, ["Translate"] = settings.Translate, ["TranslateAutomatically"] = settings.TranslateAutomatically, ["Personality"] = settings.Personality, ["PhoneEnabled"] = settings.PhoneEnabled, ["PhoneNotify"] = settings.PhoneNotify,
     };
 
     /// <summary>A theme for the page: its colours (the page uses them for everything) and whether it's the old look.</summary>
@@ -153,7 +170,7 @@ public sealed partial class DaveWindow
     }
 
     /// <summary>The panel's values into [s], with the same defaults as before when a field is left empty.</summary>
-    private static void Apply(Settings s, JsonObject v)
+    public static void Apply(Settings s, JsonObject v)
     {
         string Str(string key) => v[key]?.ToString()?.Trim() ?? "";
         bool Bool(string key) => v[key] is JsonValue b && b.TryGetValue<bool>(out var x) && x;

@@ -53,6 +53,15 @@ public class Settings
     public string Theme { get; set; } = "aurora";
     /// <summary>Timers counting down in a small card in the top-right corner of the screen.</summary>
     public bool TimersOnScreen { get; set; } = true;
+    /// <summary>Setting presets (see Presets), and the one last put in use (its Id; "" = none).</summary>
+    public List<Preset> Presets { get; set; } = new();
+    public string ActivePreset { get; set; } = "";
+    public sealed class Preset
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public System.Text.Json.Nodes.JsonObject Values { get; set; } = new();
+    }
     /// <summary>The stopwatch (see StopwatchClock): on, since when it's been running (null = paused), the time before that, and the laps (total seconds at each).</summary>
     public StopwatchState Stopwatch { get; set; } = new();
     public sealed class StopwatchState

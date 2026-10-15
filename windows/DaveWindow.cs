@@ -186,7 +186,7 @@ public sealed partial class DaveWindow : Form
                     return;
                 case "connectGroq": ConnectHelper.Current?.StartGroq(announce: true); return;   // ✨ buttons in Connections
                 case "connectSpotify": ConnectHelper.Current?.StartSpotify(announce: true); return;
-                case "getSettings" or "voices" or "azureVoices" or "preview" or "spotifyConnect" or "saveSettings":
+                case "getSettings" or "voices" or "azureVoices" or "preview" or "spotifyConnect" or "saveSettings" or "presetsSave":
                     _ = OnSettingsMessageAsync(Str("type"), m);
                     return;
                 default: ApplyAction(settings, m); break;

@@ -57,6 +57,7 @@ public static class Commands
                 "quiet_mode" => QuietMode(s, Bool(args, "on"), Int(args, "minutes") ?? 0),
                 "timers_on_screen" => TimersOnScreen(s, Bool(args, "show")),
                 "stopwatch" => new Outcome(StopwatchClock.Run(s, Str(args, "action")), true),
+                "use_preset" => new Outcome(Presets.Use(s, Str(args, "name")), true),
                 "connect_service" => new Outcome((Str(args, "service") == "groq" ? ConnectHelper.Current?.StartGroq() : ConnectHelper.Current?.StartSpotify())
                     ?? s.Say("I can't do that right now.", "Dat kan ik nu niet."), true),
                 "set_personality" => SetPersonality(s, Str(args, "personality")),

@@ -131,6 +131,8 @@ public static class Assistant
         Tool("connect_service", "Help the user connect Dave to something, step by step: 'how do I connect you to Spotify', 'set up Spotify', " +
             "'I need a new Groq key', 'how do I get an AI key'. Opens the right page and fills the key in by itself once it's copied.",
             new JsonObject { ["service"] = Enum("spotify", "groq") }, "service"),
+        Tool("use_preset", "Switch to one of the user's setting presets (named sets of settings they made): 'switch to my gaming preset', " +
+            "'use the study preset', 'gaming mode'.", new JsonObject { ["name"] = Str("The preset's name, as the user said it") }, "name"),
         Tool("open_app", "Open a program.", new JsonObject { ["name"] = Str("e.g. 'Roblox Studio'") }, "name"),
         Tool("open_website", "Open a website or web search.",
             new JsonObject { ["url"] = Str("Address of a specific site"), ["search"] = Str("Search words"), ["browser"] = Str("Only if the user named one") }),
@@ -327,6 +329,8 @@ public static class Assistant
         (Words("stopwatch", "stop watch", "stopwatch", "chronometer", "lap", "ronde", "how long has it been", "hoe lang is het", "hoe lang al",
                "how long since", "time it", "time me", "klok het", "carry on", "ga verder", "resume", "pause", "pauze"),
             new[] { "stopwatch", "timers_on_screen" }),
+        (Words("preset", "presets", "profile", "profiel", "mode", "modus"),
+            new[] { "use_preset" }),
         (Words("connect", "verbind", "koppel", "set up", "setup", "instellen", "api key", "client id", "sleutel", "groq"),
             new[] { "connect_service" }),
         (Words("open", "start", "launch", "close", "sluit", "quit", "afsluit", "lock", "vergrendel", "op slot", "app", "program", "website", "site",

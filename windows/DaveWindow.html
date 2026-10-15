@@ -209,6 +209,14 @@
   .setup-status { display: none; margin: 4px 0 10px; padding: 9px 12px; border-radius: 10px; font-size: 13px;
     background: color-mix(in srgb, var(--cyan) 12%, transparent); border: 1px solid color-mix(in srgb, var(--cyan) 35%, transparent); }
   .setup-status.show { display: block; }
+  .ov-presets { display: flex; align-items: center; gap: 8px; padding: 10px 24px; border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; font-size: 13px; }
+  .ov-presets .plabel { color: var(--dim); margin-right: 2px; }
+  .ov-presets select, .ov-presets input { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; font: inherit; min-width: 170px; }
+  .ov-presets input:focus, .ov-presets select:focus { outline: none; border-color: var(--violet); }
+  .ov-presets .btn { padding: 7px 11px; font-size: 13px; }
+  .ov-presets .btn:disabled { opacity: .4; cursor: default; }
+  .ov-presets .btn.icon { width: 34px; padding: 7px 0; text-align: center; }
+  .ov-presets .pnote { color: var(--dim); margin-left: auto; }
   .search-none { color: var(--dim); text-align: center; margin: 40px auto; }
 
   /* Social: friends on the left, the chat with one of them on the right (stacked on a narrow window) */
@@ -551,6 +559,7 @@
     </div>
     <input id="settingsSearch" class="ssearch" type="search" spellcheck="false">
   </div>
+  <div class="ov-presets" id="presetBar"></div>
   <div class="ov-body" id="settingsBody"></div>
   <div class="ov-foot"><button class="btn" id="settingsCancel" data-t="cancel"></button><button class="save" id="settingsSave" data-t="save"></button></div>
 </div>
@@ -579,6 +588,10 @@ const T = {
     allow: "Allow again", noHistory: "No songs yet", noWatching: "Dave isn't watching anything",
     noWatchingHint: "Say “tell me when Discord closes”.", stopAll: "Stop watching all", next: "next",
     save: "Save", cancel: "Cancel", general: "General", theme: "Theme", current: "current",
+    presets: "Preset", presetName: "Name this preset…", pickPreset: "Pick a preset…", noPresets: "No presets yet", presetLoad: "Load",
+    presetLoadTip: "Puts this preset's settings in the panel; Save to use them", presetNew: "Save the settings as a new preset", presetUpdate: "Update this preset with the settings as they are now",
+    presetClone: "Clone this preset", rename: "Rename", copySuffix: "(copy)", presetDeleteAsk: "Delete the preset \"{name}\"?",
+    presetSaved: "Saved as \"{name}\"", presetRenamed: "Renamed", presetUpdated: "\"{name}\" updated", presetLoaded: "\"{name}\" loaded: press Save to use it",
     voiceTab: "Voice", look: "Look", connections: "Connections", searchSettings: "Search settings…", noSetting: "No setting matches that.",
     themeHint: "Changes the bubble, the orb, the glow around your screen and this window. Click one to try it; Save to keep it.",
     social: "Social", yourCode: "Your friend code", copy: "Copy", addFriend: "Paste a friend's code…", requests: "Friend requests",
@@ -611,6 +624,10 @@ const T = {
     allow: "Weer toestaan", noHistory: "Nog geen nummers", noWatching: "Dave let nergens op",
     noWatchingHint: "Zeg “laat het me weten als Discord sluit”.", stopAll: "Overal mee stoppen", next: "volgende",
     save: "Opslaan", cancel: "Annuleren", general: "Algemeen", theme: "Thema", current: "huidig",
+    presets: "Preset", presetName: "Geef deze preset een naam…", pickPreset: "Kies een preset…", noPresets: "Nog geen presets", presetLoad: "Laden",
+    presetLoadTip: "Zet de instellingen van deze preset in het paneel; Opslaan om ze te gebruiken", presetNew: "Instellingen opslaan als nieuwe preset", presetUpdate: "Deze preset bijwerken met de instellingen zoals ze nu zijn",
+    presetClone: "Deze preset klonen", rename: "Hernoemen", copySuffix: "(kopie)", presetDeleteAsk: "De preset \"{name}\" verwijderen?",
+    presetSaved: "Opgeslagen als \"{name}\"", presetRenamed: "Hernoemd", presetUpdated: "\"{name}\" bijgewerkt", presetLoaded: "\"{name}\" geladen: klik op Opslaan om hem te gebruiken",
     voiceTab: "Stem", look: "Uiterlijk", connections: "Koppelingen", searchSettings: "Zoek een instelling…", noSetting: "Geen instelling gevonden.",
     themeHint: "Verandert de bubbel, de bol, de gloed rond je scherm en dit venster. Klik er een om te proberen; Opslaan om te houden.",
     social: "Sociaal", yourCode: "Jouw vriendcode", copy: "Kopiëren", addFriend: "Plak de code van een vriend…", requests: "Vriendverzoeken",
@@ -650,7 +667,10 @@ document.querySelectorAll(".tab[data-view]").forEach(tab => tab.onclick = () => 
 $("settings").onclick = openSettings;
 $("settingsClose").onclick = closeSettings;
 $("settingsCancel").onclick = closeSettings;
-$("settingsSave").onclick = () => send({ type: "saveSettings", values: readSettings() });
+$("settingsSave").onclick = () => {
+  if (loadedPreset) { presetSel = loadedPreset; send({ type: "presetsSave", presets, active: loadedPreset }); loadedPreset = ""; } // a loaded preset is now the one in use
+  send({ type: "saveSettings", values: readSettings() });
+};
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if ($("settingsPanel").classList.contains("show")) closeSettings();
@@ -667,8 +687,9 @@ const MODELS = { openai: "gpt-4.1-mini", openrouter: "openai/gpt-oss-120b", cust
 let sdata = null, form = {};
 
 let settingsPane = "general"; // the tab you were on (stays while Dave runs)
+let presets = [], presetSel = "", presetNaming = null; // presetNaming: { mode: "new" | "rename", text }
 const setupState = {};        // how setting up Groq / Spotify is going ("Waiting for you to copy the key…")
-function openSettings() { $("settingsPanel").classList.add("show"); $("settingsBody").textContent = ""; $("settingsSearch").value = ""; send({ type: "getSettings" }); }
+function openSettings() { sdata = null; $("settingsPanel").classList.add("show"); $("settingsBody").textContent = ""; $("settingsSearch").value = ""; send({ type: "getSettings" }); }
 function closeSettings() { // ✕ / Cancel: nothing is saved, and a theme you were trying goes back to the saved one
   $("settingsPanel").classList.remove("show"); sdata = null;
   if (state) applyTheme(state.theme);
@@ -762,6 +783,65 @@ function options(select, items, chosen) {
   select.value = chosen || (select.options[0] ? select.options[0].value : "");
 }
 
+/* --- Presets: named sets of settings to switch between (keys and connections stay out of them) --- */
+const PRESET_LEFT = new Set(["GroqKey", "AiProvider", "AiKey", "AiModel", "AiBaseUrl", "AzureKey", "AzureRegion", "SpotifyClientId", "CalendarLinks", "PhoneEnabled", "PhoneNotify", "SocialName"]);
+const presetValues = () => Object.fromEntries(Object.entries(readSettings()).filter(([k]) => !PRESET_LEFT.has(k)));
+const savePresets = () => send({ type: "presetsSave", presets, active: presetSel });
+const presetNote = text => { const n = $("presetNote"); if (n) { n.textContent = text; clearTimeout(n.timer); n.timer = setTimeout(() => n.textContent = "", 4000); } };
+
+function renderPresets() {
+  const bar = $("presetBar"); bar.textContent = "";
+  bar.append(el("span", "plabel", "🎛 " + t("presets")));
+  const chosen = presets.find(p => p.id === presetSel);
+  const icon = (label, tip, onclick, disabled) => { const b = el("button", "btn icon", label); b.title = tip; b.disabled = !!disabled; b.onclick = onclick; bar.append(b); return b; };
+  if (presetNaming) { // typing a name: for a new preset, or a new name for this one
+    const input = el("input"); input.id = "presetName"; input.maxLength = 40; input.value = presetNaming.text; input.placeholder = t("presetName");
+    const done = () => {
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      if (presetNaming.mode === "rename" && chosen) chosen.name = name;
+      else { const p = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, values: presetValues() }; presets.push(p); presetSel = p.id; }
+      presetNote(presetNaming.mode === "rename" ? t("presetRenamed") : t("presetSaved").replace("{name}", name));
+      presetNaming = null; savePresets(); renderPresets();
+    };
+    input.oninput = () => presetNaming.text = input.value;
+    input.onkeydown = e => { if (e.key === "Enter") done(); if (e.key === "Escape") { presetNaming = null; renderPresets(); } };
+    bar.append(input);
+    const ok = el("button", "btn primary", "✓ " + (presetNaming.mode === "rename" ? t("rename") : t("save"))); ok.onclick = done; bar.append(ok);
+    icon("✕", t("cancel"), () => { presetNaming = null; renderPresets(); });
+    setTimeout(() => input.focus());
+  } else {
+    const pick = el("select");
+    options(pick, [["", presets.length ? t("pickPreset") : t("noPresets")], ...presets.map(p => [p.id, p.name])], presetSel);
+    pick.onchange = () => { presetSel = pick.value; renderPresets(); };
+    bar.append(pick);
+    const load = el("button", "btn primary", t("presetLoad")); load.disabled = !chosen; load.title = t("presetLoadTip");
+    load.onclick = () => { // its settings in the panel (Save makes them count)
+      const d = { ...sdata, values: { ...sdata.values, ...readSettings(), ...chosen.values } };
+      const pane = settingsPane;
+      renderSettings(d); settingsTab(pane);
+      if (chosen.values.Theme) { const th = sdata.themes.find(x => x.id === chosen.values.Theme); if (th) applyTheme(th); }
+      loadedPreset = chosen.id;
+      presetNote(t("presetLoaded").replace("{name}", chosen.name));
+    };
+    bar.append(load);
+    icon("＋", t("presetNew"), () => { presetNaming = { mode: "new", text: "" }; renderPresets(); });
+    icon("💾", t("presetUpdate"), () => { chosen.values = presetValues(); savePresets(); presetNote(t("presetUpdated").replace("{name}", chosen.name)); }, !chosen);
+    icon("⧉", t("presetClone"), () => {
+      const copy = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: chosen.name + " " + t("copySuffix"), values: JSON.parse(JSON.stringify(chosen.values)) };
+      presets.splice(presets.indexOf(chosen) + 1, 0, copy); presetSel = copy.id; savePresets();
+      presetNaming = { mode: "rename", text: copy.name }; renderPresets(); // give the copy a name right away
+    }, !chosen);
+    icon("✏️", t("rename"), () => { presetNaming = { mode: "rename", text: chosen.name }; renderPresets(); }, !chosen);
+    icon("🗑", t("delete"), () => {
+      if (!confirm(t("presetDeleteAsk").replace("{name}", chosen.name))) return;
+      presets = presets.filter(p => p !== chosen); presetSel = ""; savePresets(); renderPresets();
+    }, !chosen);
+  }
+  const note = el("span", "pnote"); note.id = "presetNote"; bar.append(note);
+}
+let loadedPreset = ""; // loaded into the panel: Save makes it the active one
+
 /* Under the ✨ button: how setting it up is going */
 function setupBox(service) {
   const box = el("div", "setup-status" + (setupState[service] ? " show" : ""), setupState[service] || "");
@@ -770,7 +850,9 @@ function setupBox(service) {
 }
 
 function renderSettings(d) {
+  if (d.presets && !sdata) { presets = d.presets; presetSel = d.activePreset || ""; presetNaming = null; loadedPreset = ""; } // (fresh from Dave, not a preset being loaded)
   sdata = d; form = {};
+  renderPresets();
   const root = $("settingsBody"); root.textContent = "";
   const v = d.values;
   const panes = {};
