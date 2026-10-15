@@ -127,11 +127,32 @@ public static class Speaker
         SpeechSynthesizer.AllVoices.Where(v =>
             v.Language.Split('-')[0].Equals(languageTag.Split('-')[0], StringComparison.OrdinalIgnoreCase));
 
+    private static readonly System.Text.RegularExpressions.Regex Link = new(@"\b(?:https?://|www\.)[^\s<>""']+", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Web addresses in [text] replaced by what they are, said short: a page's own name when the address has one
+    /// (roblox.com/games/107778070777162/Steal-An-Egg → "Steal An Egg"), otherwise the site ("Roblox").
+    /// </summary>
+    public static string WithoutLinks(string text) => Link.Replace(text, m =>
+    {
+        var raw = m.Value.TrimEnd('.', ',', ')', '!', '?', ';', ':');
+        var tail = m.Value[raw.Length..];
+        if (!Uri.TryCreate(raw.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? "https://" + raw : raw, UriKind.Absolute, out var uri)) return m.Value;
+        // the page's name: the last part of the path made of words with dashes or underscores ("Steal-An-Egg", "how_to_cook")
+        var name = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Uri.UnescapeDataString)
+            .LastOrDefault(part => part.Length is > 3 and < 80 && System.Text.RegularExpressions.Regex.IsMatch(part, @"^[\p{L}\d]+([-_+][\p{L}\d]+)+$") && part.Any(char.IsLetter));
+        if (name != null) return System.Text.RegularExpressions.Regex.Replace(name, "[-_+]", " ") + tail;
+        var host = uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? uri.Host[4..] : uri.Host;
+        var site = host.Split('.').Reverse().Skip(1).FirstOrDefault() ?? host; // "music.youtube.com" → "youtube"
+        return (site.Length > 0 ? char.ToUpperInvariant(site[0]) + site[1..] : host) + tail;
+    });
+
     /// <summary>True while answering the iPhone: the answer goes to the phone, so nothing is said (or beeped) here.</summary>
     public static volatile bool Silent;
 
     public static async Task SpeakAsync(Settings settings, string text, string languageTag, CancellationToken cancel = default)
     {
+        text = WithoutLinks(text); // a web address is never read out: its short name instead
         if (string.IsNullOrWhiteSpace(text) || Silent) return;
         if (settings.IsQuiet)
         {

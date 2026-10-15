@@ -165,9 +165,9 @@ public static class Personalities
                         "Only when you just switched to this personality, greet the user in it (a new way each time); otherwise no greeting. Don't say " +
                         "'as you asked', 'as requested' or 'just like you wanted', and don't end on a stock question like 'happy now?'." +
                         (Recent.Count > 0 ? " Your new remark may not share any phrase or idea with these ones you made lately: " + string.Join(" | ", Recent) + "." : "") +
-                        " Keep every fact exactly (times, numbers, names, what was done); one or two short spoken " +
+                        " Never put a web address in it: name the site or the page instead. Keep every fact exactly (times, numbers, names, what was done); one or two short spoken " +
                         "sentences; plain speech, no emojis. Reply with only what you say." },
-                    new JsonObject { ["role"] = "user", ["content"] = request.Length > 0 ? $"The user asked: \"{request}\"\nWhat you did: {text}" : text },
+                    new JsonObject { ["role"] = "user", ["content"] = request.Length > 0 ? $"The user asked: \"{request}\"\nWhat you did: {Speaker.WithoutLinks(text)}" : Speaker.WithoutLinks(text) },
                 },
             };
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
