@@ -153,6 +153,7 @@ public static class Speaker
     public static async Task SpeakAsync(Settings settings, string text, string languageTag, CancellationToken cancel = default)
     {
         text = WithoutLinks(text); // a web address is never read out: its short name instead
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"[\p{So}\p{Cs}️‍⃣]", "").Trim(); // nor emoji ("🚀" would be said as "rocket")
         if (string.IsNullOrWhiteSpace(text) || Silent) return;
         if (settings.IsQuiet)
         {
