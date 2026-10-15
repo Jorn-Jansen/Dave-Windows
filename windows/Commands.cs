@@ -56,6 +56,7 @@ public static class Commands
                 "calendar" => AddToCalendar(s, args),
                 "quiet_mode" => QuietMode(s, Bool(args, "on"), Int(args, "minutes") ?? 0),
                 "timers_on_screen" => TimersOnScreen(s, Bool(args, "show")),
+                "stopwatch" => new Outcome(StopwatchClock.Run(s, Str(args, "action")), true),
                 "set_personality" => SetPersonality(s, Str(args, "personality")),
                 "change_setting" => ChangeSetting(s, Str(args, "setting"), Str(args, "value")),
                 "send_message" => await SendMessageAsync(s, Str(args, "to"), Str(args, "text"), Str(args, "at"), Str(args, "poll")),
