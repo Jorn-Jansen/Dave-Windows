@@ -287,6 +287,17 @@
   .poll-maker .row, .poll-answers .row { display: flex; gap: 6px; align-items: center; margin-bottom: 0; }
   .btn.primary { background: var(--grad); border-color: transparent; color: #fff; }
   .poll-answers { display: flex; flex-direction: column; gap: 6px; }
+  .plus-wrap { position: relative; flex: none; }
+  .plus-btn { font-size: 24px; line-height: 1; transition: transform .2s; }
+  .plus-btn.on { transform: rotate(45deg); }
+  .plus-menu { position: absolute; left: 0; bottom: calc(100% + 10px); display: none; flex-direction: column; gap: 2px; padding: 6px; min-width: 220px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, .45); z-index: 20; }
+  .plus-menu.show { display: flex; animation: rise .14s ease-out; }
+  .plus-item { display: flex; align-items: center; gap: 10px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px;
+    text-align: left; padding: 9px 12px; border-radius: 10px; cursor: pointer; }
+  .plus-item:hover { background: var(--panel2); }
+  .plus-item.on { background: color-mix(in srgb, var(--violet) 30%, transparent); }
+  .plus-item .ico { width: 20px; text-align: center; }
   .react-bar .tool-btn { font-size: 14px; color: var(--text); }
   .voice-row { display: flex; align-items: center; gap: 8px; }
   .words-btn { border: 1px solid var(--line); background: transparent; color: var(--dim); font: 700 12px inherit; border-radius: 8px; padding: 3px 7px; cursor: pointer; flex: none; }
@@ -562,7 +573,7 @@ const T = {
     search: "Search this chat", searchFor: "Search…", all: "All", photos: "Photos", videos: "Videos", voices: "Voice", files: "Files", links: "Links",
     anyone: "Anyone", after: "After", before: "Before", nothingFound: "Nothing found",
     sendLater: "Send later", sendAt: "Send at", schedule: "Schedule", cancelScheduled: "Don't send it",
-    makePoll: "Make a poll", polls: "Polls", pollQuestion: "Ask a question…", pollAnswer: "Answer", pollAddAnswer: "Answer", pollSend: "Send poll",
+    more: "More", attachShort: "Photo, video or file", makePoll: "Make a poll", polls: "Polls", pollQuestion: "Ask a question…", pollAnswer: "Answer", pollAddAnswer: "Answer", pollSend: "Send poll",
     noVotes: "No votes yet", bothVoted: "You both voted", waitingVote: "Waiting for {name} to vote", theyVoted: "{name} voted — your turn",
   },
   nl: {
@@ -593,7 +604,7 @@ const T = {
     search: "Zoek in deze chat", searchFor: "Zoeken…", all: "Alles", photos: "Foto's", videos: "Video's", voices: "Spraak", files: "Bestanden", links: "Links",
     anyone: "Iedereen", after: "Na", before: "Voor", nothingFound: "Niets gevonden",
     sendLater: "Later versturen", sendAt: "Versturen om", schedule: "Inplannen", cancelScheduled: "Niet versturen",
-    makePoll: "Maak een poll", polls: "Polls", pollQuestion: "Stel een vraag…", pollAnswer: "Antwoord", pollAddAnswer: "Antwoord", pollSend: "Poll versturen",
+    more: "Meer", attachShort: "Foto, video of bestand", makePoll: "Maak een poll", polls: "Polls", pollQuestion: "Stel een vraag…", pollAnswer: "Antwoord", pollAddAnswer: "Antwoord", pollSend: "Poll versturen",
     noVotes: "Nog geen stemmen", bothVoted: "Jullie hebben allebei gestemd", waitingVote: "Wacht tot {name} stemt", theyVoted: "{name} heeft gestemd — jij bent",
   },
 };
@@ -1004,7 +1015,9 @@ function voicePlayer(url) {
 }
 
 /* Replies: the message you're replying to, a short version of a message, and jumping to one (it flashes) */
-let replying = null, editing = null, search = null, scheduling = false, polling = null; // polling: the poll you're making ({ code, q, options })
+let replying = null, editing = null, search = null, scheduling = false, polling = null, plusOpen = false;
+document.addEventListener("click", () => { if (plusOpen) { plusOpen = false; rendered.social = null; renderSocial(); } }); // a click elsewhere closes the + menu
+ // polling: the poll you're making ({ code, q, options })
 const media = new Map(); // url → its <img> / <video>, kept between redraws
 const shownWords = new Set(); // voice messages showing their words (Aa)
 const snippet = l => { const s = l.kind === "poll" ? "📊 " + l.text : l.text; return s.length > 90 ? s.slice(0, 90) + "…" : s; };
@@ -1191,16 +1204,27 @@ function renderSocial() {
   if (sel.typing) { const dots = el("div", "msg dave typing-dots"); dots.append(el("i"), el("i"), el("i")); lines.append(dots); } // they're typing
 
   const compose = el("div", "composer show"), box = el("input"), go = el("button", "round", "➤");
-  const attach = el("button", "round alt", "📎"), mic = el("button", "round alt" + (recordingVoice ? " listening" : ""), "🎤");
-  const later = el("button", "round alt" + (scheduling ? " on" : ""), "⏰");
-  const ask = el("button", "round alt" + (polling ? " on" : ""), "📊");
-  attach.title = t("attach"); mic.title = t("voiceMsg"); later.title = t("sendLater"); ask.title = t("makePoll");
-  ask.onclick = () => { polling = polling ? null : { code: sel.code, q: "", options: ["", ""] }; rendered.social = null; renderSocial(); if (polling) $("pollQ").focus(); };
+  // + : a menu that opens upwards with what you can send besides text (it pulses while a voice message is being recorded)
+  const plus = el("button", "round alt plus-btn" + (recordingVoice ? " listening" : plusOpen ? " on" : ""), recordingVoice ? "🎤" : "+");
+  plus.title = t("more");
   // What you send next replies to this message (then it's done)
   const reply = () => { const id = replying ? replying.id : ""; if (replying) { replying = null; rendered.social = null; } return id; };
-  attach.onclick = () => send({ type: "socialAttach", code: sel.code, reply: reply() });
-  mic.onclick = () => { if (!recordingVoice) send({ type: "socialRecord", code: sel.code, reply: reply() }); };
-  later.onclick = () => { scheduling = !scheduling; rendered.social = null; renderSocial(); };
+  const close = () => { plusOpen = false; rendered.social = null; };
+  plus.onclick = ev => { ev.stopPropagation(); if (recordingVoice) return; plusOpen = !plusOpen; rendered.social = null; renderSocial(); };
+  const menu = el("div", "plus-menu" + (plusOpen ? " show" : ""));
+  for (const [icon, label, act, on] of [
+    ["📎", t("attachShort"), () => send({ type: "socialAttach", code: sel.code, reply: reply() })],
+    ["🎤", t("voiceMsg"), () => { if (!recordingVoice) send({ type: "socialRecord", code: sel.code, reply: reply() }); }],
+    ["⏰", t("sendLater"), () => { scheduling = !scheduling; }, scheduling],
+    ["📊", t("makePoll"), () => { polling = polling ? null : { code: sel.code, q: "", options: ["", ""] }; }, !!polling],
+  ]) {
+    const item = el("button", "plus-item" + (on ? " on" : ""));
+    item.append(el("span", "ico", icon), el("span", null, label));
+    item.onclick = ev => { ev.stopPropagation(); close(); act(); renderSocial(); if (polling && $("pollQ")) $("pollQ").focus(); };
+    menu.append(item);
+  }
+  const plusWrap = el("div", "plus-wrap");
+  plusWrap.append(plus, menu);
   box.id = "dmInput"; box.maxLength = 1000;
   box.placeholder = recordingVoice ? t("recording") : editing ? t("editing") : t("typeMessage");
   box.value = editing && editing.fresh ? editing.text : keep.msg;
@@ -1214,7 +1238,7 @@ function renderSocial() {
   };
   go.onclick = sendIt; box.onkeydown = e => { if (e.key === "Enter") sendIt(); };
   box.oninput = () => { if (!editing) send({ type: "socialTyping", code: sel.code }); }; // (Dave sends it at most every few seconds)
-  compose.append(attach, mic, later, ask, box, go);
+  compose.append(plusWrap, box, go);
   // Drag a photo, video or file into the chat to send it
   R.ondragover = e => { e.preventDefault(); R.classList.add("dropping"); };
   R.ondragleave = () => R.classList.remove("dropping");
