@@ -71,9 +71,30 @@ public static class Personalities
         ["whisper"] = (0.9, 0.95, 0.5, "whispering"),
         ["sad"] = (0.9, 0.9, 0.85, "sad"),
         ["serious"] = (0.97, 0.94, 1, "serious"),
+        ["confident"] = (0.98, 0.95, 1, "serious"),
+        ["angry"] = (1.06, 0.9, 1, "angry"),
+        ["shouting"] = (1.08, 1.1, 1, "shouting"),
+        ["friendly"] = (1.02, 1.04, 1, "friendly"),
+        ["unfriendly"] = (0.96, 0.92, 1, "unfriendly"),
+        ["scared"] = (1.12, 1.15, 0.85, "terrified"),
+        ["hopeful"] = (1, 1.05, 1, "hopeful"),
+        ["empathetic"] = (0.92, 0.97, 0.9, "empathetic"),
+        ["embarrassed"] = (0.95, 1.02, 0.8, "embarrassed"),
     };
 
-    private static readonly Regex MoodTag = new(@"\[\s*(" + string.Join("|", Moods.Keys) + @")\s*\]\s*", RegexOptions.IgnoreCase);
+    /// <summary>Other words the AI uses for a mood, and the one they sound like (any other tag is just taken out of the text).</summary>
+    private static readonly Dictionary<string, string> MoodWords = new()
+    {
+        ["proud"] = "confident", ["mad"] = "angry", ["annoyed"] = "unfriendly", ["grumpy"] = "unfriendly", ["irritated"] = "unfriendly",
+        ["yelling"] = "shouting", ["loud"] = "shouting", ["afraid"] = "scared", ["terrified"] = "scared", ["nervous"] = "scared", ["warm"] = "friendly",
+        ["kind"] = "empathetic", ["caring"] = "empathetic", ["sympathetic"] = "empathetic", ["shy"] = "embarrassed", ["awkward"] = "embarrassed", ["optimistic"] = "hopeful", ["bossy"] = "confident", ["smug"] = "confident", ["commanding"] = "confident", ["cocky"] = "confident", ["stern"] = "serious",
+        ["strict"] = "serious", ["happy"] = "cheerful", ["joyful"] = "cheerful", ["friendly"] = "cheerful", ["playful"] = "cheerful", ["hyped"] = "excited",
+        ["energetic"] = "excited", ["enthusiastic"] = "excited", ["relaxed"] = "calm", ["chill"] = "calm", ["soft"] = "whisper", ["whispering"] = "whisper",
+        ["quiet"] = "whisper", ["gentle"] = "calm", ["dry"] = "serious", ["deadpan"] = "serious", ["formal"] = "calm",
+    };
+
+    /// <summary>A tag like [confident] or [whisper] (a word or two): how to say it, never shown or read out.</summary>
+    private static readonly Regex MoodTag = new(@"\[\s*([a-z][a-z\- ]{1,20}?)\s*\]\s*", RegexOptions.IgnoreCase);
 
     private static string? mood;
     private static DateTime moodAt;
@@ -84,8 +105,8 @@ public static class Personalities
     public static string Instruction(Settings s)
     {
         var p = Current(s);
-        var moods = "You may start an answer with one mood tag for how your voice says it: [excited], [cheerful], [calm], [whisper], [sad] " +
-                    "or [serious] (e.g. '[whisper] It's 2 am, go to sleep.'). Only when it really fits; most answers need none.";
+        var moods = "You may start an answer with one mood tag for how your voice says it: [excited], [cheerful], [calm], [whisper], [sad], " +
+                    "[serious], [confident], [angry], [shouting], [friendly], [unfriendly], [scared], [hopeful], [empathetic] or [embarrassed] (e.g. '[whisper] It's 2 am, go to sleep.'). Only when it really fits; most answers need none.";
         return p.Prompt.Length > 0 ? $"{Prompt(s, p)} Stay in this character in every answer, also short facts and confirmations (but keep the facts right). {Variety} {moods}" : moods;
     }
 
@@ -97,8 +118,9 @@ public static class Personalities
     {
         var m = MoodTag.Match(text);
         if (!m.Success) return text;
-        mood = m.Groups[1].Value.ToLowerInvariant();
-        moodAt = DateTime.Now;
+        var word = m.Groups[1].Value.Trim().ToLowerInvariant();
+        if (MoodWords.TryGetValue(word, out var same)) word = same;
+        if (Moods.ContainsKey(word)) { mood = word; moodAt = DateTime.Now; }
         return MoodTag.Replace(text, "").Trim();
     }
 
