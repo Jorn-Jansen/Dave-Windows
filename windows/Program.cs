@@ -939,13 +939,14 @@ public class DaveApp : ApplicationContext
                 // Said in Dave's personality ("Timer set" → "Certainly, sir, your timer is set"); a new personality says hello itself.
                 // With a personality, quick actions ("🚀 Roblox Player") get a remark too, except ones where talking gets in the way.
                 var remark = outcome.Speak || Personalities.Current(settings).Prompt.Length > 0 && !QuietCommands.Contains(command.Name);
+                if (remark && !outcome.Speak) { bubble.ShowText(outcome.Text); ThemeSounds.Play(settings, ThemeSounds.Cue.Done); } // done already: shown now, the remark follows
                 var said = remark && command.Name != "set_personality"
                     ? await Personalities.RestyleAsync(settings, outcome.Text, language, text) : outcome.Text;
                 var sayIt = outcome.Speak || said != outcome.Text;
                 ConversationLog.Add(text, $"({command.Name}) {said}");
                 bubble.ShowText(said, spoken: sayIt);
                 if (sayIt) await Speaker.SpeakAsync(settings, said, settings.Language, cancel);
-                else ThemeSounds.Play(settings, ThemeSounds.Cue.Done);
+                else if (!remark || outcome.Speak) ThemeSounds.Play(settings, ThemeSounds.Cue.Done); // (not twice)
                 return;
             }
         }
