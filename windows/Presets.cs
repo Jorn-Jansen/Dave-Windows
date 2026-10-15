@@ -12,7 +12,7 @@ public static class Presets
     /// <summary>Settings that are never part of a preset.</summary>
     public static readonly HashSet<string> Left = new()
     {
-        "GroqKey", "AiProvider", "AiKey", "AiModel", "AiBaseUrl", "AzureKey", "AzureRegion", "SpotifyClientId", "CalendarLinks",
+        "GroqKey", "AiProvider", "AiKey", "AiModel", "AiBaseUrl", "AzureKey", "AzureRegion", "AzurePlan", "SpotifyClientId", "CalendarLinks",
         "PhoneEnabled", "PhoneNotify", "SocialName",
     };
 

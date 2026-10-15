@@ -791,7 +791,7 @@ function options(select, items, chosen) {
 }
 
 /* --- Presets: named sets of settings to switch between (keys and connections stay out of them) --- */
-const PRESET_LEFT = new Set(["GroqKey", "AiProvider", "AiKey", "AiModel", "AiBaseUrl", "AzureKey", "AzureRegion", "SpotifyClientId", "CalendarLinks", "PhoneEnabled", "PhoneNotify", "SocialName"]);
+const PRESET_LEFT = new Set(["GroqKey", "AiProvider", "AiKey", "AiModel", "AiBaseUrl", "AzureKey", "AzureRegion", "AzurePlan", "SpotifyClientId", "CalendarLinks", "PhoneEnabled", "PhoneNotify", "SocialName"]);
 const presetValues = () => Object.fromEntries(Object.entries(readSettings()).filter(([k]) => !PRESET_LEFT.has(k)));
 const savePresets = () => send({ type: "presetsSave", presets, active: presetSel });
 const presetNote = text => { const n = $("presetNote"); if (n) { n.textContent = text; clearTimeout(n.timer); n.timer = setTimeout(() => n.textContent = "", 4000); } };
@@ -920,13 +920,24 @@ function renderSettings(d) {
   }, null, "azure");
   field("AzureVoice", "Main-language voice", c => { const s = el("select"); options(s, [], v.AzureVoice); c.append(button("▶", () => preview("azure", "main"))); return s; }, null, "azure");
   field("AzureSecondVoice", "Second-language voice", c => { const s = el("select"); options(s, [], v.AzureSecondVoice); c.append(button("▶", () => preview("azure", "second"))); return s; }, null, "azure");
+  field("AzurePlan", "Azure plan", select("AzurePlan", [["free", "Free (F0): 500,000 characters a month"], ["paid", "Pay as you go (S0): no limit"]]),
+    "Which plan your Azure Speech resource is on (in the Azure portal: your Speech resource → Overview → Pricing tier).", "azure");
   field("AzureUsage", "Azure this month", c => {
-    const used = d.azureUsed || 0, free = d.azureFree || 500000, share = Math.min(100, used / free * 100);
-    const bar = el("div", "usage"), fill = el("i"); fill.style.width = share + "%"; if (share > 85) bar.classList.add("high");
-    bar.append(fill);
-    c.append(bar, el("span", "status", `${used.toLocaleString()} / ${free.toLocaleString()} (${Math.round(share)}%)`));
+    const bar = el("div", "usage"), fill = el("i"), status = el("span", "status");
+    bar.append(fill); c.append(bar, status);
+    const show = () => { // free: how much of the 500,000; paid: how much and about what it costs
+      const used = d.azureUsed || 0, paid = form.AzurePlan && form.AzurePlan.value === "paid";
+      bar.style.display = paid ? "none" : "";
+      if (paid) status.textContent = `${used.toLocaleString()} characters · about $${(used / 1e6 * (d.azurePrice || 15)).toFixed(2)}`;
+      else {
+        const free = d.azureFree || 500000, share = Math.min(100, used / free * 100);
+        fill.style.width = share + "%"; bar.classList.toggle("high", share > 85);
+        status.textContent = `${used.toLocaleString()} / ${free.toLocaleString()} (${Math.round(share)}%)`;
+      }
+    };
+    setTimeout(() => { show(); form.AzurePlan.addEventListener("change", show); });
     return null;
-  }, "Characters Dave had Azure say this month, counted by Dave on this PC; free is 500,000 a month, starting over on the 1st. When it runs out he uses the Windows voice. Also ask \"how much Azure do I have left?\".", "azure");
+  }, "Characters Dave had Azure say this month, counted by Dave on this PC; it starts over on the 1st. Free plan: when the 500,000 run out he uses the Windows voice. Paid: a rough cost at Azure's list price for neural voices. Also ask \"how much Azure have I used?\".", "azure");
   field("SpeechRate", "Speaking speed", select("SpeechRate", SPEEDS));
 
   sec("Listening");

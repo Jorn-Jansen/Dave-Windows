@@ -54,6 +54,10 @@ public static class Azure
 
     /// <summary>The free plan: this many characters a month.</summary>
     public const long FreeCharacters = 500_000;
+    /// <summary>The paid plan, neural voices: about this much per million characters (US dollars, Azure's list price).</summary>
+    public const double DollarsPerMillion = 15;
+
+    public static bool Paid(Settings s) => s.AzurePlan == "paid";
 
     /// <summary>Keeps count of what Azure said this month (a new month starts at 0).</summary>
     private static void Count(Settings s, int characters)
@@ -75,6 +79,12 @@ public static class Azure
         var left = Math.Max(0, FreeCharacters - used);
         var nl = System.Globalization.CultureInfo.GetCultureInfo("nl-NL");
         var en = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+        if (Paid(s)) // pay per use: no limit, so how much it's used and about what it costs
+        {
+            var dollars = used / 1_000_000.0 * DollarsPerMillion;
+            return s.Say($"This month I've used about {used.ToString("N0", en)} Azure characters, which is roughly {dollars.ToString("C2", en)} on your paid plan.",
+                         $"Deze maand heb ik ongeveer {used.ToString("N0", nl)} Azure-tekens gebruikt, dat is grofweg {dollars.ToString("0.00", nl)} dollar op je betaalde abonnement.");
+        }
         var percent = (int)Math.Round(100.0 * used / FreeCharacters);
         return s.Say($"This month I've used about {used.ToString("N0", en)} of the {FreeCharacters.ToString("N0", en)} free Azure characters ({percent}%), so about {left.ToString("N0", en)} are left. That's roughly {left / 100:N0} more answers. It starts over on the 1st.",
                      $"Deze maand heb ik ongeveer {used.ToString("N0", nl)} van de {FreeCharacters.ToString("N0", nl)} gratis Azure-tekens gebruikt ({percent}%), dus er zijn er nog ongeveer {left.ToString("N0", nl)} over. Dat is grofweg {(left / 100).ToString("N0", nl)} antwoorden. Op de 1e begint het opnieuw.");

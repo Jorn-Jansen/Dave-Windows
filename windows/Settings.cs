@@ -59,6 +59,8 @@ public class Settings
     /// <summary>How many characters Dave had Azure say this month (its free plan: 500,000 a month), and which month that is ("2026-10").</summary>
     public long AzureCharacters { get; set; }
     public string AzureMonth { get; set; } = "";
+    /// <summary>The Azure Speech plan: "free" (F0, 500,000 characters a month) or "paid" (S0, pay per use: no limit).</summary>
+    public string AzurePlan { get; set; } = "free";
     /// <summary>For the dominant personality: "female" or "male" (how it talks about itself, and its voice).</summary>
     public string PersonalityGender { get; set; } = "female";
     public sealed class Preset

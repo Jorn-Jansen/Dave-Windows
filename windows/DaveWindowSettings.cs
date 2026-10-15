@@ -118,7 +118,7 @@ public sealed partial class DaveWindow
         ["values"] = ValuesOf(settings),
         ["presets"] = new JsonArray(settings.Presets.Select(p => (JsonNode)new JsonObject { ["id"] = p.Id, ["name"] = p.Name, ["values"] = p.Values.DeepClone() }).ToArray()),
         ["activePreset"] = settings.ActivePreset,
-        ["azureUsed"] = Azure.UsedThisMonth(settings), ["azureFree"] = Azure.FreeCharacters,
+        ["azureUsed"] = Azure.UsedThisMonth(settings), ["azureFree"] = Azure.FreeCharacters, ["azurePrice"] = Azure.DollarsPerMillion,
         ["phone"] = new JsonObject
         {
             ["code"] = settings.PhoneEnabled ? PhoneLink.CodeFor(settings) : "",
@@ -146,7 +146,7 @@ public sealed partial class DaveWindow
         ["Language"] = settings.Language, ["SecondLanguage"] = settings.SecondLanguage, ["Browser"] = settings.Browser,
         ["VoiceEngine"] = settings.VoiceEngine, ["Voice"] = settings.Voice, ["SecondVoice"] = settings.SecondVoice,
         ["AzureKey"] = settings.AzureKey, ["AzureRegion"] = settings.AzureRegion,
-        ["AzureVoice"] = settings.AzureVoice, ["AzureSecondVoice"] = settings.AzureSecondVoice,
+        ["AzurePlan"] = settings.AzurePlan, ["AzureVoice"] = settings.AzureVoice, ["AzureSecondVoice"] = settings.AzureSecondVoice,
         ["SpeechRate"] = settings.SpeechRate.ToString(System.Globalization.CultureInfo.InvariantCulture),
         ["Hotkey"] = settings.Hotkey, ["WindowHotkey"] = settings.WindowHotkey,
         ["WakeWord"] = settings.WakeWord, ["CarefulWakeWord"] = settings.CarefulWakeWord, ["StartWithWindows"] = settings.StartWithWindows, ["AutoUpdate"] = settings.AutoUpdate,
@@ -193,6 +193,7 @@ public sealed partial class DaveWindow
         s.AzureKey = Str("AzureKey");
         s.AzureRegion = Str("AzureRegion").ToLowerInvariant().Replace(" ", "");
         s.AzureVoice = Str("AzureVoice");
+        s.AzurePlan = Str("AzurePlan") == "paid" ? "paid" : "free";
         s.AzureSecondVoice = Str("AzureSecondVoice");
         if (double.TryParse(Str("SpeechRate"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rate))
             s.SpeechRate = Math.Clamp(rate, 0.5, 3.0);
