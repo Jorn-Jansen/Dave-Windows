@@ -63,6 +63,17 @@ public sealed partial class DaveWindow : Form
         else openSettingsWhenReady = true;
     }
 
+    /// <summary>Open the window on a friend's chat (clicking their message card).</summary>
+    public void OpenChat(string code)
+    {
+        if (InvokeRequired) { BeginInvoke(() => OpenChat(code)); return; }
+        BringUp();
+        if (ready) Send(new JsonObject { ["type"] = "openChat", ["code"] = code });
+        else openChatWhenReady = code;
+    }
+
+    private string? openChatWhenReady;
+
     private void BringUp()
     {
         if (!Visible) Show();
@@ -92,6 +103,7 @@ public sealed partial class DaveWindow : Form
                 ready = true;
                 Push();
                 if (openSettingsWhenReady) { openSettingsWhenReady = false; Send(new JsonObject { ["type"] = "openSettings" }); }
+                if (openChatWhenReady is { } chat) { openChatWhenReady = null; Send(new JsonObject { ["type"] = "openChat", ["code"] = chat }); }
             };
             using var page = typeof(DaveWindow).Assembly.GetManifestResourceStream("DaveWindow.html")!;
             core.NavigateToString(await new StreamReader(page).ReadToEndAsync());

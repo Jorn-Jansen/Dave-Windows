@@ -94,6 +94,7 @@ public class DaveApp : ApplicationContext
     private DaveWindow? window; // made the first time you open it
     private readonly System.Windows.Forms.Timer reminderTimer = new() { Interval = 1_000 }; // every second, so timers go off on time
     private readonly TimerOverlay timerOverlay; // the countdown cards in the corner of the screen
+    private readonly MessageCards messageCards = new(); // friends' messages, top left
     private WakeWord? wakeWord;
     private PhoneLink? phoneLink; // Dave on the iPhone talking to this Dave (when turned on)
     private bool remote; // answering the iPhone: no speaking, ducking or listening here
@@ -114,6 +115,7 @@ public class DaveApp : ApplicationContext
     {
         Ducker.RestoreAfterCrash(); // in case Dave was closed while other sound was turned down
         timerOverlay = new TimerOverlay(settings);
+        messageCards.Clicked += code => Window().OpenChat(code); // click a message: that chat in Dave's window
         Palette.Use(settings.Theme);
         Watchers.Triggered += message =>
         {
@@ -1179,8 +1181,8 @@ public class DaveApp : ApplicationContext
     // --- Messages from friends ---
 
     /// <summary>
-    /// A friend's message: the notification sound, then the name and message in the bubble (or in Dave's window when you're
-    /// in it), read out loud unless that's turned off, in quiet mode, or you're in his window (you can read it there).
+    /// A friend's message: the notification sound, then a card with the name and message in the top-left corner (or a note
+    /// in Dave's window when you're in it), read out loud unless that's turned off, in quiet mode, or you're in his window.
     /// Also on the phone when you're away from the PC.
     /// </summary>
     private async Task AnnounceMessageAsync(Social.Incoming message)
@@ -1206,7 +1208,7 @@ public class DaveApp : ApplicationContext
             var shown = what.Length > 0 ? $"{icon} {message.Name} {what}" : $"💬 {message.Name}: {message.Text}";
             var aloud = settings.ReadMessagesAloud && !settings.IsQuiet && !inWindow; // in his window you can read it yourself
             if (inWindow) window!.Notify(shown);
-            else bubble.ShowText(shown, spoken: aloud);
+            else messageCards.Add(message.Code, message.Name, what.Length > 0 ? $"{icon} {what}" : message.Text, message.Kind == "photo" ? message.File : "");
             PhoneNotify.Send(settings, "💬 " + message.Name, what.Length > 0 ? what : message.Text); // (only when you've been away from the PC)
             if (aloud)
             {
@@ -1224,13 +1226,11 @@ public class DaveApp : ApplicationContext
                     else await Speaker.SpeakAsync(settings, language.StartsWith("nl") ? $"{message.Name} zegt: {message.Text}" : $"{message.Name} says: {message.Text}", language, cancel);
                 }
             }
-            else if (!inWindow) await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(message.Text.Length / 15.0, 4, 12)), cancel); // long enough to read
         }
         catch (OperationCanceledException) { /* clicked away */ }
         catch (Exception e) { Log.Write($"Showing a message failed: {e.Message}"); }
         finally
         {
-            if (!inWindow) bubble.HideAfter(1500);
             EndSession();
             if (wakeWord != null) wakeWord.Paused = false;
         }

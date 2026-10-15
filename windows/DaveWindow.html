@@ -1369,6 +1369,12 @@ function count(id, n) { $(id).textContent = n || ""; $(id).style.display = n ? "
 
 window.chrome.webview.addEventListener("message", e => {
   const m = e.data;
+  if (m.type === "openChat") { // a friend's message card was clicked: their chat
+    friendSel = m.code; chatting = true;
+    $("socialPanel").classList.add("show"); socialOpen = true; rendered.social = null; renderSocial();
+    const box = $("dmInput"); if (box) box.focus();
+    return;
+  }
   if (m.type === "toast") {
     const toast = $("toast"); toast.textContent = m.text; toast.classList.add("show");
     setTimeout(() => toast.classList.remove("show"), 2500);
