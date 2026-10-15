@@ -72,7 +72,29 @@ public sealed partial class DaveWindow : Form
         else openChatWhenReady = code;
     }
 
-    private string? openChatWhenReady;
+    private string? openChatWhenReady, settingsTabWhenReady;
+
+    /// <summary>The settings panel on one of its tabs ("connections" while setting up a key).</summary>
+    public void ShowSettingsTab(string tab)
+    {
+        if (InvokeRequired) { BeginInvoke(() => ShowSettingsTab(tab)); return; }
+        if (ready) Send(new JsonObject { ["type"] = "settingsPane", ["pane"] = tab });
+        else settingsTabWhenReady = tab;
+    }
+
+    /// <summary>How setting up Groq or Spotify is going, shown in the Connections tab.</summary>
+    public void SetupStatus(string service, string status)
+    {
+        if (InvokeRequired) { BeginInvoke(() => SetupStatus(service, status)); return; }
+        Send(new JsonObject { ["type"] = "setupStatus", ["service"] = service, ["status"] = status });
+    }
+
+    /// <summary>A key was filled in by Dave: an open settings panel shows it (so Save doesn't put the old one back).</summary>
+    public void SetupFilled(string key, string value)
+    {
+        if (InvokeRequired) { BeginInvoke(() => SetupFilled(key, value)); return; }
+        Send(new JsonObject { ["type"] = "setupFilled", ["key"] = key, ["value"] = value });
+    }
 
     private void BringUp()
     {
@@ -103,6 +125,7 @@ public sealed partial class DaveWindow : Form
                 ready = true;
                 Push();
                 if (openSettingsWhenReady) { openSettingsWhenReady = false; Send(new JsonObject { ["type"] = "openSettings" }); }
+                if (settingsTabWhenReady is { } pane) { settingsTabWhenReady = null; Send(new JsonObject { ["type"] = "settingsPane", ["pane"] = pane }); }
                 if (openChatWhenReady is { } chat) { openChatWhenReady = null; Send(new JsonObject { ["type"] = "openChat", ["code"] = chat }); }
             };
             using var page = typeof(DaveWindow).Assembly.GetManifestResourceStream("DaveWindow.html")!;
@@ -161,6 +184,8 @@ public sealed partial class DaveWindow : Form
                 case var social when social.StartsWith("social"):
                     _ = OnSocialMessageAsync(Str("type"), Str("code"), Str("text"), m);
                     return;
+                case "connectGroq": ConnectHelper.Current?.StartGroq(announce: true); return;   // ✨ buttons in Connections
+                case "connectSpotify": ConnectHelper.Current?.StartSpotify(announce: true); return;
                 case "getSettings" or "voices" or "azureVoices" or "preview" or "spotifyConnect" or "saveSettings":
                     _ = OnSettingsMessageAsync(Str("type"), m);
                     return;

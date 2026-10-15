@@ -95,6 +95,7 @@ public class DaveApp : ApplicationContext
     private readonly System.Windows.Forms.Timer reminderTimer = new() { Interval = 1_000 }; // every second, so timers go off on time
     private readonly TimerOverlay timerOverlay; // the countdown cards in the corner of the screen
     private readonly MessageCards messageCards = new(); // friends' messages, top left
+    private readonly ConnectHelper connect;             // making the Groq key / connecting Spotify, with the clipboard
     private WakeWord? wakeWord;
     private PhoneLink? phoneLink; // Dave on the iPhone talking to this Dave (when turned on)
     private bool remote; // answering the iPhone: no speaking, ducking or listening here
@@ -116,6 +117,10 @@ public class DaveApp : ApplicationContext
         Ducker.RestoreAfterCrash(); // in case Dave was closed while other sound was turned down
         timerOverlay = new TimerOverlay(settings);
         messageCards.Clicked += code => Window().OpenChat(code); // click a message: that chat in Dave's window
+        connect = new ConnectHelper(settings);
+        connect.Say += text => _ = TellAsync(text);
+        connect.Status += (service, status) => window?.SetupStatus(service, status);
+        connect.Filled += (key, value) => { window?.SetupFilled(key, value); if (key == "GroqKey") ApplySettings(); };
         Palette.Use(settings.Theme);
         Watchers.Triggered += message =>
         {
@@ -174,7 +179,7 @@ public class DaveApp : ApplicationContext
         _ = Task.Delay(TimeSpan.FromMinutes(1)).ContinueWith(_ => CheckForUpdatesAsync(manual: false),
             TaskScheduler.FromCurrentSynchronizationContext()); // first look a minute after starting, when the PC has settled
 
-        if (!settings.HasAiKey) OpenSettings();
+        if (!settings.HasAiKey) StartSetup();
         else tray.ShowBalloonTip(3000, $"{settings.Name} is ready", T($"Press {settings.Hotkey} to talk to me.", $"Druk op {settings.Hotkey} om met me te praten."), ToolTipIcon.None);
     }
 
@@ -278,6 +283,29 @@ public class DaveApp : ApplicationContext
         using var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
         if (settings.StartWithWindows) run?.SetValue("Dave", $"\"{Application.ExecutablePath}\"");
         else run?.DeleteValue("Dave", throwOnMissingValue: false);
+    }
+
+    /// <summary>
+    /// No AI key yet: the settings on the Connections tab, Groq's key page in the browser, and Dave says how (his Windows
+    /// voice works without a key). As soon as the key is copied it's filled in (see ConnectHelper).
+    /// </summary>
+    private void StartSetup()
+    {
+        OpenSettings();
+        window?.ShowSettingsTab("connections");
+        if (settings.AiProvider is "groq" or "" && !connect.Waiting) connect.StartGroq(announce: true);
+    }
+
+    /// <summary>Shows and says something outside a conversation (setting up a connection).</summary>
+    private async Task TellAsync(string text)
+    {
+        try
+        {
+            bubble.ShowText(text, spoken: true);
+            await Speaker.SpeakAsync(settings, text, settings.Language);
+        }
+        catch (Exception e) { Log.Write($"Telling failed: {e.Message}"); }
+        finally { bubble.HideAfter(5000); }
     }
 
     /// <summary>The settings: as a panel in Dave's window; the old settings window only if that window can't run.</summary>
@@ -578,7 +606,7 @@ public class DaveApp : ApplicationContext
 
     private async Task RunSessionAsync(string? typed, string? announcement = null, bool isReminder = true)
     {
-        if (!settings.HasAiKey) { OpenSettings(); return; }
+        if (!settings.HasAiKey) { StartSetup(); return; }
         session = new CancellationTokenSource();
         var cancel = session.Token;
         if (wakeWord != null) wakeWord.Paused = true;

@@ -206,6 +206,9 @@
   .pane.hidden, .field.nomatch, .section.nomatch, .pane-themes.nomatch { display: none; }
   .pane-themes .hint-top { margin: 0 0 12px; font-size: 13px; }
   .pane-themes .themes { margin-bottom: 8px; }
+  .setup-status { display: none; margin: 4px 0 10px; padding: 9px 12px; border-radius: 10px; font-size: 13px;
+    background: color-mix(in srgb, var(--cyan) 12%, transparent); border: 1px solid color-mix(in srgb, var(--cyan) 35%, transparent); }
+  .setup-status.show { display: block; }
   .search-none { color: var(--dim); text-align: center; margin: 40px auto; }
 
   /* Social: friends on the left, the chat with one of them on the right (stacked on a narrow window) */
@@ -664,6 +667,7 @@ const MODELS = { openai: "gpt-4.1-mini", openrouter: "openai/gpt-oss-120b", cust
 let sdata = null, form = {};
 
 let settingsPane = "general"; // the tab you were on (stays while Dave runs)
+const setupState = {};        // how setting up Groq / Spotify is going ("Waiting for you to copy the key…")
 function openSettings() { $("settingsPanel").classList.add("show"); $("settingsBody").textContent = ""; $("settingsSearch").value = ""; send({ type: "getSettings" }); }
 function closeSettings() { // ✕ / Cancel: nothing is saved, and a theme you were trying goes back to the saved one
   $("settingsPanel").classList.remove("show"); sdata = null;
@@ -756,6 +760,13 @@ function options(select, items, chosen) {
   }
   if (chosen && ![...select.options].some(o => o.value === chosen)) { const o = el("option", null, chosen); o.value = chosen; select.append(o); }
   select.value = chosen || (select.options[0] ? select.options[0].value : "");
+}
+
+/* Under the ✨ button: how setting it up is going */
+function setupBox(service) {
+  const box = el("div", "setup-status" + (setupState[service] ? " show" : ""), setupState[service] || "");
+  box.id = "setup-" + service;
+  return box;
 }
 
 function renderSettings(d) {
@@ -856,7 +867,9 @@ function renderSettings(d) {
   // --- Connections ---
   tab("connections");
   sec("AI");
-  field("GroqKey", "Groq API key", text("GroqKey", "gsk_…", true), "Free at console.groq.com/keys. Listening always uses this key (or OpenAI).");
+  field("GroqKey", "Groq API key", c => { c.append(button("✨ Get a free key", () => send({ type: "connectGroq" }))); return text("GroqKey", "gsk_…", true)(); },
+    "Click ✨: Groq's page opens and Dave tells you what to do. Copy the key there and he fills it in himself. Listening always uses this key (or OpenAI).");
+  section.append(setupBox("groq"));
   field("AiProvider", "AI provider", select("AiProvider", PROVIDERS));
   field("AiKey", "Provider key", text("AiKey", "API key", true), null, "provider");
   field("AiModel", "Model", text("AiModel", ""), "Empty = the provider's default.", "provider");
@@ -880,9 +893,10 @@ function renderSettings(d) {
   field("SpotifyClientId", "Client ID", c => {
     const i = text("SpotifyClientId", "")();
     const status = el("span", "status", d.spotify); status.id = "spotifyStatus";
-    c.append(button("Connect Spotify", () => send({ type: "spotifyConnect", clientId: i.value })), status);
+    c.append(button("✨ Set it up for me", () => send({ type: "connectSpotify" })), button("Connect Spotify", () => send({ type: "spotifyConnect", clientId: i.value })), status);
     return i;
-  }, `From developer.spotify.com/dashboard. Add this Redirect URI to your app there: ${d.redirect}`);
+  }, `Click ✨: Spotify's developer page opens and Dave tells you what to do; copy the Client ID there and he fills it in and connects. Or by voice: "how do I connect you to Spotify?". Redirect URI: ${d.redirect}`);
+  section.append(setupBox("spotify"));
 
   // Language changed: the Windows voices for it
   form.Language.onchange = () => send({ type: "voices", field: "Voice", lang: form.Language.value });
@@ -1476,6 +1490,13 @@ function count(id, n) { $(id).textContent = n || ""; $(id).style.display = n ? "
 
 window.chrome.webview.addEventListener("message", e => {
   const m = e.data;
+  if (m.type === "settingsPane") { settingsPane = m.pane; if (sdata) settingsTab(m.pane); return; }
+  if (m.type === "setupStatus") { // setting up Groq or Spotify: how it's going, under its button
+    setupState[m.service] = m.status;
+    const box = $("setup-" + m.service); if (box) { box.textContent = m.status; box.classList.add("show"); }
+    return;
+  }
+  if (m.type === "setupFilled") { if (form[m.key]) form[m.key].value = m.value; return; } // Dave filled it in: so Save keeps it
   if (m.type === "openChat") { // a friend's message card was clicked: their chat
     friendSel = m.code; chatting = true;
     $("socialPanel").classList.add("show"); socialOpen = true; rendered.social = null; renderSocial();

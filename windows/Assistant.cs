@@ -128,6 +128,9 @@ public static class Assistant
         Tool("stopwatch", "The stopwatch (counting up, not a timer): 'start a stopwatch' (start), 'lap' / 'ronde' (lap), 'how long has it been?' (check), " +
             "'pause the stopwatch' (pause), 'carry on' / 'resume' (resume), 'stop the stopwatch' (stop: says the total and the laps), 'reset it' (reset).",
             new JsonObject { ["action"] = Enum("start", "lap", "check", "pause", "resume", "stop", "reset") }, "action"),
+        Tool("connect_service", "Help the user connect Dave to something, step by step: 'how do I connect you to Spotify', 'set up Spotify', " +
+            "'I need a new Groq key', 'how do I get an AI key'. Opens the right page and fills the key in by itself once it's copied.",
+            new JsonObject { ["service"] = Enum("spotify", "groq") }, "service"),
         Tool("open_app", "Open a program.", new JsonObject { ["name"] = Str("e.g. 'Roblox Studio'") }, "name"),
         Tool("open_website", "Open a website or web search.",
             new JsonObject { ["url"] = Str("Address of a specific site"), ["search"] = Str("Search words"), ["browser"] = Str("Only if the user named one") }),
@@ -324,6 +327,8 @@ public static class Assistant
         (Words("stopwatch", "stop watch", "stopwatch", "chronometer", "lap", "ronde", "how long has it been", "hoe lang is het", "hoe lang al",
                "how long since", "time it", "time me", "klok het", "carry on", "ga verder", "resume", "pause", "pauze"),
             new[] { "stopwatch", "timers_on_screen" }),
+        (Words("connect", "verbind", "koppel", "set up", "setup", "instellen", "api key", "client id", "sleutel", "groq"),
+            new[] { "connect_service" }),
         (Words("open", "start", "launch", "close", "sluit", "quit", "afsluit", "lock", "vergrendel", "op slot", "app", "program", "website", "site",
                "google", "youtube", "browser", "chrome", "discord", "roblox", "steam", "search", "zoek"),
             new[] { "open_app", "open_website", "lock_pc", "close_app", "close_all_apps" }),
