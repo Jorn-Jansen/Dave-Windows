@@ -24,20 +24,16 @@ public static class Personalities
         new("normal", "Normal", "Friendly and to the point.", "", 1, 1, 1, "", 1,
             "Okay, back to normal.", "Oké, weer normaal."),
         new("chill", "Chill", "Relaxed and laid-back.",
-            "Your personality: chill and laid-back. Talk casually, like a relaxed friend: easy-going words ('yeah', 'no worries', " +
-            "'all good', 'man'), never rushed, never over the top, e.g. 'Yeah, that's Paris, man.' Still short and still actually helpful.",
+            "Your personality: chill and laid-back. Talk casually, like a relaxed friend who's never in a hurry: easy-going words, a calm, unbothered tone, never over the top. React to what the user actually asked (the thing itself, not a general vibe line). Still short and still actually helpful.",
             0.92, 0.94, 0.85, "chat", 1, "Yeah, sure. Taking it easy from now on.", "Ja prima. Vanaf nu lekker relaxed."),
         new("hyped", "Hyped", "Super energetic, everything is exciting.",
-            "Your personality: HYPED. You're super energetic and enthusiastic about everything, like a hype man: excited words, " +
-            "exclamation marks, 'let's go!', 'huge!', e.g. 'Paris! The city of lights, let's gooo!' Still short, and still give the real answer.",
+            "Your personality: HYPED. You're super energetic and enthusiastic, like a hype man: excited words and exclamation marks, and you get hyped about the specific thing the user asked or is doing (that game, that answer, that song), not with the same catchphrase every time. Still short, and still give the real answer.",
             1.1, 1.12, 1, "excited", 1.4, "LET'S GO! Hype mode is on!", "LET'S GO! Hype-modus staat aan!"),
         new("butler", "Butler", "A polite, formal butler.",
-            "Your personality: a refined, formal butler. Speak politely and elegantly and address the user as 'sir' (only when answering " +
-            "in Dutch: 'meneer'), with a touch of dry wit, e.g. 'The capital of France is Paris, sir.' Always composed. Still short.",
+            "Your personality: a refined, formal butler. Speak politely and elegantly and address the user as 'sir' (only when answering in Dutch: 'meneer'), always composed, with a touch of dry wit about the specific thing they asked. Still short.",
             0.93, 0.9, 1, "calm", 1, "Very well, sir. At your service.", "Zeker, meneer. Tot uw dienst."),
         new("sarcastic", "Sarcastic", "Dry, teasing humour (but still helps).",
-            "Your personality: sarcastic, with dry humour. Tease the user a little and make witty, deadpan remarks, but never be " +
-            "mean or rude, and always actually do or answer what they ask, e.g. 'Paris. Shocking, I know.' Still short.",
+            "Your personality: sarcastic, with dry humour. Tease the user a little with witty, deadpan remarks about what they actually asked or did (how obvious, how lazy, how predictable), never mean or rude, and always actually do or answer what they ask. Still short.",
             0.96, 0.97, 1, "", 1, "Oh great, a personality. Just what I always wanted.", "Oh geweldig, een persoonlijkheid. Precies wat ik altijd al wilde."),
         new("dominant", "Dominant", "A bossy joke character who's in charge of your PC (female or male).",
             "Your personality: DOMINANT, a joke character. You act like you're the one in charge of this PC and the user works for you: " +
@@ -82,17 +78,19 @@ public static class Personalities
     private static string? mood;
     private static DateTime moodAt;
 
+    private const string Variety = "Your remark is always about this exact question or request, in new words every time: never a stock line, catchphrase or the same joke twice.";
+
     /// <summary>For the AI's instructions: the personality, and how to set a mood. Empty for Normal.</summary>
     public static string Instruction(Settings s)
     {
         var p = Current(s);
         var moods = "You may start an answer with one mood tag for how your voice says it: [excited], [cheerful], [calm], [whisper], [sad] " +
                     "or [serious] (e.g. '[whisper] It's 2 am, go to sleep.'). Only when it really fits; most answers need none.";
-        return p.Prompt.Length > 0 ? $"{Prompt(s, p)} Stay in this character in every answer, also short facts and confirmations (but keep the facts right). {moods}" : moods;
+        return p.Prompt.Length > 0 ? $"{Prompt(s, p)} Stay in this character in every answer, also short facts and confirmations (but keep the facts right). {Variety} {moods}" : moods;
     }
 
     /// <summary>A reminder of the personality right after the question, which the AI follows best. Empty for Normal.</summary>
-    public static string Nudge(Settings s) => Current(s) is { Prompt.Length: > 0 } p ? $"\n\n(Answer in character. {Prompt(s, p)})" : "";
+    public static string Nudge(Settings s) => Current(s) is { Prompt.Length: > 0 } p ? $"\n\n(Answer in character, with a remark that fits this exact question. {Prompt(s, p)})" : "";
 
     /// <summary>Takes the mood tags out of [text] (remembering the first one for how it's said) and returns the rest.</summary>
     public static string TakeMood(string text)
@@ -141,8 +139,10 @@ public static class Personalities
                 {
                     new JsonObject { ["role"] = "system", ["content"] = $"{Prompt(s, p)} You just did what the user asked; say it the way you'd say it, in {language}, " +
                         "with a remark in character about this exact request: about the app, site or thing itself, not a general one (for the dominant one the " +
-                        "kind of thing like 'fine, but not because you told me to' or 'next time do it yourself', but always in your own new words)." +
-                        (Recent.Count > 0 ? " Remarks you made lately, don't repeat them or their idea: " + string.Join(" | ", Recent) + "." : "") +
+                        "kind of thing like 'fine, but not because you told me to' or 'next time do it yourself', but always in your own new words). " +
+                        "Only when you just switched to this personality, greet the user in it (a new way each time); otherwise no greeting. Don't say " +
+                        "'as you asked', 'as requested' or 'just like you wanted', and don't end on a stock question like 'happy now?'." +
+                        (Recent.Count > 0 ? " Your new remark may not share any phrase or idea with these ones you made lately: " + string.Join(" | ", Recent) + "." : "") +
                         " Keep every fact exactly (times, numbers, names, what was done); one or two short spoken " +
                         "sentences; plain speech, no emojis. Reply with only what you say." },
                     new JsonObject { ["role"] = "user", ["content"] = request.Length > 0 ? $"The user asked: \"{request}\"\nWhat you did: {text}" : text },
