@@ -159,6 +159,7 @@ public sealed class PhoneLink : IDisposable
                     ["secondLanguage"] = settings.SecondLanguage,
                     ["country"] = settings.Country,
                     ["groqKey"] = settings.GroqKey,
+                    ["groqKeys"] = new JsonArray(settings.GroqKeys.Select(k => (JsonNode)k).ToArray()), // the phone goes down them too
                     ["spotifyClientId"] = settings.SpotifyClientId, // the phone logs in to Spotify itself, with the same Spotify app
                     // every address this PC can be reached at: home network, and Tailscale (100.x) for away from home
                     ["addresses"] = new JsonArray(Addresses().Select(a => (JsonNode)a).ToArray()),

@@ -140,7 +140,7 @@ public sealed partial class DaveWindow
     /// <summary>Every setting the panel has, by name (also what a preset is made from).</summary>
     public static JsonObject ValuesOf(Settings settings) => new()
     {
-        ["GroqKey"] = settings.GroqKey, ["AiProvider"] = settings.AiProvider, ["AiKey"] = settings.AiKey,
+        ["GroqKey"] = settings.GroqKey, ["GroqKeys"] = string.Join(" ", settings.GroqKeys), ["AiProvider"] = settings.AiProvider, ["AiKey"] = settings.AiKey,
         ["AiModel"] = settings.AiModel, ["AiBaseUrl"] = settings.AiBaseUrl,
         ["AssistantName"] = settings.AssistantName, ["WakePhrase"] = settings.WakePhrase, ["Country"] = settings.Country,
         ["Language"] = settings.Language, ["SecondLanguage"] = settings.SecondLanguage, ["Browser"] = settings.Browser,
@@ -177,6 +177,8 @@ public sealed partial class DaveWindow
         bool Bool(string key) => v[key] is JsonValue b && b.TryGetValue<bool>(out var x) && x;
         if (v.Count == 0) return;
         s.GroqKey = Str("GroqKey");
+        s.GroqKeys = Str("GroqKeys").Split(new[] { ' ', ',', ';', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(k => k != s.GroqKey).Distinct().ToList();
         s.AiProvider = Str("AiProvider") is { Length: > 0 } provider ? provider : "groq";
         s.AiKey = Str("AiKey");
         s.AiModel = Str("AiModel");

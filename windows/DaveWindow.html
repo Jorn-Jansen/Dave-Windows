@@ -791,7 +791,7 @@ function options(select, items, chosen) {
 }
 
 /* --- Presets: named sets of settings to switch between (keys and connections stay out of them) --- */
-const PRESET_LEFT = new Set(["GroqKey", "AiProvider", "AiKey", "AiModel", "AiBaseUrl", "AzureKey", "AzureRegion", "AzurePlan", "SpotifyClientId", "CalendarLinks", "PhoneEnabled", "PhoneNotify", "SocialName"]);
+const PRESET_LEFT = new Set(["GroqKey", "GroqKeys", "AiProvider", "AiKey", "AiModel", "AiBaseUrl", "AzureKey", "AzureRegion", "AzurePlan", "SpotifyClientId", "CalendarLinks", "PhoneEnabled", "PhoneNotify", "SocialName"]);
 const presetValues = () => Object.fromEntries(Object.entries(readSettings()).filter(([k]) => !PRESET_LEFT.has(k)));
 const savePresets = () => send({ type: "presetsSave", presets, active: presetSel });
 const presetNote = text => { const n = $("presetNote"); if (n) { n.textContent = text; clearTimeout(n.timer); n.timer = setTimeout(() => n.textContent = "", 4000); } };
@@ -981,6 +981,8 @@ function renderSettings(d) {
   field("GroqKey", "Groq API key", c => { c.append(button("✨ Get a free key", () => send({ type: "connectGroq" }))); return text("GroqKey", "gsk_…", true)(); },
     "Click ✨: Groq's page opens and Dave tells you what to do. Copy the key there and he fills it in himself. Listening always uses this key (or OpenAI).");
   section.append(setupBox("groq"));
+  field("GroqKeys", "Extra Groq keys", text("GroqKeys", "gsk_… gsk_… (in order, with a space between)", true),
+    "Keys of other Groq accounts. When a key is at a limit (per minute, per day…), Dave goes on with the next one, in this order.");
   field("AiProvider", "AI provider", select("AiProvider", PROVIDERS));
   field("AiKey", "Provider key", text("AiKey", "API key", true), null, "provider");
   field("AiModel", "Model", text("AiModel", ""), "Empty = the provider's default.", "provider");
@@ -1015,7 +1017,7 @@ function renderSettings(d) {
   form.AiProvider.onchange = form.VoiceEngine.onchange = updateSettingsVisibility;
   updateSettingsVisibility();
   // field names in both languages and other words people search for
-  const words = { GroqKey: "key api groq sleutel", Hotkey: "hotkey keyboard sneltoets toets", WindowHotkey: "hotkey keyboard sneltoets venster", WakeWord: "hey dave wake word wekwoord microphone microfoon", ThemeSounds: "sound geluid beep piep", MessageSound: "sound geluid notification melding", TimersOnScreen: "timer stopwatch countdown overlay", KeepOffGames: "game games roblox fullscreen spel", ReadReceipts: "seen gezien gelezen", Translate: "translate vertalen language taal", PhoneEnabled: "iphone phone telefoon mobiel", PhoneNotify: "notification melding ntfy phone telefoon", SpeechRate: "speed snelheid fast slow", Personality: "persoonlijkheid mood butler", AssistantName: "naam name", SocialName: "naam name friends vrienden" };
+  const words = { GroqKey: "key api groq sleutel", GroqKeys: "key keys api groq sleutel sleutels extra limit limiet", Hotkey: "hotkey keyboard sneltoets toets", WindowHotkey: "hotkey keyboard sneltoets venster", WakeWord: "hey dave wake word wekwoord microphone microfoon", ThemeSounds: "sound geluid beep piep", MessageSound: "sound geluid notification melding", TimersOnScreen: "timer stopwatch countdown overlay", KeepOffGames: "game games roblox fullscreen spel", ReadReceipts: "seen gezien gelezen", Translate: "translate vertalen language taal", PhoneEnabled: "iphone phone telefoon mobiel", PhoneNotify: "notification melding ntfy phone telefoon", SpeechRate: "speed snelheid fast slow", Personality: "persoonlijkheid mood butler", AssistantName: "naam name", SocialName: "naam name friends vrienden" };
   for (const [key, w] of Object.entries(words)) { const f = form[key] && form[key].closest(".field"); if (f) f.dataset.words = w; }
   settingsTab(settingsPane);
 }

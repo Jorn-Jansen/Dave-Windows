@@ -7,6 +7,8 @@ namespace DaveWindows;
 public class Settings
 {
     public string GroqKey { get; set; } = "";
+    /// <summary>More Groq keys (other accounts), in order: when the ones before are at a limit, the next one answers.</summary>
+    public List<string> GroqKeys { get; set; } = new();
     /// <summary>What the assistant is called ("" = Dave).</summary>
     public string AssistantName { get; set; } = "";
     /// <summary>Wake phrase for hands-free use ("" = "hey [name]").</summary>
@@ -105,7 +107,7 @@ public class Settings
     {
         "openai" or "openrouter" => AiKey.Length > 0,
         "custom" => AiBaseUrl.Length > 0,
-        _ => GroqKey.Length > 0,
+        _ => GroqKey.Length > 0 || GroqKeys.Count > 0,
     };
     /// <summary>How quiet other sound gets while Dave talks (0.3 = 30%).</summary>
     public double DuckTo { get; set; } = 0.3;
