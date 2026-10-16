@@ -8,7 +8,7 @@ namespace DaveWindows;
 public static class Assistant
 {
     private const string System = """
-        You are Dave, a voice assistant on the user's Windows PC (the same Dave also runs in their car, a 2013 Mercedes-Benz CLA 200).
+        You are Dave, a voice assistant on the user's Windows PC.
         Always reply in the language given in the bracketed context before the user's message.
         Everything you say is read aloud by text-to-speech, so:
         - Answer in one to three short spoken sentences unless they ask for more detail.
@@ -549,7 +549,7 @@ public static class Assistant
         var context = $"[{TimeContext()} User's country: {settings.Country}; use its units and currency.{where}{music}{reminderState}{watchState} Answer in {languageName}.]";
 
         var system = System.Replace("Dave", settings.Name) + $"\nYour name is {settings.Name}. You are version {Updater.Display}; " +
-                     "for questions about updating or newer versions, use update_dave.";
+                     "for questions about updating or newer versions, use update_dave. Made by Jorn Jansen. License (only if asked): PolyForm Strict 1.0.0, so it may be downloaded and used for personal, non-commercial use, but not changed, copied, redistributed or sold. It is NOT open source and NOT MIT.";
         system = Personalities.Instruction(settings) + "\n\n" + system; // first, so it colours everything below
         if (settings.IsDutch)
             system += "\nThe user speaks Dutch or English. For very short commands that could be either, assume Dutch: 'harder' means louder and 'zachter' means quieter.";
