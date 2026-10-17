@@ -223,8 +223,9 @@ public static class Groq
             form.Add(new StringContent("verbose_json"), "response_format");
             form.Add(new StringContent("word"), "timestamp_granularities[]"); // when each word was said ("send Alex a voice message …")
             form.Add(new StringContent("segment"), "timestamp_granularities[]");
-            // A hint helps Whisper spell Dave's name and common commands right.
-            form.Add(new StringContent($"Hé {settings.Name}, zet de muziek harder. Hey {settings.Name}, play the next song."), "prompt");
+            // A hint helps Whisper spell Dave's name right. Only the name: Whisper repeats its hint when it hears just noise,
+            // and a hint with a command in it would then be carried out without anyone saying it.
+            form.Add(new StringContent($"{settings.Name}."), "prompt");
             return form;
         }
 
@@ -265,7 +266,7 @@ public static class Groq
     private static bool IsHallucination(string text)
     {
         var t = text.ToLowerInvariant();
-        return t.Length == 0 || t.Contains("ondertitel") || t.Contains("subtitles by") || t.Contains("amara.org")
+        return t.Length == 0 || !t.Any(char.IsLetterOrDigit) || t.Contains("ondertitel") || t.Contains("subtitles by") || t.Contains("amara.org")
                || t is "." or "you" or "thank you." or "bedankt voor het kijken.";
     }
 
